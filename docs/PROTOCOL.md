@@ -108,8 +108,7 @@ Request payload: none. Reply payload: 55 bytes.
 |----------------|------|-------|----------------|
 | `0` | 32 | product id, NUL-padded ASCII | `FB200` |
 | `32` | 7 | application version, NUL-terminated | `V1.0.0` |
-| `39` | 6 | firmware version | `V1.0.1` |
-| `45` | 1 | NUL separator | `00` |
+| `39` | 7 | firmware version, NUL-terminated | `V1.0.1` |
 | `46` | 7 | Bluetooth module version, NUL-terminated | `V1.0.0` |
 | `53` | 2 | hardware revision, NUL-terminated | `A` |
 
@@ -193,11 +192,10 @@ Annotated against the 64-byte HID report:
 | `5` | `01` | reply `fn` |
 | `6:38` | `46 42 32 30 30 00 00...` | payload `[0:32]`: product `FB200`, NUL-padded |
 | `38:45` | `56 31 2e 30 2e 30 00` | payload `[32:39]`: app `V1.0.0` |
-| `45:51` | `56 31 2e 30 2e 31` | payload `[39:45]`: firmware `V1.0.1` |
-| `51` | `00` | payload `[45]`: NUL separator |
+| `45:52` | `56 31 2e 30 2e 31 00` | payload `[39:46]`: firmware `V1.0.1`, NUL-terminated |
 | `52:59` | `56 31 2e 30 2e 30 00` | payload `[46:53]`: Bluetooth `V1.0.0` |
 | `59:61` | `41 00` | payload `[53:55]`: hardware revision `A` |
-| `61:63` | `8f 34` | CRC16 over frame bytes `[3:61]` |
+| `61:63` | `8f 34` | CRC16 over frame bytes `[2:60]` (report bytes `[3:61]`) |
 | `63` | `00` | HID report padding |
 
 Decoded: product `FB200`, application `V1.0.0`, firmware `V1.0.1`,
