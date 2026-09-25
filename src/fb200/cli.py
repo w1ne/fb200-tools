@@ -124,6 +124,71 @@ def _cmd_probe(args) -> int:
     return 0
 
 
+def _cmd_fw_inspect(args) -> int:
+    from fb200.firmware import MrFile
+
+    mr = MrFile.from_path(args.file)
+    if args.json:
+        payload = {
+            "header": {
+                "product_tag": mr.header.product_tag,
+                "send_cmd": mr.header.send_cmd,
+                "rec_cmd": mr.header.rec_cmd,
+                "timeout": mr.header.timeout,
+                "update_block": mr.header.update_block,
+                "update_addr": mr.header.update_addr.hex(),
+                "version": mr.header.version,
+            },
+            "blocks": [
+                {
+                    "index": i,
+                    "start_addr": b.tag.start_addr,
+                    "stop_addr": b.tag.stop_addr,
+                    "start_page": b.tag.start_page,
+                    "send_cmd": b.tag.send_cmd,
+                    "rec_cmd": b.tag.rec_cmd,
+                    "rom_id": b.tag.rom_id,
+                    "size": len(b.data),
+                }
+                for i, b in enumerate(mr.blocks)
+            ],
+        }
+        print(json.dumps(payload, indent=2))
+        return 0
+    print(f"Product tag : {mr.header.product_tag}")
+    print(f"Blocks      : {mr.header.update_block}")
+    print(f"Data size   : {mr.total_data_size} bytes")
+    for i, b in enumerate(mr.blocks):
+        print(f"  block {i}: {len(b.data)} bytes  start_page=0x{b.tag.start_page:x} "
+              f"send_cmd=0x{b.tag.send_cmd:02x} rom_id={b.tag.rom_id}")
+    if args.strings:
+        for hit in mr.find_strings():
+            if args.filter and args.filter not in hit.text:
+                continue
+            print(f"  [{hit.block}:0x{hit.offset:06x}] {hit.text}")
+    return 0
+
+
+def _cmd_fw_extract_block(args) -> int:
+    from fb200.firmware import MrFile
+
+    mr = MrFile.from_path(args.file)
+    Path(args.output).write_bytes(mr.blocks[args.index].data)
+    print(f"wrote {args.output} ({len(mr.blocks[args.index].data)} bytes)")
+    return 0
+
+
+def _cmd_fw_patch_string(args) -> int:
+    from fb200.firmware import MrFile
+
+    mr = MrFile.from_path(args.file)
+    count = mr.patch_string(args.find, args.replace)
+    out = Path(args.output) if args.output else Path(args.file).with_suffix(".patched.mr")
+    out.write_bytes(mr.to_bytes())
+    print(f"patched {count} occurrence(s); wrote {out}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fb200", description="Tools for the FLAMMA FB200 pedal")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -156,6 +221,29 @@ def build_parser() -> argparse.ArgumentParser:
                          help="hex frame to send (full AA55 frame including CRC)")
     p_probe.add_argument("--listen", type=float, default=0.0, help="seconds to listen")
     p_probe.set_defaults(func=_cmd_probe)
+
+    p_fw = sub.add_parser("fw", help="inspect, patch and flash .mr firmware")
+    fw_sub = p_fw.add_subparsers(dest="fw_command", required=True)
+
+    p_inspect = fw_sub.add_parser("inspect", help="show container structure")
+    p_inspect.add_argument("file")
+    p_inspect.add_argument("--json", action="store_true")
+    p_inspect.add_argument("--strings", action="store_true")
+    p_inspect.add_argument("--filter")
+    p_inspect.set_defaults(func=_cmd_fw_inspect)
+
+    p_extract = fw_sub.add_parser("extract-block", help="extract a block payload")
+    p_extract.add_argument("file")
+    p_extract.add_argument("index", type=int)
+    p_extract.add_argument("output")
+    p_extract.set_defaults(func=_cmd_fw_extract_block)
+
+    p_patch = fw_sub.add_parser("patch-string", help="same-length string patch")
+    p_patch.add_argument("file")
+    p_patch.add_argument("--find", required=True)
+    p_patch.add_argument("--replace", required=True)
+    p_patch.add_argument("-o", "--output")
+    p_patch.set_defaults(func=_cmd_fw_patch_string)
 
     return parser
 
