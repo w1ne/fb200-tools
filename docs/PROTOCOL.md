@@ -208,11 +208,14 @@ updater's behavior for the planned flashing client. Full update flow:
 
 1. From application mode, send `fn=0xC1` (no payload); the device
    re-enumerates as `0483:5703`.
-2. **Erase**: frame `fn=header.SEND_CMD` (`0x02`) with
-   `[ROM_ID u8, START_PAGE u32, BLOCK_SIZE u32]` repeated for every block in
-   the image; wait for reply `0x03`.
+2. **Erase**: frame `fn=header.SEND_CMD` (`0x02`). If `header.VERSION == 0`
+   the payload is the 4-byte `header.UPDATE_ADDR`; otherwise it is
+   `[ROM_ID u8, START_PAGE u32 LE, BLOCK_SIZE u32 LE]` repeated for every
+   block in the image. Wait for reply `0x03`. The stock FB200 `V1.0.1` image
+   uses `VERSION 0` with `UPDATE_ADDR` = `03 00 00 00`.
 3. **Write**: for each block, frames `fn=block.SEND_CMD` with
-   `[page u16 LE, 512-byte chunk]`, one frame per 512 bytes; wait for reply
+   `[page u16 BE, 512-byte chunk]`, one frame per 512 bytes (the official app
+   sends the low 16 bits of the u32 LE page number reversed); wait for reply
    `SEND_CMD + 1` for each frame.
 4. `fn=0xFF` to exit and reboot.
 

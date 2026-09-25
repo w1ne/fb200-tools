@@ -48,8 +48,8 @@ parser.
 | 42 | 1 | `REC_CMD` | u8 | `0x03` | expected erase reply |
 | 43 | 4 | `TIMEOUT` | u32 LE | — | per-frame timeout hint; unit/use unverified |
 | 47 | 1 | `UPDATE_BLOCK` | u8 | `2` | number of block records |
-| 48 | 4 | `UPDATE_ADDR` | bytes | — | semantics unverified; preserved verbatim |
-| 52 | 1 | `VERSION` | u8 | — | image version field; the USB version reply reports separate version strings |
+| 48 | 4 | `UPDATE_ADDR` | bytes | `03 00 00 00` | erase payload when `VERSION == 0`; preserved verbatim |
+| 52 | 1 | `VERSION` | u8 | `0` | `0` selects the `UPDATE_ADDR` erase format, nonzero the per-block list; the USB version reply reports separate version strings |
 | 53 | 75 | reserved | bytes | — | not interpreted; preserved byte-exact |
 
 `PRODUCT_TAG` is what the flash tooling validates before writing (`FB200`).
@@ -107,12 +107,15 @@ Exact file layout of the stock image:
 
 - The flash page size is **512 bytes** (`0x200`).
 - `START_PAGE` is a page number in the target selected by `ROM_ID`, stored as
-  a full u32 in the tag and sent as a full u32 in the erase frame. In the
-  Python API it is `MrBlockTag.start_page` (i.e. `block.tag.start_page`).
+  a full u32 in the tag and sent as a full u32 in the per-block erase list
+  (nonzero `VERSION`; see §7). In the Python API it is
+  `MrBlockTag.start_page` (i.e. `block.tag.start_page`).
 - Each payload is written in 512-byte chunks, one write frame per chunk
   (`ceil(BLOCK_SIZE / 512)` frames). `page` is the zero-based chunk index.
-- Write frames carry the page number as a **u16 LE**, so only the low 16 bits
-  of the sum are sent:
+- Write frames carry the page number as a **u16 big-endian**, i.e. the low 16
+  bits of the sum with the two bytes reversed relative to the tag's u32 LE
+  field (the official app takes `START_PAGE` as u32 LE and reverses its low
+  two bytes):
 
   ```
   page_number = (START_PAGE + page) & 0xFFFF
@@ -130,20 +133,24 @@ Exact file layout of the stock image:
 The full update sequence (jump, erase, write, exit) is described in
 [`PROTOCOL.md`](PROTOCOL.md) §8. The payloads the container contributes are:
 
-**Erase** — one frame for the whole image:
+**Erase** — one frame for the whole image, with two payload formats:
 
 ```
 fn      = header.SEND_CMD                      (0x02)
-payload = for each block:
+payload = header.UPDATE_ADDR (4 bytes)         if header.VERSION == 0
+          else for each block:
           [ROM_ID u8][START_PAGE u32 LE][BLOCK_SIZE u32 LE]
 reply   = header.REC_CMD                       (0x03)
 ```
+
+The stock FB200 `V1.0.1` image has `VERSION == 0` and `UPDATE_ADDR` =
+`03 00 00 00`, so its erase frame body (fn + payload) is `02 03 00 00 00`.
 
 **Write** — one frame per 512-byte chunk:
 
 ```
 fn      = block.SEND_CMD                       (0x04 or 0x06)
-payload = [page u16 LE][512-byte payload chunk]
+payload = [page u16 BE][512-byte payload chunk]
 reply   = block.REC_CMD                        (SEND_CMD + 1: 0x05 or 0x07)
 ```
 

@@ -107,11 +107,14 @@ Layout parsed by the official updater:
 Replayed from the official app:
 
 1. `fn=0xC1` → device re-enumerates as `0483:5703`.
-2. Erase: frame `fn=header.SEND_CMD (0x02)` with
-   `[ROM_ID, START_PAGE(4), BLOCK_SIZE(4)] × blocks`; wait for reply `0x03`.
+2. Erase: frame `fn=header.SEND_CMD (0x02)`. For `VERSION == 0` (stock
+   FB200) the payload is the 4-byte `UPDATE_ADDR`; otherwise
+   `[ROM_ID, START_PAGE(4 LE), BLOCK_SIZE(4 LE)] × blocks`; wait for reply
+   `0x03`.
 3. Per block: frames `fn=block.SEND_CMD` (0x04/0x06) with
-   `[page u16 LE, 512-byte chunk]`, one frame per 512 bytes, waiting for reply
-   `SEND_CMD+1` each time.
+   `[page u16 BE, 512-byte chunk]`, one frame per 512 bytes, waiting for reply
+   `SEND_CMD+1` each time. The page is the low 16 bits of the u32 LE
+   `START_PAGE + chunk index`, sent big-endian.
 4. `fn=0xFF` to exit/reboot.
 
 No image signature or per-image checksum is transmitted by the official
