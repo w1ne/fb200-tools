@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import struct
 import time
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from itertools import islice
 
 from fb200 import protocol
 from fb200.errors import CommunicationError, InvalidArgumentError, ProtocolError
@@ -109,10 +111,11 @@ class FB200Device:
         data = packet[1:]
         return len(data) > 3 and data[3] != 0
 
-    def ir_import(self, index: int, name: str, samples, progress=None) -> bool:
-        name_bytes = sanitize_ir_name(name).encode("ascii", errors="replace")
+    def ir_import(self, index: int, name: str, samples: Iterable[float],
+                  progress: Callable[[int, int], None] | None = None) -> bool:
+        name_bytes = sanitize_ir_name(name).encode("ascii")
         data = bytearray()
-        for sample in list(samples)[:IR_SAMPLE_COUNT]:
+        for sample in islice(samples, IR_SAMPLE_COUNT):
             data += struct.pack("<f", sample)
         data += bytes(IR_SAMPLE_COUNT * 4 - len(data))
         frame_count = (len(data) + 511) // 512 + 1

@@ -62,3 +62,40 @@ def test_import_sanitizes_name_length():
     first = written_frames(transport)[0]
     payload = first[1:]
     assert struct.unpack_from("<H", payload, 5)[0] == 50
+
+
+def test_import_data_frame_bytes_are_float32_le():
+    device, transport = make_device()
+    device.ir_import(1, "X", [0.5] * 1024)
+    frames = written_frames(transport)
+    assert frames[0][0] == 0x61
+    first_data = frames[1]
+    assert first_data[0] == 0x61
+    assert first_data[8:12] == struct.pack("<f", 0.5)
+
+
+def test_import_short_sample_list_is_padded_to_nine_frames():
+    device, transport = make_device()
+    device.ir_import(1, "X", [0.25] * 10)
+    frames = written_frames(transport)
+    assert len(frames) == 9
+    data = b"".join(bytes(frame[8:]) for frame in frames[1:])
+    assert data[:40] == struct.pack("<10f", *([0.25] * 10))
+    assert data[40:] == bytes(len(data) - 40)
+
+
+def test_import_long_sample_list_is_truncated_to_1024():
+    device, transport = make_device()
+    assert device.ir_import(1, "X", [0.5] * 2000) is True
+    frames = written_frames(transport)
+    assert len(frames) == 9
+    data = b"".join(bytes(frame[8:]) for frame in frames[1:])
+    assert len(data) == 4096
+    assert data == struct.pack("<1024f", *([0.5] * 1024))
+
+
+def test_import_reports_progress_per_frame():
+    device, _ = make_device()
+    calls = []
+    device.ir_import(1, "X", [0.0] * 1024, progress=lambda done, total: calls.append((done, total)))
+    assert calls == [(i, 9) for i in range(1, 10)]
