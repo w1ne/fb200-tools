@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import struct
+import time
 from dataclasses import dataclass
 
 from fb200 import protocol
-from fb200.errors import FirmwareError
+from fb200.errors import CommunicationError, FirmwareError
 from fb200.firmware import MrFile
-from fb200.protocol import pack_frame
+from fb200.protocol import FrameReader, Transport, pack_frame, write_frame
 
 PAGE_SIZE = 512
 NEW_PORT_PAGE_SIZE = 1024
@@ -66,3 +67,53 @@ def build_flash_plan(mr: MrFile) -> FlashPlan:
         exit_frame=pack_frame(protocol.CMD_EXIT_BOOTLOADER),
         total_bytes=total,
     )
+
+
+@dataclass
+class FlashResult:
+    dry_run: bool
+    frames_sent: int
+    bytes_written: int
+
+
+class FirmwareUpdater:
+    def __init__(self, transport: Transport) -> None:
+        self.transport = transport
+        self.reader = FrameReader()
+
+    def flash(self, mr: MrFile, dry_run: bool = True, progress=None,
+              timeout_ms: int = 10000) -> FlashResult:
+        plan = build_flash_plan(mr)
+        if dry_run:
+            return FlashResult(dry_run=True, frames_sent=0, bytes_written=0)
+        write_frame(self.transport, plan.erase_frame)
+        packet = self.reader.read_packet(self.transport, timeout_ms)
+        if packet is None or packet[0] != plan.erase_reply:
+            raise CommunicationError("erase command not acknowledged")
+        sent = 0
+        for expected_reply, frame in plan.writes:
+            write_frame(self.transport, frame)
+            packet = self.reader.read_packet(self.transport, timeout_ms)
+            if packet is None or packet[0] != expected_reply:
+                raise CommunicationError(f"unexpected reply while writing page {sent + 1}")
+            sent += 1
+            if progress is not None:
+                progress(sent, len(plan.writes))
+        write_frame(self.transport, plan.exit_frame)
+        return FlashResult(dry_run=False, frames_sent=sent, bytes_written=plan.total_bytes)
+
+
+def jump_to_bootloader(transport: Transport) -> None:
+    write_frame(transport, pack_frame(protocol.CMD_JUMP_BOOTLOADER))
+
+
+def wait_for_device(vid: int, pid: int, timeout_s: float = 15.0, poll_s: float = 0.5):
+    from fb200.transport import HidapiTransport
+
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        path = HidapiTransport.find_path(vid, pid)
+        if path:
+            return path
+        time.sleep(poll_s)
+    return None
