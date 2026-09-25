@@ -109,5 +109,29 @@ class FB200Device:
         data = packet[1:]
         return len(data) > 3 and data[3] != 0
 
+    def ir_import(self, index: int, name: str, samples, progress=None) -> bool:
+        name_bytes = sanitize_ir_name(name).encode("ascii", errors="replace")
+        data = bytearray()
+        for sample in list(samples)[:IR_SAMPLE_COUNT]:
+            data += struct.pack("<f", sample)
+        data += bytes(IR_SAMPLE_COUNT * 4 - len(data))
+        frame_count = (len(data) + 511) // 512 + 1
+        for frame_index in range(frame_count):
+            if frame_index == 0:
+                chunk = name_bytes
+            else:
+                chunk = bytes(data[(frame_index - 1) * 512:frame_index * 512])
+            payload = (
+                bytes([1])
+                + ir_index_bytes(index)
+                + bytes([frame_count, frame_index])
+                + struct.pack("<H", len(chunk))
+                + chunk
+            )
+            self.request(protocol.CMD_UPLOAD_IR, payload, expect=protocol.REPLY_UPLOAD_IR)
+            if progress is not None:
+                progress(frame_index + 1, frame_count)
+        return True
+
     def enter_bootloader(self) -> None:
         write_frame(self.transport, pack_frame(protocol.CMD_JUMP_BOOTLOADER))
