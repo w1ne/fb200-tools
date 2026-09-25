@@ -23,11 +23,13 @@ is documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
 
 | Version | Status | Contents |
 |---------|--------|----------|
-| v0.1 | Done (tag `v0.1.0`) | transport, protocol, device info, IR list/import/delete/backup, WAV conversion, docs |
+| v0.1 (current) | Done | device info, IR list/import/delete/backup, docs |
 | v0.2 | Planned | firmware container tooling: `fw inspect`, `fw extract-block`, `fw patch-string`, plus format/analysis docs |
 | v0.3 | Planned | flashing (`fw flash`), recovery docs, stock round-trip and a proof patch verified on hardware |
 
 ## Install
+
+Requires Python 3.10 or newer.
 
 Development (library, CLI, and tests):
 
@@ -38,29 +40,38 @@ python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 ```
 
-Hardware access additionally needs `hidapi`:
+Hardware access additionally needs `hidapi`; from a clone:
 
 ```bash
-pip install "fb200-tools[hid]"
+.venv/bin/pip install -e ".[hid]"
 ```
 
-In an editable checkout, use `.venv/bin/pip install -e ".[dev,hid]"` to get
-both. On Linux, raw HID access may require a udev rule or permissions for the
-device.
+Use `.venv/bin/pip install -e ".[dev,hid]"` to get both. The package is not on
+PyPI yet; `pip install "fb200-tools[hid]"` will be the install command once it
+is published. On Linux, raw HID access may require a udev rule or permissions
+for the device.
+
+On Windows use `.venv\Scripts\pip` and `.venv\Scripts\fb200`, or activate the
+virtual environment first (`source .venv/bin/activate` on macOS/Linux,
+`.venv\Scripts\activate` on Windows).
 
 ## Usage
+
+After activating the venv (or prefixing commands with `.venv/bin/` on
+macOS/Linux), run:
 
 ```bash
 fb200 info                          # versions and USB identity
 fb200 ir list                       # all 9 slots: names or (empty)
-fb200 ir import 3 my-ircab.wav      # convert and upload to slot 3
+fb200 ir import 3 my-ircab.wav      # convert and upload to slot 3 (replaces it)
 fb200 ir import 3 my-ircab.wav --name "My IR"
 fb200 ir delete 3                   # erase a slot
 fb200 ir backup ./backup            # write manifest.json of slot names
 ```
 
-Slots are numbered 1–9. IR payloads cannot be downloaded back from the pedal,
-so `ir backup` backs up slot names only. For protocol research:
+Slots are numbered 1–9. Importing into an occupied slot **replaces** its
+contents, and IR payloads cannot be downloaded back from the pedal, so there is
+no undo; `ir backup` backs up slot names only. For protocol research:
 
 ```bash
 fb200 probe --listen 2              # print raw HID reports for 2 seconds

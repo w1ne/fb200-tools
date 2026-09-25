@@ -1,7 +1,8 @@
 """Transport layer: hidapi for real hardware, mock for tests.
 
 `hidapi` is imported lazily so the package and test suite work without it
-installed (install with `pip install 'fb200-tools[hid]'` for hardware use).
+installed (install with `pip install -e '.[hid]'` from a checkout for hardware
+use).
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from fb200.protocol import REPORT_SIZE
 
 _HID_HINT = (
     "The 'hidapi' package is required for hardware access. "
-    "Install it with: pip install 'fb200-tools[hid]'"
+    "Install it with: pip install hidapi (or pip install -e '.[hid]' from a checkout)"
 )
 
 
