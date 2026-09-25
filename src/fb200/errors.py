@@ -20,3 +20,7 @@ class InvalidArgumentError(Fb200Error):
 
 class WavError(Fb200Error, ValueError):
     """A WAV file could not be parsed, validated or converted."""
+
+
+class FirmwareError(Fb200Error, ValueError):
+    """A firmware container could not be parsed, validated or written."""

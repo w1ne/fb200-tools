@@ -44,3 +44,41 @@ def test_fw_patch_string_writes_new_file(tmp_path, capsys):
     assert code == 0
     assert b"FB200 Tools" in out.read_bytes()
     assert path.read_bytes() != out.read_bytes()
+
+
+def test_fw_inspect_missing_file_errors_cleanly(tmp_path, capsys):
+    assert cli.main(["fw", "inspect", str(tmp_path / "nope.mr")]) == 1
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert "Traceback" not in err
+
+
+def test_fw_inspect_bad_magic_errors_cleanly(tmp_path, capsys):
+    path = tmp_path / "bad.mr"
+    path.write_bytes(b"NotMooer!" + bytes(200))
+    assert cli.main(["fw", "inspect", str(path)]) == 1
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert "Traceback" not in err
+
+
+def test_fw_extract_block_out_of_range_errors_cleanly(tmp_path, capsys):
+    path = make_fixture(tmp_path / "fw.mr")
+    out = tmp_path / "out.bin"
+    assert cli.main(["fw", "extract-block", str(path), "99", str(out)]) == 1
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert "Traceback" not in err
+    assert not out.exists()
+
+
+def test_fw_patch_string_missing_text_errors_cleanly(tmp_path, capsys):
+    path = make_fixture(tmp_path / "fw.mr")
+    out = tmp_path / "patched.mr"
+    code = cli.main(["fw", "patch-string", str(path), "--find", "NOPE!",
+                     "--replace", "NOPE?", "-o", str(out)])
+    assert code == 1
+    err = capsys.readouterr().err
+    assert "error:" in err
+    assert "Traceback" not in err
+    assert not out.exists()

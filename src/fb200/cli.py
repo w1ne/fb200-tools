@@ -9,7 +9,7 @@ import sys
 from contextlib import contextmanager
 from pathlib import Path
 
-from fb200.errors import Fb200Error
+from fb200.errors import Fb200Error, FirmwareError, InvalidArgumentError
 from fb200.pedal import IR_SLOT_COUNT, FB200Device
 from fb200.protocol import write_frame
 from fb200.transport import HidapiTransport
@@ -173,7 +173,12 @@ def _cmd_fw_extract_block(args) -> int:
     from fb200.firmware import MrFile
 
     mr = MrFile.from_path(args.file)
-    Path(args.output).write_bytes(mr.blocks[args.index].data)
+    if not 0 <= args.index < len(mr.blocks):
+        raise InvalidArgumentError(f"block index must be 0..{len(mr.blocks) - 1}")
+    try:
+        Path(args.output).write_bytes(mr.blocks[args.index].data)
+    except OSError as exc:
+        raise FirmwareError(f"cannot write {args.output}: {exc}") from exc
     print(f"wrote {args.output} ({len(mr.blocks[args.index].data)} bytes)")
     return 0
 
@@ -184,7 +189,10 @@ def _cmd_fw_patch_string(args) -> int:
     mr = MrFile.from_path(args.file)
     count = mr.patch_string(args.find, args.replace)
     out = Path(args.output) if args.output else Path(args.file).with_suffix(".patched.mr")
-    out.write_bytes(mr.to_bytes())
+    try:
+        out.write_bytes(mr.to_bytes())
+    except OSError as exc:
+        raise FirmwareError(f"cannot write {out}: {exc}") from exc
     print(f"patched {count} occurrence(s); wrote {out}")
     return 0
 
@@ -222,7 +230,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_probe.add_argument("--listen", type=float, default=0.0, help="seconds to listen")
     p_probe.set_defaults(func=_cmd_probe)
 
-    p_fw = sub.add_parser("fw", help="inspect, patch and flash .mr firmware")
+    p_fw = sub.add_parser("fw", help="inspect and patch .mr firmware")
     fw_sub = p_fw.add_subparsers(dest="fw_command", required=True)
 
     p_inspect = fw_sub.add_parser("inspect", help="show container structure")
