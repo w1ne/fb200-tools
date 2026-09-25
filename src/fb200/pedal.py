@@ -83,5 +83,25 @@ class FB200Device:
             raw=data,
         )
 
+    def ir_list(self) -> list[IrSlot]:
+        slots = []
+        for index in range(1, IR_SLOT_COUNT + 1):
+            payload = bytes([1]) + ir_index_bytes(index) + bytes([0])
+            packet = self.request(protocol.CMD_QUERY_IR, payload, expect=protocol.REPLY_QUERY_IR)
+            data = packet[1:]
+            if len(data) > 3 and data[3] == 0:
+                slots.append(IrSlot(index, None))
+            else:
+                name_len = struct.unpack_from("<H", data, 6)[0]
+                name = data[8:8 + name_len].split(b"\x00")[0].decode(errors="replace")
+                slots.append(IrSlot(index, name))
+        return slots
+
+    def ir_delete(self, index: int) -> bool:
+        payload = bytes([1]) + ir_index_bytes(index) + bytes([1])
+        packet = self.request(protocol.CMD_DELETE_IR, payload, expect=protocol.REPLY_DELETE_IR)
+        data = packet[1:]
+        return len(data) > 3 and data[3] != 0
+
     def enter_bootloader(self) -> None:
         write_frame(self.transport, pack_frame(protocol.CMD_JUMP_BOOTLOADER))
