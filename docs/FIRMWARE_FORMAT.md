@@ -49,8 +49,8 @@ parser.
 | 43 | 4 | `TIMEOUT` | u32 LE | — | per-frame timeout hint; unit/use unverified |
 | 47 | 1 | `UPDATE_BLOCK` | u8 | `2` | number of block records |
 | 48 | 4 | `UPDATE_ADDR` | bytes | — | semantics unverified; preserved verbatim |
-| 52 | 1 | `VERSION` | u8 | — | not exposed by the USB protocol; preserved |
-| 53 | 75 | reserved | bytes | zero | not interpreted; preserved byte-exact |
+| 52 | 1 | `VERSION` | u8 | — | image version field; the USB version reply reports separate version strings |
+| 53 | 75 | reserved | bytes | — | not interpreted; preserved byte-exact |
 
 `PRODUCT_TAG` is what the flash tooling validates before writing (`FB200`).
 
