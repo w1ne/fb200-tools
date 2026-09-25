@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from typing import Protocol
+
 VID = 0x34DB
 PID_APP = 0x800F
 UPDATE_VID = 0x0483
@@ -52,3 +55,87 @@ def crc16(data: bytes) -> bytes:
         crc = (CRC_TABLE[((crc >> 8) ^ b) & 0xFF] ^ ((crc << 8) & 0xFFFF)) & 0xFFFF
     crc ^= 0xFFFF
     return bytes([(crc >> 8) & 0xFF, crc & 0xFF])
+
+
+class Transport(Protocol):
+    """Minimal transport interface: 64-byte HID reports."""
+
+    def write_report(self, report: bytes) -> None: ...
+
+    def read_report(self, timeout_ms: int = 500) -> bytes | None: ...
+
+    def close(self) -> None: ...
+
+
+def pack_frame(fn: int, data: bytes = b"") -> bytes:
+    """Pack a command frame: AA 55 | len(u16 LE) | fn | data | CRC16."""
+    body = bytes([fn]) + bytes(data)
+    framed = len(body).to_bytes(2, "little") + body
+    return b"\xaa\x55" + framed + crc16(framed)
+
+
+def iter_reports(frame: bytes, report_size: int = REPORT_SIZE) -> Iterator[bytes]:
+    """Split a frame into HID reports: [length][payload][padding]."""
+    for off in range(0, max(len(frame), 1), CHUNK_SIZE):
+        chunk = frame[off:off + CHUNK_SIZE]
+        report = bytes([len(chunk)]) + chunk
+        yield report + bytes(report_size - len(report))
+
+
+def write_frame(transport: Transport, frame: bytes) -> None:
+    for report in iter_reports(frame):
+        transport.write_report(report)
+
+
+class FrameReader:
+    """Incremental reassembly of AA 55 frames from HID reports."""
+
+    def __init__(self) -> None:
+        self._buf = bytearray()
+        self._packets: list[bytes] = []
+
+    def feed_report(self, report: bytes) -> None:
+        valid = report[0]
+        self._buf.extend(report[1:1 + valid])
+        self._parse()
+
+    def _parse(self) -> None:
+        while True:
+            start = self._buf.find(b"\xaa\x55")
+            if start < 0:
+                if len(self._buf) > 1:
+                    del self._buf[:-1]
+                return
+            if start > 0:
+                del self._buf[:start]
+            if len(self._buf) < 4:
+                return
+            length = int.from_bytes(self._buf[2:4], "little")
+            total = 6 + length
+            if len(self._buf) < total:
+                return
+            framed = bytes(self._buf[2:4 + length])
+            got = bytes(self._buf[4 + length:6 + length])
+            if crc16(framed) != got:
+                del self._buf[:2]
+                continue
+            self._packets.append(bytes(self._buf[4:4 + length]))
+            del self._buf[:total]
+
+    def next_packet(self) -> bytes | None:
+        return self._packets.pop(0) if self._packets else None
+
+    def read_packet(self, transport: Transport, timeout_ms: int = 1500) -> bytes | None:
+        import time
+
+        deadline = time.monotonic() + timeout_ms / 1000
+        while True:
+            packet = self.next_packet()
+            if packet is not None:
+                return packet
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            report = transport.read_report(int(remaining * 1000))
+            if report:
+                self.feed_report(report)
