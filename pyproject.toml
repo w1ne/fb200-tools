@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fb200-tools"
+version = "0.1.0"
+description = "Open-source tools for the FLAMMA FB200 (Mooer-based) bass multi-effects pedal: IR management, firmware inspection, patching and flashing"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Andrii Shylenko" }]
+dependencies = []
+
+[project.optional-dependencies]
+hid = ["hidapi>=0.14"]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+fb200 = "fb200.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fb200"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["hardware: requires a connected FB200 pedal"]
+addopts = "-m 'not hardware'"
