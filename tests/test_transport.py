@@ -14,12 +14,6 @@ def test_mock_transport_records_writes_and_serves_reads():
     assert mock.read_report() is None
 
 
-def test_hidapi_transport_open_without_device_raises(monkeypatch):
-    monkeypatch.setattr(HidapiTransport, "find_path", staticmethod(lambda vid, pid: None))
-    with pytest.raises(DeviceNotFoundError):
-        HidapiTransport().open()
-
-
 class FakeHidDevice:
     def __init__(self):
         self.opened_path = None

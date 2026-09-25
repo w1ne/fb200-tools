@@ -19,14 +19,16 @@ _HID_HINT = (
 
 
 class HidapiTransport:
-    def __init__(self, path=None, vid: int = protocol.VID, pid: int = protocol.PID_APP) -> None:
+    def __init__(
+        self, path: bytes | None = None, vid: int = protocol.VID, pid: int = protocol.PID_APP
+    ) -> None:
         self._path = path
         self._vid = vid
         self._pid = pid
         self._dev = None
 
     @staticmethod
-    def find_path(vid: int = protocol.VID, pid: int = protocol.PID_APP):
+    def find_path(vid: int = protocol.VID, pid: int = protocol.PID_APP) -> bytes | None:
         try:
             import hid
         except ImportError as exc:  # pragma: no cover - environment dependent
