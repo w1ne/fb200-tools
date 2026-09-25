@@ -16,3 +16,7 @@ class ProtocolError(Fb200Error):
 
 class InvalidArgumentError(Fb200Error):
     """A caller-supplied value is outside the accepted range."""
+
+
+class WavError(Fb200Error, ValueError):
+    """A WAV file could not be parsed, validated or converted."""
