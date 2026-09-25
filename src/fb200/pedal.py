@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass
 
 from fb200 import protocol
-from fb200.errors import CommunicationError, ProtocolError
+from fb200.errors import CommunicationError, InvalidArgumentError, ProtocolError
 from fb200.protocol import FrameReader, Transport, pack_frame, write_frame
 
 IR_SLOT_COUNT = 9
@@ -45,6 +45,8 @@ def sanitize_ir_name(name: str) -> str:
 
 
 def ir_index_bytes(index: int) -> bytes:
+    if not 1 <= index <= IR_SLOT_COUNT:
+        raise InvalidArgumentError(f"IR slot index must be 1..{IR_SLOT_COUNT}, got {index}")
     return struct.pack("<H", index)
 
 
@@ -92,8 +94,12 @@ class FB200Device:
             if len(data) > 3 and data[3] == 0:
                 slots.append(IrSlot(index, None))
             else:
+                if len(data) < 8:
+                    raise ProtocolError(f"malformed IR query reply: {data.hex()}")
                 name_len = struct.unpack_from("<H", data, 6)[0]
-                name = data[8:8 + name_len].split(b"\x00")[0].decode(errors="replace")
+                if 8 + name_len > len(data):
+                    raise ProtocolError(f"IR name length {name_len} exceeds reply size")
+                name = _cstr(data, 8, 8 + name_len)
                 slots.append(IrSlot(index, name))
         return slots
 

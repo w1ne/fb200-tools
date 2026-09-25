@@ -1,7 +1,9 @@
 import struct
 
+import pytest
 from conftest import make_report
 
+from fb200.errors import InvalidArgumentError, ProtocolError
 from fb200.pedal import FB200Device, IrSlot
 from fb200.protocol import pack_frame
 from fb200.transport import MockTransport
@@ -54,3 +56,34 @@ def test_ir_delete_returns_true_on_success():
 def test_ir_delete_returns_false_on_failure():
     device, _ = make_device([None] * 9, delete_ok=False)
     assert device.ir_delete(3) is False
+
+
+def test_ir_delete_wire_payload():
+    device, transport = make_device([None] * 9)
+    device.ir_delete(7)
+    expected = pack_frame(0x67, bytes([1, 7, 0, 1]))
+    assert transport.written[0] == bytes([len(expected)]) + expected + bytes(64 - 1 - len(expected))
+
+
+def test_ir_list_malformed_short_named_reply_raises():
+    reports = [make_report(pack_frame(0x64, bytes([0, 0, 0, 1])))]
+    device = FB200Device(MockTransport(reports=reports))
+    with pytest.raises(ProtocolError):
+        device.ir_list()
+
+
+def test_ir_list_name_longer_than_reply_raises():
+    payload = bytearray(10)
+    payload[3] = 1
+    struct.pack_into("<H", payload, 6, 200)
+    reports = [make_report(pack_frame(0x64, bytes(payload)))]
+    device = FB200Device(MockTransport(reports=reports))
+    with pytest.raises(ProtocolError):
+        device.ir_list()
+
+
+def test_ir_index_out_of_range_raises():
+    device = FB200Device(MockTransport(reports=[]))
+    for bad in (0, -1, 10, 70000):
+        with pytest.raises(InvalidArgumentError):
+            device.ir_delete(bad)

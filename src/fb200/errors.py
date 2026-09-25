@@ -12,3 +12,7 @@ class CommunicationError(Fb200Error):
 
 class ProtocolError(Fb200Error):
     """A reply frame was malformed or unexpected."""
+
+
+class InvalidArgumentError(Fb200Error):
+    """A caller-supplied value is outside the accepted range."""
