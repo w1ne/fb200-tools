@@ -9,6 +9,7 @@ import sys
 from contextlib import contextmanager
 from pathlib import Path
 
+from fb200 import protocol
 from fb200.errors import Fb200Error, FirmwareError, InvalidArgumentError
 from fb200.pedal import IR_SLOT_COUNT, FB200Device
 from fb200.protocol import write_frame
@@ -197,6 +198,58 @@ def _cmd_fw_patch_string(args) -> int:
     return 0
 
 
+def _cmd_fw_flash(args) -> int:
+    from fb200.firmware import MrFile
+    from fb200.protocol import UPDATE_PID, UPDATE_VID
+    from fb200.updater import FirmwareUpdater, build_flash_plan, wait_for_device
+
+    mr = MrFile.from_path(args.file)
+    if mr.header.product_tag != "FB200":
+        print(
+            f"error: refusing to flash image for {mr.header.product_tag!r} (expected 'FB200')",
+            file=sys.stderr,
+        )
+        return 1
+    plan = build_flash_plan(mr)
+    print(f"Image : {args.file}")
+    print(f"Blocks: {len(mr.blocks)}")
+    print(f"Data  : {plan.total_bytes} bytes in {plan.write_count} write frames")
+    if not args.yes:
+        print("dry run: pass --yes to actually flash")
+        return 0
+
+    if args.no_jump:
+        path = HidapiTransport.find_path(UPDATE_VID, UPDATE_PID)
+        if path is None:
+            print("error: pedal is not in update mode (0483:5703)", file=sys.stderr)
+            return 1
+    else:
+        app = _open_device()
+        app.enter_bootloader()
+        print("waiting for bootloader device...")
+        path = wait_for_device(UPDATE_VID, UPDATE_PID)
+        if path is None:
+            print("error: bootloader device did not appear", file=sys.stderr)
+            return 1
+
+    boot_transport = HidapiTransport(path=path, vid=UPDATE_VID, pid=UPDATE_PID).open()
+    try:
+        def progress(done: int, total: int) -> None:
+            print(f"\rwriting {done}/{total}", end="", file=sys.stderr)
+
+        result = FirmwareUpdater(boot_transport).flash(mr, dry_run=False, progress=progress)
+    finally:
+        boot_transport.close()
+    print(f"\nwrote {result.bytes_written} bytes", file=sys.stderr)
+
+    if wait_for_device(protocol.VID, protocol.PID_APP, timeout_s=20) is None:
+        print("error: device did not re-enumerate after flash", file=sys.stderr)
+        return 3
+    info = _open_device().info()
+    print(f"device back online: {info.product} {info.firmware_version}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fb200", description="Tools for the FLAMMA FB200 pedal")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -252,6 +305,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_patch.add_argument("--replace", required=True)
     p_patch.add_argument("-o", "--output")
     p_patch.set_defaults(func=_cmd_fw_patch_string)
+
+    p_flash = fw_sub.add_parser("flash", help="flash a .mr image (dry-run unless --yes)")
+    p_flash.add_argument("file")
+    p_flash.add_argument("--yes", action="store_true",
+                         help="actually write; without it the image is only validated")
+    p_flash.add_argument("--no-jump", action="store_true",
+                         help="assume the pedal is already in update mode")
+    p_flash.set_defaults(func=_cmd_fw_flash)
 
     return parser
 
