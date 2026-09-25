@@ -156,7 +156,7 @@ payload = none
 
 `0xFF` reboots the device back into application mode. Every frame is carried
 over 64-byte HID reports (chunked per [`PROTOCOL.md`](PROTOCOL.md) §2); a
-520-byte write frame becomes 9 reports of 63 bytes.
+521-byte write frame becomes 9 reports of 63 bytes.
 
 ## 8. Byte-exact round-trip guarantee
 
