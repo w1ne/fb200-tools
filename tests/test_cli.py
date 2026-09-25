@@ -56,3 +56,33 @@ def test_cli_ir_backup_writes_manifest(patched_device, tmp_path):
     manifest = json.loads(Path(out_path, "manifest.json").read_text())
     assert manifest["slots"][0]["name"] == "Bass"
     assert manifest["slots"][1]["name"] is None
+
+
+def test_cli_error_returns_1_and_prints_to_stderr(monkeypatch, capsys):
+    from fb200.errors import CommunicationError
+
+    def boom():
+        raise CommunicationError("no device")
+
+    monkeypatch.setattr(cli, "_open_device", boom)
+    assert cli.main(["info"]) == 1
+    assert "error: no device" in capsys.readouterr().err
+
+
+def test_cli_ir_delete_success_and_closes_transport(patched_device, capsys):
+    transport = patched_device([make_report(pack_frame(0x68, bytes([0, 0, 0, 1])))])
+    assert cli.main(["ir", "delete", "3"]) == 0
+    assert "deleted slot 3" in capsys.readouterr().out
+    assert transport.closed is True
+
+
+def test_cli_probe_rejects_bad_hex():
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["probe", "--send", "ZZ"])
+    assert excinfo.value.code == 2
+
+
+def test_cli_ir_delete_rejects_out_of_range_slot():
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main(["ir", "delete", "99"])
+    assert excinfo.value.code == 2

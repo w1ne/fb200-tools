@@ -77,6 +77,7 @@ class HidapiTransport:
 class MockTransport:
     def __init__(self, reports=None) -> None:
         self.written: list[bytes] = []
+        self.closed = False
         self._reports: list[bytes] = list(reports or [])
 
     def queue(self, report: bytes) -> None:
@@ -89,4 +90,4 @@ class MockTransport:
         return self._reports.pop(0) if self._reports else None
 
     def close(self) -> None:
-        pass
+        self.closed = True

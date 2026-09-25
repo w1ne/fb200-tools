@@ -6,10 +6,11 @@ import argparse
 import datetime as dt
 import json
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 from fb200.errors import Fb200Error
-from fb200.pedal import FB200Device
+from fb200.pedal import IR_SLOT_COUNT, FB200Device
 from fb200.protocol import write_frame
 from fb200.transport import HidapiTransport
 
@@ -19,8 +20,37 @@ def _open_device() -> FB200Device:
     return FB200Device(transport)
 
 
+@contextmanager
+def _with_device():
+    device = _open_device()
+    try:
+        yield device
+    finally:
+        device.transport.close()
+
+
+def _slot_arg(value: str) -> int:
+    try:
+        slot = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"invalid slot: {value!r}") from exc
+    if not 1 <= slot <= IR_SLOT_COUNT:
+        raise argparse.ArgumentTypeError(f"slot must be 1..{IR_SLOT_COUNT}")
+    return slot
+
+
+def _hex_frame_arg(value: str) -> str:
+    text = value.replace(" ", "")
+    try:
+        bytes.fromhex(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"invalid hex frame: {value!r}") from exc
+    return text
+
+
 def _cmd_info(args) -> int:
-    info = _open_device().info()
+    with _with_device() as device:
+        info = device.info()
     print(f"Product          : {info.product}")
     print(f"App version      : {info.app_version}")
     print(f"Firmware version : {info.firmware_version}")
@@ -30,13 +60,16 @@ def _cmd_info(args) -> int:
 
 
 def _cmd_ir_list(args) -> int:
-    for slot in _open_device().ir_list():
-        print(f"{slot.index}: {slot.name if slot.name else '(empty)'}")
+    with _with_device() as device:
+        for slot in device.ir_list():
+            print(f"{slot.index}: {slot.name if slot.name else '(empty)'}")
     return 0
 
 
 def _cmd_ir_delete(args) -> int:
-    if not _open_device().ir_delete(args.slot):
+    with _with_device() as device:
+        deleted = device.ir_delete(args.slot)
+    if not deleted:
         print(f"failed to delete slot {args.slot}", file=sys.stderr)
         return 1
     print(f"deleted slot {args.slot}")
@@ -48,20 +81,20 @@ def _cmd_ir_import(args) -> int:
 
     samples = wav_to_ir(args.wav)
     name = args.name or Path(args.wav).stem
-    device = _open_device()
 
     def progress(done: int, total: int) -> None:
         print(f"\rframe {done}/{total}", end="", file=sys.stderr)
 
-    device.ir_import(args.slot, name, samples, progress=progress)
+    with _with_device() as device:
+        device.ir_import(args.slot, name, samples, progress=progress)
     print(f"\nimported '{name}' into slot {args.slot}", file=sys.stderr)
     return 0
 
 
 def _cmd_ir_backup(args) -> int:
-    device = _open_device()
-    info = device.info()
-    slots = device.ir_list()
+    with _with_device() as device:
+        info = device.info()
+        slots = device.ir_list()
     out_dir = Path(args.directory)
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest = {
@@ -79,15 +112,15 @@ def _cmd_ir_backup(args) -> int:
 def _cmd_probe(args) -> int:
     import time
 
-    device = _open_device()
-    if args.send:
-        write_frame(device.transport, bytes.fromhex(args.send.replace(" ", "")))
-    if args.listen:
-        deadline = time.monotonic() + args.listen
-        while time.monotonic() < deadline:
-            report = device.transport.read_report(200)
-            if report:
-                print(report.hex(" "))
+    with _with_device() as device:
+        if args.send:
+            write_frame(device.transport, bytes.fromhex(args.send))
+        if args.listen:
+            deadline = time.monotonic() + args.listen
+            while time.monotonic() < deadline:
+                report = device.transport.read_report(200)
+                if report:
+                    print(report.hex(" "))
     return 0
 
 
@@ -105,13 +138,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_list.set_defaults(func=_cmd_ir_list)
 
     p_import = ir_sub.add_parser("import", help="import a WAV into a slot")
-    p_import.add_argument("slot", type=int)
+    p_import.add_argument("slot", type=_slot_arg)
     p_import.add_argument("wav")
     p_import.add_argument("--name")
     p_import.set_defaults(func=_cmd_ir_import)
 
     p_delete = ir_sub.add_parser("delete", help="delete a slot")
-    p_delete.add_argument("slot", type=int)
+    p_delete.add_argument("slot", type=_slot_arg)
     p_delete.set_defaults(func=_cmd_ir_delete)
 
     p_backup = ir_sub.add_parser("backup", help="write a slot-name manifest")
@@ -119,7 +152,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_backup.set_defaults(func=_cmd_ir_backup)
 
     p_probe = sub.add_parser("probe", help="advanced raw frame tool")
-    p_probe.add_argument("--send", help="hex frame to send")
+    p_probe.add_argument("--send", type=_hex_frame_arg,
+                         help="hex frame to send (full AA55 frame including CRC)")
     p_probe.add_argument("--listen", type=float, default=0.0, help="seconds to listen")
     p_probe.set_defaults(func=_cmd_probe)
 
