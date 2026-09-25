@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import struct
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from fb200 import protocol
@@ -72,7 +73,7 @@ def build_flash_plan(mr: MrFile) -> FlashPlan:
 @dataclass
 class FlashResult:
     dry_run: bool
-    frames_sent: int
+    write_frames: int
     bytes_written: int
 
 
@@ -81,33 +82,42 @@ class FirmwareUpdater:
         self.transport = transport
         self.reader = FrameReader()
 
-    def flash(self, mr: MrFile, dry_run: bool = True, progress=None,
+    def flash(self, mr: MrFile, dry_run: bool = True,
+              progress: Callable[[int, int], None] | None = None,
               timeout_ms: int = 10000) -> FlashResult:
+        """Erase, write and exit the bootloader.
+
+        On failure the device is left in the bootloader; the call is safely
+        re-runnable (use `--no-jump` to skip entering the bootloader again).
+        """
         plan = build_flash_plan(mr)
         if dry_run:
-            return FlashResult(dry_run=True, frames_sent=0, bytes_written=0)
+            return FlashResult(dry_run=True, write_frames=0, bytes_written=0)
+        while self.reader.next_packet() is not None:
+            pass
         write_frame(self.transport, plan.erase_frame)
         packet = self.reader.read_packet(self.transport, timeout_ms)
-        if packet is None or packet[0] != plan.erase_reply:
-            raise CommunicationError("erase command not acknowledged")
+        if not packet:
+            raise CommunicationError("erase command not acknowledged (no reply)")
+        if packet[0] != plan.erase_reply:
+            raise CommunicationError(
+                f"erase command not acknowledged (got {packet[0]:#04x})"
+            )
         sent = 0
         for expected_reply, frame in plan.writes:
             write_frame(self.transport, frame)
             packet = self.reader.read_packet(self.transport, timeout_ms)
-            if packet is None or packet[0] != expected_reply:
+            if not packet or packet[0] != expected_reply:
                 raise CommunicationError(f"unexpected reply while writing page {sent + 1}")
             sent += 1
             if progress is not None:
                 progress(sent, len(plan.writes))
         write_frame(self.transport, plan.exit_frame)
-        return FlashResult(dry_run=False, frames_sent=sent, bytes_written=plan.total_bytes)
+        return FlashResult(dry_run=False, write_frames=sent, bytes_written=plan.total_bytes)
 
 
-def jump_to_bootloader(transport: Transport) -> None:
-    write_frame(transport, pack_frame(protocol.CMD_JUMP_BOOTLOADER))
-
-
-def wait_for_device(vid: int, pid: int, timeout_s: float = 15.0, poll_s: float = 0.5):
+def wait_for_device(vid: int, pid: int, timeout_s: float = 15.0,
+                    poll_s: float = 0.5) -> bytes | None:
     from fb200.transport import HidapiTransport
 
     deadline = time.monotonic() + timeout_s

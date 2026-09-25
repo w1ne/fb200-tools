@@ -19,7 +19,7 @@ def test_flash_dry_run_writes_nothing():
     result = FirmwareUpdater(transport).flash(make_mr(), dry_run=True)
     assert result.dry_run is True
     assert transport.written == []
-    assert result.frames_sent == 0
+    assert result.write_frames == 0
 
 
 def test_flash_full_sequence_against_mock():
@@ -30,11 +30,9 @@ def test_flash_full_sequence_against_mock():
     ]
     transport = MockTransport(reports=reports)
     result = FirmwareUpdater(transport).flash(make_mr(), dry_run=False)
-    assert result.frames_sent == 2
+    assert result.write_frames == 2
     assert result.bytes_written == 1024
-    exit_frame = pack_frame(0xFF)
-    exit_report = bytes([len(exit_frame)]) + exit_frame + bytes(64 - 1 - len(exit_frame))
-    assert exit_report in transport.written
+    assert make_report(pack_frame(0xFF)) in transport.written
 
 
 def test_flash_raises_on_unexpected_reply():
@@ -55,3 +53,38 @@ def test_flash_reports_progress():
         make_mr(), dry_run=False, progress=lambda done, total: calls.append((done, total))
     )
     assert calls == [(1, 2), (2, 2)]
+
+
+def test_flash_raises_on_wrong_erase_ack():
+    transport = MockTransport(reports=[make_report(pack_frame(0x99, b"\x01"))])
+    with pytest.raises(CommunicationError, match="erase"):
+        FirmwareUpdater(transport).flash(make_mr(), dry_run=False, timeout_ms=50)
+
+
+def test_flash_raises_on_missing_erase_ack():
+    with pytest.raises(CommunicationError, match="erase"):
+        FirmwareUpdater(MockTransport()).flash(make_mr(), dry_run=False, timeout_ms=50)
+
+
+def test_flash_does_not_send_exit_after_write_failure():
+    reports = [make_report(pack_frame(0x03, b"\x01")), make_report(pack_frame(0x99, b"\x01"))]
+    transport = MockTransport(reports=reports)
+    with pytest.raises(CommunicationError):
+        FirmwareUpdater(transport).flash(make_mr(), dry_run=False, timeout_ms=50)
+    assert make_report(pack_frame(0xFF)) not in transport.written
+
+
+def test_wait_for_device_returns_none_after_timeout(monkeypatch):
+    from fb200 import updater as updater_mod
+    from fb200.transport import HidapiTransport
+
+    monkeypatch.setattr(HidapiTransport, "find_path", staticmethod(lambda vid, pid: None))
+    assert updater_mod.wait_for_device(1, 2, timeout_s=0.05, poll_s=0.001) is None
+
+
+def test_wait_for_device_returns_path_when_found(monkeypatch):
+    from fb200 import updater as updater_mod
+    from fb200.transport import HidapiTransport
+
+    monkeypatch.setattr(HidapiTransport, "find_path", staticmethod(lambda vid, pid: b"dev"))
+    assert updater_mod.wait_for_device(1, 2, timeout_s=0.05) == b"dev"
