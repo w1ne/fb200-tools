@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import re
 import struct
-from dataclasses import dataclass
+from collections.abc import Iterator
+from dataclasses import dataclass, field
 from pathlib import Path
 
 MAGIC = b"Mooer_TAG"
@@ -22,6 +23,7 @@ class MrHeader:
     update_block: int = 0
     update_addr: bytes = b"\x00\x00\x00\x00"
     version: int = 0
+    raw: bytes | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass
@@ -35,6 +37,7 @@ class MrBlockTag:
     timeout: int = 0
     start_page: int = 0
     rom_id: int = 0
+    raw: bytes | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass
@@ -60,7 +63,7 @@ class MrFile:
         return sum(len(b.data) for b in self.blocks)
 
     @classmethod
-    def from_path(cls, path) -> MrFile:
+    def from_path(cls, path: str | Path) -> MrFile:
         return cls.from_bytes(Path(path).read_bytes())
 
     @classmethod
@@ -68,12 +71,16 @@ class MrFile:
         if len(data) < HEADER_SIZE:
             raise ValueError("file too small for .mr header")
         header = _parse_header(data[:HEADER_SIZE])
+        if header.tag != MAGIC:
+            raise ValueError("not a Mooer .mr file (bad header tag)")
         blocks = []
         offset = HEADER_SIZE
         for _ in range(header.update_block):
             if offset + TAG_SIZE > len(data):
                 raise ValueError("truncated block tag")
             tag = _parse_tag(data[offset:offset + TAG_SIZE])
+            if tag.tag != MAGIC:
+                raise ValueError("not a Mooer .mr file (bad block tag)")
             offset += TAG_SIZE
             if offset + tag.block_size > len(data):
                 raise ValueError("truncated block data")
@@ -84,19 +91,30 @@ class MrFile:
         return cls(header, blocks)
 
     def to_bytes(self) -> bytes:
+        if self.header.update_block != len(self.blocks):
+            raise ValueError(
+                f"header update_block {self.header.update_block} does not match "
+                f"{len(self.blocks)} blocks"
+            )
         out = bytearray(_serialize_header(self.header))
         for block in self.blocks:
             out += _serialize_tag(block.tag, len(block.data))
             out += block.data
         return bytes(out)
 
-    def find_strings(self, min_len: int = 4):
-        pattern = rb"[\x20-\x7e]{%d,}" % min_len
-        for block_index, block in enumerate(self.blocks):
-            for match in re.finditer(pattern, block.data):
-                yield StringHit(block_index, match.start(), match.group().decode())
+    def find_strings(self, min_len: int = 4) -> Iterator[StringHit]:
+        if min_len < 1:
+            raise ValueError("min_len must be at least 1")
+        pattern = re.compile(rb"[\x20-\x7e]{%d,}" % min_len)
+        return (
+            StringHit(block_index, match.start(), match.group().decode())
+            for block_index, block in enumerate(self.blocks)
+            for match in pattern.finditer(block.data)
+        )
 
     def patch_string(self, find: str, replace: str) -> int:
+        if not find:
+            raise ValueError("find string must not be empty")
         find_bytes = find.encode()
         replace_bytes = replace.encode()
         if len(find_bytes) != len(replace_bytes):
@@ -122,6 +140,7 @@ def _parse_header(raw: bytes) -> MrHeader:
         update_block=raw[47],
         update_addr=raw[48:52],
         version=raw[52],
+        raw=raw,
     )
 
 
@@ -136,13 +155,26 @@ def _parse_tag(raw: bytes) -> MrBlockTag:
         timeout=struct.unpack_from("<I", raw, 23)[0],
         start_page=struct.unpack_from("<I", raw, 27)[0],
         rom_id=raw[31],
+        raw=raw,
     )
 
 
 def _serialize_header(header: MrHeader) -> bytes:
-    raw = bytearray(HEADER_SIZE)
+    if len(header.tag) != 9:
+        raise ValueError("header tag must be exactly 9 bytes")
+    if len(header.update_addr) != 4:
+        raise ValueError("update_addr must be exactly 4 bytes")
+    raw = bytearray(header.raw) if header.raw is not None else bytearray(HEADER_SIZE)
+    if len(raw) != HEADER_SIZE:
+        raise ValueError(f"raw header must be exactly {HEADER_SIZE} bytes")
     raw[0:9] = header.tag
-    raw[9:41] = header.product_tag.encode().ljust(32, b"\x00")[:32]
+    if header.raw is None or header.product_tag != header.raw[9:41].split(b"\x00")[0].decode(
+        errors="replace"
+    ):
+        encoded = header.product_tag.encode()
+        if len(encoded) > 32:
+            raise ValueError("product_tag must encode to at most 32 bytes")
+        raw[9:41] = encoded.ljust(32, b"\x00")
     raw[41] = header.send_cmd
     raw[42] = header.rec_cmd
     struct.pack_into("<I", raw, 43, header.timeout)
@@ -153,7 +185,11 @@ def _serialize_header(header: MrHeader) -> bytes:
 
 
 def _serialize_tag(tag: MrBlockTag, data_size: int) -> bytes:
-    raw = bytearray(TAG_SIZE)
+    if len(tag.tag) != 9:
+        raise ValueError("block tag must be exactly 9 bytes")
+    raw = bytearray(tag.raw) if tag.raw is not None else bytearray(TAG_SIZE)
+    if len(raw) != TAG_SIZE:
+        raise ValueError(f"raw block tag must be exactly {TAG_SIZE} bytes")
     raw[0:9] = tag.tag
     struct.pack_into("<I", raw, 9, tag.start_addr)
     struct.pack_into("<I", raw, 13, tag.stop_addr)
