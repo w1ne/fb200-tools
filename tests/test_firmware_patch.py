@@ -12,9 +12,12 @@ def make_mr() -> MrFile:
 
 def test_patch_string_replaces_only_block_data():
     mr = make_mr()
-    count = mr.patch_string("FB200 Audio", "FB200 Tools")
-    assert count == 1
-    assert mr.blocks[0].data.startswith(b"AT+BDFB200 Tools")
+    count = mr.patch_string("FB200", "FB2X0")
+    # "FB200" occurs twice inside block data: inside "AT+BDFB200 Audio" and as the trailing run
+    assert count == 2
+    assert b"AT+BDFB200 Audio" not in mr.blocks[0].data
+    assert mr.blocks[0].data.endswith(b"FB2X0")
+    # the header field must NOT be patched
     assert mr.header.product_tag == "FB200"
 
 
@@ -37,3 +40,5 @@ def test_find_strings_reports_locations():
     assert hits[0].block == 0
     hit = hits[0]
     assert mr.blocks[0].data[hit.offset:hit.offset + len(hit.text)] == hit.text.encode()
+    trailing = [h for h in mr.find_strings() if h.text == "FB200"]
+    assert trailing and trailing[0].offset == 32
