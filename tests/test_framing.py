@@ -54,3 +54,39 @@ def test_frame_reader_rejects_bad_crc():
     reader = FrameReader()
     reader.feed_report(report)
     assert reader.next_packet() is None
+
+
+def test_frame_reader_handles_marker_split_across_reports():
+    frame = pack_frame(0x01, b"split")
+    # first report ends exactly after the leading 0xAA of the marker
+    cut = 1  # frame[0:1] is b"\xaa"
+    r1 = bytes([cut]) + frame[:cut] + bytes(64 - 1 - cut)
+    r2 = bytes([len(frame) - cut]) + frame[cut:] + bytes(64 - 1 - (len(frame) - cut))
+    reader = FrameReader()
+    reader.feed_report(r1)
+    assert reader.next_packet() is None
+    reader.feed_report(r2)
+    assert reader.next_packet() == bytes([0x01]) + b"split"
+
+
+def test_frame_reader_recovers_after_bad_crc():
+    good = pack_frame(0x01, b"ok")
+    bad = bytearray(good)
+    bad[-1] ^= 0xFF
+    payload = bytes(bad) + good
+    report = bytes([len(payload)]) + payload + bytes(64 - 1 - len(payload))
+    reader = FrameReader()
+    reader.feed_report(report)
+    assert reader.next_packet() == bytes([0x01]) + b"ok"
+
+
+def test_frame_reader_emits_multiple_frames_from_one_report():
+    first = pack_frame(0x01, b"one")
+    second = pack_frame(0x02, b"two")
+    payload = first + second
+    report = bytes([len(payload)]) + payload + bytes(64 - 1 - len(payload))
+    reader = FrameReader()
+    reader.feed_report(report)
+    assert reader.next_packet() == bytes([0x01]) + b"one"
+    assert reader.next_packet() == bytes([0x02]) + b"two"
+    assert reader.next_packet() is None
