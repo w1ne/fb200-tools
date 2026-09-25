@@ -6,6 +6,8 @@ installed (install with `pip install 'fb200-tools[hid]'` for hardware use).
 
 from __future__ import annotations
 
+import contextlib
+
 from fb200 import protocol
 from fb200.errors import CommunicationError, DeviceNotFoundError
 from fb200.protocol import REPORT_SIZE
@@ -41,9 +43,15 @@ class HidapiTransport:
         path = self._path or self.find_path(self._vid, self._pid)
         if path is None:
             raise DeviceNotFoundError("FB200 not found. Is it connected and powered on?")
-        self._dev = hid.device()
-        self._dev.open_path(path)
-        self._dev.set_nonblocking(0)
+        device = hid.device()
+        try:
+            device.open_path(path)
+            device.set_nonblocking(0)
+        except Exception as exc:
+            with contextlib.suppress(Exception):
+                device.close()
+            raise CommunicationError(f"failed to open FB200 HID device: {exc}") from exc
+        self._dev = device
         return self
 
     def write_report(self, report: bytes) -> None:
