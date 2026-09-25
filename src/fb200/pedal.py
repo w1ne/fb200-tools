@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import struct
+import time
 from dataclasses import dataclass
 
 from fb200 import protocol
-from fb200.errors import CommunicationError
+from fb200.errors import CommunicationError, ProtocolError
 from fb200.protocol import FrameReader, Transport, pack_frame, write_frame
 
 IR_SLOT_COUNT = 9
@@ -54,11 +55,19 @@ class FB200Device:
 
     def request(self, fn: int, data: bytes = b"", expect: int | None = None,
                 timeout_ms: int = 1500) -> bytes:
+        while self.reader.next_packet() is not None:
+            pass  # drop stale replies buffered by earlier requests
         write_frame(self.transport, pack_frame(fn, data))
+        deadline = time.monotonic() + timeout_ms / 1000
         while True:
-            packet = self.reader.read_packet(self.transport, timeout_ms)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise CommunicationError(f"no reply to command 0x{fn:02x}")
+            packet = self.reader.read_packet(self.transport, int(remaining * 1000))
             if packet is None:
                 raise CommunicationError(f"no reply to command 0x{fn:02x}")
+            if not packet:
+                raise ProtocolError(f"empty reply packet for command 0x{fn:02x}")
             if expect is None or packet[0] == expect:
                 return packet
 
@@ -68,7 +77,7 @@ class FB200Device:
         return DeviceInfo(
             product=_cstr(data, 0, 32),
             app_version=_cstr(data, 32, 39),
-            firmware_version=_cstr(data, 39, 45),
+            firmware_version=_cstr(data, 39, 46),
             bluetooth_version=_cstr(data, 46, 53),
             hardware_rev=_cstr(data, 53, 55),
             raw=data,
