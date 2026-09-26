@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 360" role="img"
+     aria-label="fb200-tools protocol stack: CLI commands flow through pedal.py and updater.py, protocol.py frames and transport.py HID reports to the FB200 over USB">
+  <defs>
+    <marker id="arrow" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10"
+            refX="10" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#14C39B"/>
+    </marker>
+  </defs>
+  <rect width="800" height="360" fill="#16191C"/>
+
+  <rect x="40" y="28" width="500" height="48" rx="8" fill="#1F2429" stroke="#14C39B" stroke-width="1.5"/>
+  <text x="60" y="58" font-family="monospace" font-size="16" fill="#F3F4F6">CLI</text>
+  <text x="560" y="61" font-family="monospace" font-size="12" fill="#9CA3AF">info / ir / fw commands</text>
+  <line x1="290" y1="78" x2="290" y2="90" stroke="#14C39B" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="40" y="92" width="500" height="48" rx="8" fill="#1F2429" stroke="#14C39B" stroke-width="1.5"/>
+  <text x="60" y="122" font-family="monospace" font-size="16" fill="#F3F4F6">pedal.py / updater.py</text>
+  <text x="560" y="111" font-family="monospace" font-size="12" fill="#9CA3AF">request/response +</text>
+  <text x="560" y="126" font-family="monospace" font-size="12" fill="#9CA3AF">flash orchestration</text>
+  <line x1="290" y1="142" x2="290" y2="154" stroke="#14C39B" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="40" y="156" width="500" height="48" rx="8" fill="#1F2429" stroke="#14C39B" stroke-width="1.5"/>
+  <text x="60" y="186" font-family="monospace" font-size="16" fill="#F3F4F6">protocol.py</text>
+  <text x="560" y="175" font-family="monospace" font-size="12" fill="#9CA3AF">frames: AA 55 | len u16le |</text>
+  <text x="560" y="190" font-family="monospace" font-size="12" fill="#9CA3AF">fn | data | CRC16</text>
+  <line x1="290" y1="206" x2="290" y2="218" stroke="#14C39B" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="40" y="220" width="500" height="48" rx="8" fill="#1F2429" stroke="#14C39B" stroke-width="1.5"/>
+  <text x="60" y="250" font-family="monospace" font-size="16" fill="#F3F4F6">transport.py</text>
+  <text x="560" y="239" font-family="monospace" font-size="12" fill="#9CA3AF">HID reports, 64 B,</text>
+  <text x="560" y="254" font-family="monospace" font-size="12" fill="#9CA3AF">first byte = valid length</text>
+  <line x1="290" y1="270" x2="290" y2="282" stroke="#14C39B" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="40" y="284" width="500" height="48" rx="8" fill="#1F2429" stroke="#14C39B" stroke-width="1.5"/>
+  <text x="60" y="314" font-family="monospace" font-size="16" fill="#F3F4F6">FB200 (34db:800f app | 0483:5703 update)</text>
+  <text x="560" y="317" font-family="monospace" font-size="12" fill="#9CA3AF">USB</text>
+</svg>

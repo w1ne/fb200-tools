@@ -1,3 +1,5 @@
+![banner](images/banner.svg)
+
 # fb200-tools
 
 Open-source Python library and CLI for the **FLAMMA FB200** (Mooer-based) bass
@@ -23,9 +25,9 @@ is documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
 
 | Version | Status | Contents |
 |---------|--------|----------|
-| v0.1 (current) | Done | device info, IR list/import/delete/backup, docs |
-| v0.2 | Planned | firmware container tooling: `fw inspect`, `fw extract-block`, `fw patch-string`, plus format/analysis docs |
-| v0.3 | Planned | flashing (`fw flash`), recovery docs, stock round-trip and a proof patch verified on hardware |
+| v0.1 | Done | device info, IR list/import/delete/backup, docs |
+| v0.2 | Done | firmware container tooling: `fw inspect`, `fw extract-block`, `fw patch-string`, plus format/analysis docs |
+| v0.3 (current) | In progress | flashing (`fw flash`), recovery docs, stock round-trip and a proof patch verified on hardware |
 
 ## Install
 
@@ -78,13 +80,17 @@ fb200 probe --listen 2              # print raw HID reports for 2 seconds
 fb200 probe --send "aa55010000c8cf" # send a raw frame
 ```
 
+![fb200-tools protocol stack: the CLI and library layers (`pedal.py`/`updater.py` request/response and flash orchestration, `protocol.py` frames `AA 55 | len u16le | fn | data | CRC16`, `transport.py` HID reports of 64 B whose first byte is the valid length) down to the pedal over USB](images/protocol-stack.svg)
+
 ## Safety
 
-Flashing firmware is **not available yet**. When it lands it will be opt-in:
-dry-run by default, writing only with an explicit `--yes`, validating the
-image's `FB200` product tag, and saving patches to a new file unless told
-otherwise. Flashing carries a real risk of rendering the pedal temporarily or
-permanently unusable — use at your own risk. See [`DISCLAIMER.md`](DISCLAIMER.md).
+Flashing firmware is opt-in: dry-run by default, writing only with an explicit
+`--yes`, validating the image's `FB200` product tag, and saving patches to a
+new file unless told otherwise. Flashing carries a real risk of rendering the
+pedal temporarily or permanently unusable — use at your own risk. See
+[`DISCLAIMER.md`](DISCLAIMER.md).
+
+![FB200 .mr firmware container layout: a 128-byte header carrying the Mooer_TAG magic, the FB200 product tag, SEND_CMD/REC_CMD, the block count, UPDATE_ADDR and VERSION; then block 0 (200,704-byte application, fn=0x04) and block 1 (3,286,016-byte models, fn=0x06), each preceded by its own 512-byte tag whose START_PAGE is sent as u16 big-endian in write frames; page size 512 B](images/firmware-layout.svg)
 
 ## Documentation
 
@@ -106,6 +112,8 @@ permanently unusable — use at your own risk. See [`DISCLAIMER.md`](DISCLAIMER.
 ## License
 
 MIT — see [`LICENSE`](LICENSE).
+
+All images are original works, licensed with the project (MIT).
 
 This project is an independent, community reverse-engineering effort. It is not
 affiliated with, endorsed by, or supported by FLAMMA Innovation or MOOER Audio.

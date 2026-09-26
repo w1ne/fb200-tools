@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" role="img"
+     aria-label="fb200-tools banner">
+  <rect width="800" height="200" fill="#16191C"/>
+  <rect x="40" y="40" width="120" height="120" rx="12" fill="#1F2429" stroke="#14C39B" stroke-width="3"/>
+  <circle cx="70" cy="70" r="9" fill="#14C39B"/>
+  <circle cx="100" cy="70" r="9" fill="#3B82F6"/>
+  <circle cx="130" cy="70" r="9" fill="#F59E0B"/>
+  <rect x="58" y="100" width="84" height="14" rx="4" fill="#3A4047"/>
+  <rect x="58" y="124" width="84" height="14" rx="4" fill="#3A4047"/>
+  <text x="200" y="95" font-family="monospace" font-size="48" fill="#F3F4F6">fb200-tools</text>
+  <text x="200" y="130" font-family="monospace" font-size="20" fill="#9CA3AF">Open-source tools for the FLAMMA FB200</text>
+</svg>
