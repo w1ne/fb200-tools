@@ -52,6 +52,7 @@ SRC_C := \
   $(TUSB_DIR)/src/tusb.c \
   $(TUSB_DIR)/src/common/tusb_fifo.c \
   $(TUSB_DIR)/src/device/usbd.c \
+  $(TUSB_DIR)/src/class/cdc/cdc_device.c \
   $(TUSB_DIR)/src/portable/chipidea/ci_hs/dcd_ci_hs.c \
   $(TUSB_DIR)/hw/bsp/board.c \
   $(TUSB_DIR)/hw/bsp/imxrt/family.c \
