@@ -199,9 +199,11 @@ def _cmd_fw_patch_string(args) -> int:
 
 
 def _cmd_fw_flash(args) -> int:
+    import time
+
+    from fb200 import updater as updater_module
     from fb200.firmware import MrFile
     from fb200.protocol import UPDATE_PID, UPDATE_VID
-    from fb200.updater import FirmwareUpdater, build_flash_plan, wait_for_device
 
     mr = MrFile.from_path(args.file)
     if mr.header.product_tag != "FB200":
@@ -210,7 +212,7 @@ def _cmd_fw_flash(args) -> int:
             file=sys.stderr,
         )
         return 1
-    plan = build_flash_plan(mr)
+    plan = updater_module.build_flash_plan(mr)
     print(f"Image : {args.file}")
     print(f"Blocks: {len(mr.blocks)}")
     print(f"Data  : {plan.total_bytes} bytes in {plan.write_count} write frames")
@@ -221,13 +223,18 @@ def _cmd_fw_flash(args) -> int:
     if args.no_jump:
         path = HidapiTransport.find_path(UPDATE_VID, UPDATE_PID)
         if path is None:
-            print("error: pedal is not in update mode (0483:5703)", file=sys.stderr)
+            print(
+                f"error: pedal is not in update mode ({UPDATE_VID:04x}:{UPDATE_PID:04x})",
+                file=sys.stderr,
+            )
             return 1
     else:
-        app = _open_device()
-        app.enter_bootloader()
+        with _with_device() as app:
+            info = app.info()
+            print(f"target: {info.product} {info.firmware_version}")
+            app.enter_bootloader()
         print("waiting for bootloader device...")
-        path = wait_for_device(UPDATE_VID, UPDATE_PID)
+        path = updater_module.wait_for_device(UPDATE_VID, UPDATE_PID)
         if path is None:
             print("error: bootloader device did not appear", file=sys.stderr)
             return 1
@@ -237,15 +244,31 @@ def _cmd_fw_flash(args) -> int:
         def progress(done: int, total: int) -> None:
             print(f"\rwriting {done}/{total}", end="", file=sys.stderr)
 
-        result = FirmwareUpdater(boot_transport).flash(mr, dry_run=False, progress=progress)
+        result = updater_module.FirmwareUpdater(boot_transport).flash(
+            mr, dry_run=False, progress=progress
+        )
     finally:
         boot_transport.close()
     print(f"\nwrote {result.bytes_written} bytes", file=sys.stderr)
 
-    if wait_for_device(protocol.VID, protocol.PID_APP, timeout_s=20) is None:
+    if updater_module.wait_for_device(protocol.VID, protocol.PID_APP, timeout_s=20) is None:
         print("error: device did not re-enumerate after flash", file=sys.stderr)
         return 3
-    info = _open_device().info()
+
+    deadline = time.monotonic() + 5
+    while True:
+        try:
+            with _with_device() as device:
+                info = device.info()
+            break
+        except Fb200Error:
+            if time.monotonic() >= deadline:
+                print(
+                    "error: flash wrote OK but the device did not answer the version query",
+                    file=sys.stderr,
+                )
+                return 3
+            time.sleep(0.5)
     print(f"device back online: {info.product} {info.firmware_version}")
     return 0
 
