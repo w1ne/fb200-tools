@@ -65,9 +65,12 @@ module whose version is reported as `V1.0.0`:
   the BLE friendly name.
 - `AT+BM…` — additional `AT+BM` command variants are present; their exact
   suffixes were not itemized.
-- `FB200 Audio` — the Bluetooth friendly name string. This is the string used
-  for the visible proof patch: replacing it same-length (e.g. with
-  `FB200 Tools`) changes the advertised name without moving any code.
+- `FB200 Audio` — an embedded Bluetooth name string (`AT+BDFB200 Audio`). A
+  same-length replacement was included in the proof patch, but hardware
+  validation showed the advertised name is composed module-side (the BLE
+  advertisement truncates and the module exposes no GATT name characteristic),
+  so the visible proof used the firmware version string instead: `V1.0.1` →
+  `V9.9.9`, reported by `fb200 info` after flashing.
 
 No other power/control strings were catalogued.
 

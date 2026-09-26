@@ -16,8 +16,10 @@ Flashing is inherently risky. Read [`DISCLAIMER.md`](../DISCLAIMER.md) first.
 | Update / bootloader | `0x0483` | `0x5703` | Mooer update identity; speaks only the erase/write/exit commands |
 
 The application mode answers `fb200 info` and all `ir` commands. The update mode
-speaks only the bootloader commands; it is not expected to answer the `fn=0x00`
-version query. See [`HARDWARE.md`](HARDWARE.md) §1 for the USB topology evidence.
+also answers `fn=0x00`, but with the bootloader's own identity strings (observed
+`FB200` and `V1.0.0` on hardware) rather than the installed application version;
+use it only to detect that the device is present. See [`HARDWARE.md`](HARDWARE.md)
+§1 for the USB topology evidence.
 
 ## 2. Official update flow
 
@@ -164,6 +166,32 @@ If `0483:5703` appears, the pedal is in the bootloader and §5.2 recovers it. If
 - Do not let the host sleep, hibernate or suspend during a flash, and do not
   unplug the pedal until the tool reports the device back online.
 - A powered pedal with a stable USB connection is the safest configuration.
+
+## 7. Hardware validation results (2026-09-26)
+
+Performed on a FB200 running application `V1.0.0` / firmware `V1.0.1`, using
+this repository's `fw flash` client over USB-A to USB-C.
+
+| Check | Image SHA-256 | Result |
+|-------|---------------|--------|
+| Stock image round-trip | `dfe409dc…6947` | PASS — erase, 6,810 write frames, exit; device re-enumerated as `FB200 V1.0.1` and answered `fb200 info` |
+| Proof patch (`FB200 Audio` → `FB200 Tools`, `V1.0.1` → `V9.9.9`) | `607c790e…a488` | PASS — same 6,810 frames; `fb200 info` then reported `Firmware version: V9.9.9` |
+| Revert to stock | `dfe409dc…6947` | PASS — re-flashed the stock image; `fb200 info` reported `V1.0.1` again |
+| Hardware smoke tests (`pytest -m hardware`) | — | PASS — 2 tests (versions readable, 9 IR slots) |
+| Interrupted-flash recovery (`--no-jump`) | — | PASS — exercised during validation; with the fixed timeout, the retry completed the write without re-sending the jump |
+| Bluetooth advertised-name change | — | INCONCLUSIVE — the module advertises a module-side name (BLE advert truncated to `FB200MY FB200`, no GATT name characteristic), so the host could not confirm the `FB200 Tools` change; the version string is the authoritative proof |
+
+Anomalies observed:
+
+- The first proof-patch attempt failed with `erase command not acknowledged (no
+  reply)`: the erase acknowledgement measured **~11.5 s** on hardware, beyond the
+  original 10 s read timeout. The device stayed safely in the bootloader, the
+  `--no-jump` retry was attempted (also timed out at 10 s), and the flash
+  completed once the client waited longer. Fixed in `97231ef` (erase now has its
+  own 60 s timeout; page writes keep 10 s). The recovery procedure in §5.2
+  behaved exactly as documented.
+- The update-mode `fn=0x00` reply contains the bootloader's own strings
+  (`FB200`, `V1.0.0`), not the application version (see §1).
 
 ## References
 

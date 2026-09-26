@@ -88,13 +88,24 @@ findings, not copied.
 - Firmware static analysis results (vector table, version strings, Bluetooth
   name, model-table counts).
 
-**Not yet verified (Task 20, hardware validation):**
+**Verified on hardware (2026-09-26):**
 
-- Actually flashing a stock image and a patched image over USB, including
-  post-flash verification on real hardware.
+- Flashing a stock image over USB end-to-end (erase, 6,810 write frames, exit,
+  re-enumeration) and the `--no-jump` recovery path.
+- The proof patch: `V1.0.1` → `V9.9.9` written and observed via `fb200 info`,
+  then reverted by re-flashing the stock image.
+- Hardware smoke tests (`pytest -m hardware`): versions readable, 9 IR slots.
+
+**Not yet verified:**
+
 - The power-on footswitch recovery combos (see
   [`UPDATE_AND_RECOVERY.md`](UPDATE_AND_RECOVERY.md) §5.3).
 - Whether the bootloader performs any image integrity check.
+- Whether patching `AT+BDFB200 Audio` changes the advertised Bluetooth name. On
+  the tested unit the name is composed module-side: the BLE advertisement is
+  truncated (`FB200MY FB200`) and no GATT name characteristic is exposed, so the
+  `FB200 Tools` change could not be confirmed (nor refuted) from a host. The
+  version-string patch is the authoritative proof.
 
 ## 5. Open questions
 
@@ -105,9 +116,12 @@ findings, not copied.
    and 1024 `float32` samples; the user manual says "512 points, 24-bit". The
    best resampling strategy for imported IRs is unresolved (see
    [`PROTOCOL.md`](PROTOCOL.md) §6 and [`FIRMWARE_ANALYSIS.md`](FIRMWARE_ANALYSIS.md) §5).
-3. **Bluetooth name and bonded hosts.** Whether changing the Bluetooth
-   friendly name (the `FB200 Audio` → `FB200 Tools` proof patch) breaks
-   existing pairings on already-bonded hosts, or requires re-pairing.
+3. **Bluetooth advertised name.** The name is composed module-side: the BLE
+   advertisement is truncated (`FB200MY FB200`) and exposes no GATT name
+   characteristic, so a same-length patch of the embedded `AT+BDFB200 Audio`
+   string could not be confirmed from a host. Where the module persists its
+   name, and whether bondings must be re-created after a name change, remain
+   open; use the firmware version string as the proof signal.
 
 ## 6. Timeline
 
@@ -121,6 +135,7 @@ findings, not copied.
 | 09-25, 20:56–21:18 | v0.3: flash-plan builder, `FirmwareUpdater`, `fw flash` CLI |
 | 09-26, 03:02 | `fw flash` hardening: transport closure, target identification, `--yes` path coverage |
 | 09-26 | This document set: update/recovery, patching and research notes |
+| 09-26 | Hardware validation: stock round-trip, proof patch (`V1.0.1` → `V9.9.9` observed via `fb200 info`), stock revert, hardware smoke tests. Found and fixed the erase-ack timeout (measured ~11.5 s; now 60 s) |
 
 ## References
 

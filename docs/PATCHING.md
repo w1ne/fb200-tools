@@ -21,18 +21,26 @@ the replaced bytes (see [`FIRMWARE_FORMAT.md`](FIRMWARE_FORMAT.md) §8).
 
 ## 2. The proof patch
 
-The visible proof patch is the Bluetooth friendly name:
+The proof patch makes two same-length replacements in block 0:
 
-| In the image | Patched to |
-|--------------|------------|
-| `FB200 Audio` | `FB200 Tools` |
+| In the image | Patched to | Bytes changed | Hardware-verified by |
+|--------------|------------|---------------|----------------------|
+| `FB200 Audio` | `FB200 Tools` | 5 | Bluetooth name: **inconclusive** (see below) |
+| `V1.0.1` | `V9.9.9` | 3 | `fb200 info` reporting `Firmware version: V9.9.9` |
 
-Both strings are exactly **11 bytes** of printable ASCII.
-[`FIRMWARE_ANALYSIS.md`](FIRMWARE_ANALYSIS.md) §1.3 documents `FB200 Audio` as
-the Bluetooth friendly name embedded in block 0 (used with the
-`AT+BD%-15.15s` name-setting template), but does not state an occurrence count.
-Do not assume one: the count is whatever `fw inspect --strings` / `fw
-patch-string` reports for your image.
+All strings are printable ASCII of identical length, and `V1.0.1` occurs exactly
+once in the stock FB200 v1.0.1 image, so the version replacement is deterministic
+and readable over USB without any Bluetooth tooling. The pair was flashed and
+observed on hardware on 2026-09-26: `fb200 info` reported `V9.9.9` after the
+flash, and re-flashing the stock image restored `V1.0.1` (see
+[`UPDATE_AND_RECOVERY.md`](UPDATE_AND_RECOVERY.md) §7).
+
+**Bluetooth name caveat.** `FB200 Audio` is embedded in block 0 as the module
+command `AT+BDFB200 Audio` (`AT+BD%-15.15s` is the formatting template). On the
+tested unit the advertised name is composed module-side — the BLE advertisement
+is truncated (`FB200MY FB200`) and the module exposes no GATT name
+characteristic — so a host could not confirm the `FB200 Tools` change. Patch it
+if you like, but verify a patched image with the version string instead.
 
 ## 3. CLI walkthrough
 
@@ -49,6 +57,9 @@ to `<file>.patched.mr` when `--output` is omitted):
 ```bash
 fb200 fw patch-string stock.mr \
   --find "FB200 Audio" --replace "FB200 Tools" \
+  --output patched.mr
+fb200 fw patch-string patched.mr \
+  --find "V1.0.1" --replace "V9.9.9" \
   --output patched.mr
 ```
 
@@ -76,6 +87,10 @@ fb200 fw extract-block patched.mr 0 patched-app.bin
 cmp -l app.bin patched-app.bin | head
 ```
 
+After flashing the patched image, verify on hardware: `fb200 info` must report
+`Firmware version: V9.9.9`. Re-flash the stock image to revert and confirm
+`V1.0.1` returns.
+
 Before flashing, confirm with `fb200 fw inspect patched.mr` that the product tag
 is `FB200` and the block count and write-frame total match the stock image; the
 `fw flash` dry run prints the plan (blocks, data bytes, write frames) but not the
@@ -86,6 +101,7 @@ product tag.
 | Block | Offset | Before | After | Length | Why safe |
 |-------|--------|--------|-------|--------|----------|
 | 0 (application payload) | printed by `fw inspect --strings`; file offset = payload offset + 640 | `FB200 Audio` | `FB200 Tools` | 11 bytes | Same length; printable ASCII to printable ASCII; inside an opaque string payload, not a code pointer, header field or tag field |
+| 0 (application payload) | printed by `fw inspect --strings`; file offset = payload offset + 640 | `V1.0.1` | `V9.9.9` | 6 bytes | Same length; unique in the stock v1.0.1 image; makes the patch verifiable via `fb200 info` after flashing |
 
 ## 5. Revert
 
