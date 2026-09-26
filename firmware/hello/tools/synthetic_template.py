@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+if not (REPO_ROOT / "src" / "fb200").is_dir():
+    raise SystemExit("cannot locate fb200 package next to this script")
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from fb200.firmware import MrBlock, MrBlockTag, MrFile, MrHeader
@@ -34,11 +36,10 @@ def build() -> MrFile:
         MrBlock(
             MrBlockTag(
                 start_addr=641,
-                stop_addr=641 + APP_SIZE,
-                block_size=APP_SIZE,
+                stop_addr=641 + APP_SIZE - 1,
                 send_cmd=0x04,
                 rec_cmd=0x05,
-                timeout=10000,
+                timeout=50000,
                 start_page=0x40,
                 rom_id=0,
             ),
@@ -47,11 +48,10 @@ def build() -> MrFile:
         MrBlock(
             MrBlockTag(
                 start_addr=641 + APP_SIZE + 512,
-                stop_addr=641 + APP_SIZE + 512 + MODELS_SIZE,
-                block_size=MODELS_SIZE,
+                stop_addr=641 + APP_SIZE + 512 + MODELS_SIZE - 1,
                 send_cmd=0x06,
                 rec_cmd=0x07,
-                timeout=10000,
+                timeout=50000,
                 start_page=0x00,
                 rom_id=0,
             ),
@@ -64,13 +64,8 @@ def build() -> MrFile:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("-o", "--output", required=True)
-    parser.add_argument("--app-size-only", action="store_true",
-                        help="emit only block 0 (smaller file, for pack tests)")
     args = parser.parse_args(argv)
     mr = build()
-    if args.app_size_only:
-        mr = MrFile(mr.header, mr.blocks[:1])
-        mr.header.update_block = 1
     Path(args.output).write_bytes(mr.to_bytes())
     return 0
 

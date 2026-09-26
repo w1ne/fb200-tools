@@ -13,7 +13,6 @@ def test_generates_stock_shaped_template(tmp_path):
     subprocess.run(
         [sys.executable, str(SCRIPT), "-o", str(out)],
         check=True,
-        cwd=ROOT,
     )
     mr = MrFile.from_path(out)
     assert mr.header.product_tag == "FB200"
@@ -25,3 +24,14 @@ def test_generates_stock_shaped_template(tmp_path):
     assert mr.blocks[0].tag.send_cmd == 0x04
     assert mr.blocks[0].tag.start_page == 0x40
     assert set(mr.blocks[0].data) == {0}
+    assert len(mr.blocks) == 2
+    assert len(mr.blocks[1].data) == 3_286_016
+    assert set(mr.blocks[1].data) == {0}
+    assert mr.blocks[0].tag.start_addr == 641
+    assert mr.blocks[0].tag.stop_addr == 641 + 200_704 - 1
+    assert mr.blocks[1].tag.start_addr == 641 + 200_704 + 512
+    assert mr.blocks[1].tag.stop_addr == 641 + 200_704 + 512 + 3_286_016 - 1
+    assert mr.header.version == 0
+    assert mr.header.timeout == 10_000
+    assert mr.blocks[0].tag.timeout == 50_000
+    assert out.stat().st_size == 128 + 512 + 200_704 + 512 + 3_286_016
