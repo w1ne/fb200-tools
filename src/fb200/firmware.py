@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import struct
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from fb200.errors import FirmwareError
@@ -157,18 +157,8 @@ def pack_app_image(template: MrFile, app: bytes) -> MrFile:
         raise FirmwareError(
             f"application binary exceeds template block 0 ({len(app)} > {limit} bytes)"
         )
-    header = MrHeader(
-        tag=template.header.tag,
-        product_tag=template.header.product_tag,
-        send_cmd=template.header.send_cmd,
-        rec_cmd=template.header.rec_cmd,
-        timeout=template.header.timeout,
-        update_block=1,
-        update_addr=template.header.update_addr,
-        version=template.header.version,
-        raw=template.header.raw,
-    )
-    block = MrBlock(template.blocks[0].tag, app.ljust(limit, b"\xff"))
+    header = replace(template.header, update_block=1)
+    block = MrBlock(replace(template.blocks[0].tag), app.ljust(limit, b"\xff"))
     return MrFile(header, [block])
 
 
