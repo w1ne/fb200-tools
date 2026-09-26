@@ -1,0 +1,3 @@
+TINYUSB_TAG=0.21.0
+TINYUSB_URL=https://github.com/hathach/tinyusb/archive/refs/tags/0.21.0.tar.gz
+TINYUSB_SHA256=b7cdf35c5ccefb0f61640aff94a732ab4ebcb21498201e4a161545891b23ba01

@@ -42,6 +42,12 @@ def test_layout_symbols():
     assert int(syms["__itcm_end__"], 16) <= 0x20000
     assert int(syms["__data_end__"], 16) <= int(syms["__bss_start__"], 16)
     assert int(syms["__bss_end__"], 16) <= int(syms["_estack"], 16)
-    assert int(syms["app_main"], 16) < 0x40000
+    assert int(syms["app_main"], 16) < 0x20000
     reset = int(syms["reset_stub"], 16)
     assert 0x60010000 <= reset < 0x60010000 + len(BIN.read_bytes())
+    out = subprocess.run(
+        ["arm-none-eabi-nm", str(FW / "build" / "fb200-hello.elf")],
+        check=True, capture_output=True, text=True,
+    ).stdout
+    # TinyUSB 0.21.0 made tusb_init() a macro around tusb_rhport_init().
+    assert "tusb_rhport_init" in out
