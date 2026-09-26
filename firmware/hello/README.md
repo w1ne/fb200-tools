@@ -103,8 +103,10 @@ the `0xC1` jump that stock tooling uses to enter update mode is unavailable
 while hello runs. `fb200 fw flash fb200-stock.mr --yes` will fail with
 `FB200 not found` for the same reason. To return to stock:
 
-1. Put the pedal into update mode using a power-on footswitch combination.
-   These combinations are not yet verified on hardware; see
+1. Power the pedal off, hold footswitches **A + D**, power it on while holding
+   them, keep holding for about 3 seconds, then release. The pedal enumerates
+   as `0483:5703` (update mode). This combination was verified on hardware on
+   2026-09-26; see
    [`docs/UPDATE_AND_RECOVERY.md`](../../docs/UPDATE_AND_RECOVERY.md) §5.3.
 2. Flash the stock image without the jump:
 
@@ -112,10 +114,8 @@ while hello runs. `fb200 fw flash fb200-stock.mr --yes` will fail with
 fb200 fw flash fb200-stock.mr --yes --no-jump
 ```
 
-**Do not flash `fb200-hello` until a working update-mode entry has been
-confirmed on your unit**: with no HID interface, update mode is the only route
-back to the stock firmware. Keep the stock image locally and never commit or
-redistribute it. The full recovery procedure is in
+Keep the stock image locally and never commit or redistribute it. The full
+recovery procedure is in
 [`docs/UPDATE_AND_RECOVERY.md`](../../docs/UPDATE_AND_RECOVERY.md).
 
 ## How it boots

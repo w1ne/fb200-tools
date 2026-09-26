@@ -127,16 +127,23 @@ combo is needed. If it does **not** enumerate at all (`34DB:800F` or
 power-on footswitch combination while plugging in USB and check for `0483:5703`
 enumeration using the commands in §5.4.
 
-| Power-on footswitch combo | Expected if it forces update mode | Result |
-|---------------------------|-----------------------------------|--------|
-| A + B | `0483:5703` enumerates | TBD — not tested (open question; see [`RESEARCH.md`](RESEARCH.md) §5) |
-| B + C | `0483:5703` enumerates | TBD — not tested (open question; see [`RESEARCH.md`](RESEARCH.md) §5) |
-| C + D | `0483:5703` enumerates | TBD — not tested (open question; see [`RESEARCH.md`](RESEARCH.md) §5) |
-| A + D | `0483:5703` enumerates | TBD — not tested (open question; see [`RESEARCH.md`](RESEARCH.md) §5) |
-| all four (A + B + C + D) | `0483:5703` enumerates | TBD — not tested (open question; see [`RESEARCH.md`](RESEARCH.md) §5) |
+| Power-on footswitch combo | Expected if it forces update mode | Result (2026-09-26) |
+|---------------------------|-----------------------------------|---------------------|
+| A + B | `0483:5703` enumerates | Tested — boots normally (`34DB:800F`) |
+| B + C | `0483:5703` enumerates | Tested — boots normally (`34DB:800F`) |
+| C + D | `0483:5703` enumerates | Tested — boots normally (`34DB:800F`) |
+| A + D | `0483:5703` enumerates | **Works — enters update mode** |
+| all four (A + B + C + D) | `0483:5703` enumerates | Not tested (A+D already confirmed) |
 
-The combos are non-destructive: power-cycle the pedal to leave any of these
-attempts. Results will be recorded here once verified on hardware.
+**Verified procedure to force update mode:** power the pedal off, hold
+footswitches **A + D**, power it on while holding them, keep holding for about
+3 seconds, then release. The pedal enumerates as `0483:5703` and stays in the
+bootloader until it is power-cycled or reflashed with the exit command.
+
+The combos are non-destructive: power-cycle the pedal to leave update mode.
+This hardware path was validated end-to-end on 2026-09-26: with the pedal in
+combo-entered update mode, `fb200 fw flash fb200-stock.mr --yes --no-jump`
+re-flashed the stock image and the pedal returned as `FB200 V1.0.1` (see §7).
 
 ### 5.4 Host-side enumeration checks
 
@@ -191,6 +198,23 @@ Anomalies observed:
   behaved exactly as documented.
 - The update-mode `fn=0x00` reply contains the bootloader's own strings
   (`FB200`, `V1.0.0`), not the application version (see §1).
+
+### Hardware recovery-path validation (2026-09-26)
+
+Motivated by `fb200-hello` (which exposes no HID interface, so the `0xC1` jump
+is unavailable while it runs), the power-on footswitch combinations were tested
+against stock `V1.0.1`, and the full recovery flow was exercised end-to-end:
+
+| Step | Result |
+|------|--------|
+| A+B / B+C / C+D at power-on | Booted normally (`34DB:800F`) — no effect |
+| **A+D at power-on** | **Entered update mode (`0483:5703`)** |
+| Stock reflash from combo-entered update mode (`fb200 fw flash fb200-stock.mr --yes --no-jump`) | PASS — erase, 6,810 write frames, exit; `fb200 info` reported `FB200 V1.0.1` afterwards |
+
+Procedure: power off, hold **A + D**, power on while holding, keep holding for
+about 3 seconds, release. This is now the documented manual route into the
+bootloader when the application does not provide the `0xC1` command (e.g.
+custom firmware), and it makes flashing `fb200-hello` recoverable.
 
 ## References
 

@@ -95,11 +95,13 @@ findings, not copied.
 - The proof patch: `V1.0.1` → `V9.9.9` written and observed via `fb200 info`,
   then reverted by re-flashing the stock image.
 - Hardware smoke tests (`pytest -m hardware`): versions readable, 9 IR slots.
+- The power-on footswitch recovery combo: **A + D** enters update mode
+  (`0483:5703`); A+B, B+C and C+D boot normally. The full recovery flow
+  (combo → `--no-jump` stock reflash → `FB200 V1.0.1`) was validated on
+  hardware (see [`UPDATE_AND_RECOVERY.md`](UPDATE_AND_RECOVERY.md) §5.3, §7).
 
 **Not yet verified:**
 
-- The power-on footswitch recovery combos (see
-  [`UPDATE_AND_RECOVERY.md`](UPDATE_AND_RECOVERY.md) §5.3).
 - Whether the bootloader performs any image integrity check.
 - Whether patching `AT+BDFB200 Audio` changes the advertised Bluetooth name. On
   the tested unit the name is composed module-side: the BLE advertisement is
@@ -109,14 +111,11 @@ findings, not copied.
 
 ## 5. Open questions
 
-1. **Footswitch recovery combos.** Which power-on footswitch combination (if
-   any) forces the bootloader (`0483:5703`); see the results table in
-   [`UPDATE_AND_RECOVERY.md`](UPDATE_AND_RECOVERY.md) §5.3.
-2. **IR resampling best practice.** The official renderer decodes to 44.1 kHz
+1. **IR resampling best practice.** The official renderer decodes to 44.1 kHz
    and 1024 `float32` samples; the user manual says "512 points, 24-bit". The
    best resampling strategy for imported IRs is unresolved (see
    [`PROTOCOL.md`](PROTOCOL.md) §6 and [`FIRMWARE_ANALYSIS.md`](FIRMWARE_ANALYSIS.md) §5).
-3. **Bluetooth advertised name.** The name is composed module-side: the BLE
+2. **Bluetooth advertised name.** The name is composed module-side: the BLE
    advertisement is truncated (`FB200MY FB200`) and exposes no GATT name
    characteristic, so a same-length patch of the embedded `AT+BDFB200 Audio`
    string could not be confirmed from a host. Where the module persists its
@@ -137,6 +136,7 @@ findings, not copied.
 | 09-26 | This document set: update/recovery, patching and research notes |
 | 09-26 | Hardware validation: stock round-trip, proof patch (`V1.0.1` → `V9.9.9` observed via `fb200 info`), stock revert, hardware smoke tests. Found and fixed the erase-ack timeout (measured ~11.5 s; now 60 s) |
 | 09-26 | Hardware ID pass: main SoC identified as NXP i.MX RT10xx (Cortex-M7) with a copy-to-ITCM startup; custom-firmware feasibility assessed in [`HARDWARE.md`](HARDWARE.md) §2–§3 |
+| 09-26 | Recovery combo discovered and validated: **A + D** at power-on enters update mode; full combo → `--no-jump` stock reflash flow proven end-to-end |
 
 ## References
 
