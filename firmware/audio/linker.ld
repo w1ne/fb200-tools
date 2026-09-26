@@ -1,0 +1,43 @@
+/* fb200-audio: vendor image format.
+ *   block0 0x000..0x400   vector table (copied to ITCM 0x0 by stage2)
+ *   block0 0x400..0x7D4   vendor boot region (supplied by the packer)
+ *   block0 0x7D4..0x1E39C ITCM payload (entry 0 memcpy -> ITCM 0x400)
+ *   entry 4 memset range 0x20018B44..0x2004E3E8 = our .bss
+ * Entry point: ITCM 0x4D6 (stage2.S). See docs/FIRMWARE_BRINGUP.md. */
+
+ENTRY(stage2)
+
+MEMORY
+{
+  ITCM   (rwx) : ORIGIN = 0x00000000, LENGTH = 0x20000
+  FLASH  (rx)  : ORIGIN = 0x60010000, LENGTH = 0x31000
+  DTCM   (rw)  : ORIGIN = 0x20018B44, LENGTH = 0x358A4
+}
+
+SECTIONS
+{
+  .vectors 0x0 : { KEEP(*(.vectors)) } > ITCM AT> FLASH
+
+  .blob 0x400 : AT(0x600107d4) {
+    . += 0xd6;
+    KEEP(*(.stage2))
+    *(.text*)
+    *(.rodata*)
+    *(.data*)
+    . = ALIGN(4);
+    __blob_end__ = .;
+  } > ITCM
+
+  .bss (NOLOAD) : {
+    . = ALIGN(4);
+    __bss_start__ = .;
+    *(.bss*)
+    *(COMMON)
+    . = ALIGN(4);
+    __bss_end__ = .;
+  } > DTCM
+
+  _estack = 0x20058000;
+
+  /DISCARD/ : { *(.ARM.exidx*) *(.ARM.extab*) *(.comment) }
+}

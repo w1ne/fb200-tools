@@ -8,3 +8,6 @@ dist/
 build/
 *.mr
 !tests/fixtures/*.mr
+
+# fetched firmware dependencies
+**/.deps/
