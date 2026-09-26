@@ -2,7 +2,7 @@
 #include "usb_descriptors.h"
 #include "board_config.h"
 
-static const tusb_desc_device_t desc_device = {
+static const tusb_desc_device_t desc_device TU_ATTR_ALIGNED(4) = {
     .bLength = sizeof(tusb_desc_device_t),
     .bDescriptorType = TUSB_DESC_DEVICE,
     .bcdUSB = 0x0200,
@@ -24,7 +24,7 @@ static const tusb_desc_device_t desc_device = {
 #define EPNUM_CDC_OUT   0x02
 #define EPNUM_CDC_IN    0x82
 
-static const uint8_t desc_configuration[] = {
+static const uint8_t desc_configuration[] TU_ATTR_ALIGNED(4) = {
     TUD_CONFIG_DESCRIPTOR(1, 2, 0, CONFIG_TOTAL_LEN, 0x00, 100),
     TUD_CDC_DESCRIPTOR(0, STRID_CDC, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, 64),
 };

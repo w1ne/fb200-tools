@@ -56,3 +56,16 @@ def test_layout_symbols():
         check=True, capture_output=True, text=True,
     ).stdout.strip()
     assert undef == ""
+
+
+def test_usb_descriptors_present():
+    data = build()
+    # device descriptor: bLength=0x12, bDescriptorType=1, bcdUSB=0x0200,
+    # class/subclass/protocol 0xEF/0x02/0x01, VID 0xCAFE, PID 0x4001
+    device_prefix = b"\x12\x01\x00\x02\xef\x02\x01\x40\xfe\xca\x01\x40"
+    assert device_prefix in data
+    # configuration descriptor: bLength=9, type=2, wTotalLength=75 (0x4b),
+    # 2 interfaces, IAD present
+    config_prefix = b"\x09\x02\x4b\x00\x02\x01\x00\x80\x32"
+    assert config_prefix in data
+    assert b"FB200 hello - fb200-tools custom firmware\r\n" in data
