@@ -10,8 +10,8 @@ FW = ROOT / "firmware" / "hello"
 BIN = FW / "build" / "fb200-hello.bin"
 
 pytestmark = pytest.mark.skipif(
-    shutil.which("arm-none-eabi-gcc") is None or shutil.which("make") is None,
-    reason="arm-none-eabi toolchain not installed",
+    any(shutil.which(tool) is None for tool in ("arm-none-eabi-gcc", "make", "curl", "git", "python3")),
+    reason="arm-none-eabi toolchain or network tooling not installed",
 )
 
 
@@ -51,3 +51,8 @@ def test_layout_symbols():
     ).stdout
     # TinyUSB 0.21.0 made tusb_init() a macro around tusb_rhport_init().
     assert "tusb_rhport_init" in out
+    undef = subprocess.run(
+        ["arm-none-eabi-nm", "-u", str(FW / "build" / "fb200-hello.elf")],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    assert undef == ""

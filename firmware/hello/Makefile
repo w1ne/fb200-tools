@@ -68,6 +68,10 @@ OBJS  := $(patsubst %,$(TARGET)/%.o,$(SRC_C) $(SRC_S))
 
 .PHONY: all build clean layout deps
 
+# Order-only: every object must wait for dependency fetching on a fresh tree,
+# but a re-fetch must not force recompilation.
+$(OBJS): | deps
+
 all: build
 
 build: deps $(TARGET).bin
@@ -86,7 +90,7 @@ $(TARGET)/%.S.o: %.S
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-layout: $(TARGET).elf
+layout: deps $(TARGET).elf
 	$(NM) $(TARGET).elf | grep -E '(_estack|__itcm_|__data_|__bss_|reset_stub|app_main)' | sort > build/layout.txt
 	cat build/layout.txt
 
@@ -95,7 +99,7 @@ clean:
 
 deps: $(TUSB_DIR)/src/tusb.c $(SDK_STAMP)
 
-$(TUSB_DIR)/src/tusb.c:
+$(TUSB_DIR)/src/tusb.c: tinyusb.lock
 	@mkdir -p .deps
 	curl -fsSL -o .deps/tinyusb.tar.gz "$(TINYUSB_URL)"
 	echo "$(TINYUSB_SHA256)  .deps/tinyusb.tar.gz" | shasum -a 256 -c - || \
@@ -103,6 +107,7 @@ $(TUSB_DIR)/src/tusb.c:
 	@rm -rf .deps/tinyusb .deps/tinyusb.tmp && mkdir -p .deps/tinyusb.tmp
 	tar -xzf .deps/tinyusb.tar.gz -C .deps/tinyusb.tmp --strip-components=1
 	mv .deps/tinyusb.tmp $(TUSB_DIR)
+	@touch $@   # tarball mtimes predate the lock; marker = fetch time
 
 # MCUXpresso SDK subset for the imxrt BSP, fetched at the commits pinned inside
 # the checksum-verified TinyUSB tarball. Only these three repos are needed.

@@ -3,6 +3,7 @@
  * memmove to exist. Byte loops; GCC is invoked with -fno-builtin so none of
  * these recursion-optimize into calls to themselves. */
 #include <stddef.h>
+#include <stdint.h>
 
 void *memcpy(void *dst, const void *src, size_t n)
 {
@@ -30,7 +31,7 @@ void *memmove(void *dst, const void *src, size_t n)
     unsigned char *d = dst;
     const unsigned char *s = src;
 
-    if (d < s) {
+    if ((uintptr_t)d < (uintptr_t)s) {
         while (n--) {
             *d++ = *s++;
         }
