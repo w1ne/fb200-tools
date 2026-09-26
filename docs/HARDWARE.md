@@ -171,7 +171,7 @@ area: a Nuvoton NAU88-series part marked `NAU88BL21` on the LPI2C bus next to
 the 24 MHz crystal. The SWD header (TCK/TMS/GND/VCC) and a second 4-wire
 header (RST/CLK/D1/MOSI) are visible as well.
 
-## 5. Open questions
+## 6. Open questions
 
 - Exact MCU part number within the i.MX RT10xx family and the external flash
   chip (size, vendor, QSPI/OSPI mode).
