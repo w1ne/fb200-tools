@@ -21,6 +21,8 @@ is documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
   `fw patch-string` for same-length patches.
 - Safe flash client: `fw flash` (dry-run by default, explicit `--yes`,
   `--no-jump` recovery).
+- `firmware/hello` — minimal custom firmware that boots and enumerates over USB
+  as a CDC-ACM device ([`firmware/hello/README.md`](firmware/hello/README.md)).
 - Mock transport so the full test suite runs without a pedal.
 - `fb200 probe` — raw frame research tool for protocol exploration.
 - Protocol documentation derived from the official app and verified on hardware.
@@ -32,6 +34,7 @@ is documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
 | v0.1 | Done | device info, IR list/import/delete/backup, docs |
 | v0.2 | Done | firmware container tooling: `fw inspect`, `fw extract-block`, `fw patch-string`, plus format/analysis docs |
 | v0.3 | Done | flashing (`fw flash`), recovery docs, stock round-trip and a hardware-verified proof patch (firmware version string) |
+| v0.4 (current) | In progress | app-only .mr packer (`fw pack`) and the fb200-hello custom firmware |
 
 ## Install
 
@@ -88,6 +91,7 @@ Firmware images and flashing:
 
 ```bash
 fb200 fw inspect stock.mr                     # container fields, blocks, pages
+fb200 fw pack --template stock.mr app.bin -o hello.mr   # app-only image
 fb200 fw patch-string stock.mr \
   --find "FB200 Audio" --replace "FB200 Tools" -o patched.mr
 fb200 fw flash patched.mr                     # dry run: plan only, nothing written
@@ -119,6 +123,8 @@ pedal temporarily or permanently unusable — use at your own risk. See
 - [`docs/RESEARCH.md`](docs/RESEARCH.md) — how the protocol and firmware format
   were reverse-engineered.
 - [`docs/HARDWARE.md`](docs/HARDWARE.md) — USB topology and observation commands.
+- [`firmware/hello/README.md`](firmware/hello/README.md) — custom firmware:
+  build, pack, flash, verification, and recovery.
 - [`DISCLAIMER.md`](DISCLAIMER.md) — risk and affiliation notice.
 
 ## Credits

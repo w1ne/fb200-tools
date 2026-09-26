@@ -71,7 +71,7 @@ firmware/hello/
   src/startup.c       # flash-resident reset stub + copy stage
   src/vectors.c       # 256-entry vector table (ITCM runtime copy)
   src/main.c          # TinyUSB CDC device + banner/echo
-  board/              # adapted TinyUSB MIMXRT10xx BSP (clock, MPU, FlexRAM)
+  board/              # board_config.h + README.md only (BSP note below)
   tools/
     synthetic_template.py  # builds a vendor-free FB200 template for CI
   README.md           # build instructions, pin, licensing notes, warnings
@@ -82,6 +82,13 @@ firmware/hello/
 git; `tinyusb.lock` (checked in) pins the exact release URL and SHA-256 so the
 build is reproducible offline once fetched. `make` fetches on first use;
 `make deps` only fetches.
+
+`board/` is not an adapted TinyUSB BSP. The BSP and SDK sources
+(`hw/bsp/imxrt`, reference board `mimxrt1060_evk`, ci_hs port, plus the
+MCUXpresso SDK driver subset they need) are compiled directly from the pinned
+`.deps/tinyusb` tree (TinyUSB 0.21.0), so there is exactly one copy of each
+file; only `board_config.h` (FB200 crystal, VID/PID, strings) and `README.md`
+live in `firmware/hello/board/`.
 
 ### 5.2 Firmware composition
 
