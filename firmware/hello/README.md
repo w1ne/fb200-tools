@@ -64,7 +64,7 @@ byte-for-byte. Never commit or redistribute the stock image. Run these from
 the repo root and prefix `fb200` with `.venv/bin/` outside an active venv:
 
 ```bash
-python3 firmware/hello/tools/pack_vendor_image.py fb200-stock.mr \
+python3 firmware/tools/pack_vendor_image.py fb200-stock.mr \
   firmware/hello/build/fb200-hello.vectors.bin \
   firmware/hello/build/fb200-hello.blob.bin \
   -o firmware/hello/build/fb200-hello.mr --app-only
@@ -164,7 +164,7 @@ firmware/hello/
   board/board_config.h  # FB200 facts: crystal 24 MHz, VID/PID, strings
   board/README.md       # BSP composition and licensing notes
   tools/synthetic_template.py  # vendor-free FB200 template for CI/pack tests
-  tools/pack_vendor_image.py   # assembles the flashable .mr from stock + build
+  (the shared packer lives in firmware/tools/)
 ```
 
 `board/` holds only configuration and notes: the BSP (`family.c`,

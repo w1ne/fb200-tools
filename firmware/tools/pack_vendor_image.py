@@ -25,7 +25,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 if not (REPO_ROOT / "src" / "fb200").is_dir():
     raise SystemExit("cannot locate fb200 package next to this script")
 sys.path.insert(0, str(REPO_ROOT / "src"))

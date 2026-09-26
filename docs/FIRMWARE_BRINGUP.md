@@ -62,7 +62,7 @@ How this was established:
 
 ## 3. Our image format
 
-`firmware/hello` builds two artifacts and `tools/pack_vendor_image.py`
+`firmware/hello` builds two artifacts and `firmware/tools/pack_vendor_image.py`
 assembles block 0 from the stock template:
 
 ```

@@ -50,7 +50,7 @@ jobs:
           mr.blocks[0].data = bytes(b)
           open(p, "wb").write(mr.to_bytes())
           PY
-          python firmware/hello/tools/pack_vendor_image.py \
+          python firmware/tools/pack_vendor_image.py \
             firmware/hello/build/synthetic-template.mr \
             firmware/hello/build/fb200-hello.vectors.bin \
             firmware/hello/build/fb200-hello.blob.bin \

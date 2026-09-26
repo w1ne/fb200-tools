@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "firmware" / "hello" / "tools" / "pack_vendor_image.py"
+SCRIPT = ROOT / "firmware" / "tools" / "pack_vendor_image.py"
 GENERATOR = ROOT / "firmware" / "hello" / "tools" / "synthetic_template.py"
 
 sys.path.insert(0, str(ROOT / "src"))
