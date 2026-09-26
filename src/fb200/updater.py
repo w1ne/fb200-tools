@@ -84,11 +84,13 @@ class FirmwareUpdater:
 
     def flash(self, mr: MrFile, dry_run: bool = True,
               progress: Callable[[int, int], None] | None = None,
-              timeout_ms: int = 10000) -> FlashResult:
+              timeout_ms: int = 10000, erase_timeout_ms: int = 60000) -> FlashResult:
         """Erase, write and exit the bootloader.
 
-        On failure the device is left in the bootloader; the call is safely
-        re-runnable (use `--no-jump` to skip entering the bootloader again).
+        The erase acknowledgement can take well over ten seconds on hardware
+        (measured ~11.5 s), so it uses its own, longer timeout. On failure the
+        device is left in the bootloader; the call is safely re-runnable (use
+        `--no-jump` to skip entering the bootloader again).
         """
         plan = build_flash_plan(mr)
         if dry_run:
@@ -96,7 +98,7 @@ class FirmwareUpdater:
         while self.reader.next_packet() is not None:
             pass
         write_frame(self.transport, plan.erase_frame)
-        packet = self.reader.read_packet(self.transport, timeout_ms)
+        packet = self.reader.read_packet(self.transport, erase_timeout_ms)
         if not packet:
             raise CommunicationError("erase command not acknowledged (no reply)")
         if packet[0] != plan.erase_reply:

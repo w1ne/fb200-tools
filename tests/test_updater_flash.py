@@ -58,12 +58,16 @@ def test_flash_reports_progress():
 def test_flash_raises_on_wrong_erase_ack():
     transport = MockTransport(reports=[make_report(pack_frame(0x99, b"\x01"))])
     with pytest.raises(CommunicationError, match="erase"):
-        FirmwareUpdater(transport).flash(make_mr(), dry_run=False, timeout_ms=50)
+        FirmwareUpdater(transport).flash(
+            make_mr(), dry_run=False, timeout_ms=50, erase_timeout_ms=50
+        )
 
 
 def test_flash_raises_on_missing_erase_ack():
     with pytest.raises(CommunicationError, match="erase"):
-        FirmwareUpdater(MockTransport()).flash(make_mr(), dry_run=False, timeout_ms=50)
+        FirmwareUpdater(MockTransport()).flash(
+            make_mr(), dry_run=False, timeout_ms=50, erase_timeout_ms=50
+        )
 
 
 def test_flash_does_not_send_exit_after_write_failure():
@@ -72,6 +76,51 @@ def test_flash_does_not_send_exit_after_write_failure():
     with pytest.raises(CommunicationError):
         FirmwareUpdater(transport).flash(make_mr(), dry_run=False, timeout_ms=50)
     assert make_report(pack_frame(0xFF)) not in transport.written
+
+
+def test_flash_uses_longer_erase_timeout():
+    class SlowEraseTransport(MockTransport):
+        slow = True
+
+        def read_report(self, timeout_ms=500):
+            if self.slow:
+                self.slow = False
+                if timeout_ms >= 200:
+                    return super().read_report(timeout_ms)
+                return None
+            return super().read_report(timeout_ms)
+
+    reports = [
+        make_report(pack_frame(0x03, b"\x01")),
+        make_report(pack_frame(0x05, b"\x01")),
+        make_report(pack_frame(0x05, b"\x01")),
+    ]
+    result = FirmwareUpdater(SlowEraseTransport(reports=reports)).flash(
+        make_mr(), dry_run=False, timeout_ms=50, erase_timeout_ms=300
+    )
+    assert result.write_frames == 2
+
+
+def test_flash_routes_timeouts(monkeypatch):
+    from fb200.protocol import FrameReader
+
+    seen = []
+    original = FrameReader.read_packet
+
+    def spy(self, transport, timeout_ms=1500):
+        seen.append(timeout_ms)
+        return original(self, transport, timeout_ms)
+
+    monkeypatch.setattr(FrameReader, "read_packet", spy)
+    reports = [
+        make_report(pack_frame(0x03, b"\x01")),
+        make_report(pack_frame(0x05, b"\x01")),
+        make_report(pack_frame(0x05, b"\x01")),
+    ]
+    FirmwareUpdater(MockTransport(reports=reports)).flash(
+        make_mr(), dry_run=False, timeout_ms=111, erase_timeout_ms=222
+    )
+    assert seen == [222, 111, 111]
 
 
 def test_wait_for_device_returns_none_after_timeout(monkeypatch):
