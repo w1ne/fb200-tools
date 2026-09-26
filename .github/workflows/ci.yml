@@ -34,15 +34,33 @@ jobs:
       - name: Build firmware
         working-directory: firmware/hello
         run: make deps build
-      - name: Generate synthetic template
-        run: python firmware/hello/tools/synthetic_template.py -o firmware/hello/build/synthetic-template.mr
-      - name: Pack flashable image
-        run: fb200 fw pack --template firmware/hello/build/synthetic-template.mr firmware/hello/build/fb200-hello.bin -o firmware/hello/build/fb200-hello.mr
+      - name: Pack with a synthetic stock-like template
+        run: |
+          python firmware/hello/tools/synthetic_template.py -o firmware/hello/build/synthetic-template.mr
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, "src")
+          from fb200.firmware import MrFile
+          p = "firmware/hello/build/synthetic-template.mr"
+          mr = MrFile.from_path(p)
+          b = bytearray(mr.blocks[0].data)
+          b[0x4D8:0x4DA] = b"\x72\xb6"
+          b[0x434:0x43C] = bytes.fromhex("50030000a0030000")
+          b[0x784:0x794] = bytes.fromhex("d407016000040000c8db0100a0040160")
+          mr.blocks[0].data = bytes(b)
+          open(p, "wb").write(mr.to_bytes())
+          PY
+          python firmware/hello/tools/pack_vendor_image.py \
+            firmware/hello/build/synthetic-template.mr \
+            firmware/hello/build/fb200-hello.vectors.bin \
+            firmware/hello/build/fb200-hello.blob.bin \
+            -o firmware/hello/build/fb200-hello.mr --app-only
       - name: Inspect packed image
         run: fb200 fw inspect firmware/hello/build/fb200-hello.mr
       - uses: actions/upload-artifact@v4
         with:
           name: fb200-hello
           path: |
-            firmware/hello/build/fb200-hello.bin
+            firmware/hello/build/fb200-hello.vectors.bin
+            firmware/hello/build/fb200-hello.blob.bin
             firmware/hello/build/fb200-hello.mr
