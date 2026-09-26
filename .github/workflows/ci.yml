@@ -64,3 +64,48 @@ jobs:
             firmware/hello/build/fb200-hello.vectors.bin
             firmware/hello/build/fb200-hello.blob.bin
             firmware/hello/build/fb200-hello.mr
+
+  firmware-audio:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi make curl
+      - name: Install package
+        run: pip install -e .
+      - name: Build firmware
+        working-directory: firmware/audio
+        run: make deps build
+      - name: Pack with a synthetic stock-like template
+        run: |
+          python firmware/hello/tools/synthetic_template.py -o firmware/audio/build/synthetic-template.mr
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, "src")
+          from fb200.firmware import MrFile
+          p = "firmware/audio/build/synthetic-template.mr"
+          mr = MrFile.from_path(p)
+          b = bytearray(mr.blocks[0].data)
+          b[0x4D8:0x4DA] = b"\x72\xb6"
+          b[0x434:0x43C] = bytes.fromhex("50030000a0030000")
+          b[0x784:0x794] = bytes.fromhex("d407016000040000c8db0100a0040160")
+          mr.blocks[0].data = bytes(b)
+          open(p, "wb").write(mr.to_bytes())
+          PY
+          python firmware/tools/pack_vendor_image.py \
+            firmware/audio/build/synthetic-template.mr \
+            firmware/audio/build/fb200-audio.vectors.bin \
+            firmware/audio/build/fb200-audio.blob.bin \
+            -o firmware/audio/build/fb200-audio.mr --app-only
+      - name: Inspect packed image
+        run: fb200 fw inspect firmware/audio/build/fb200-audio.mr
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fb200-audio
+          path: |
+            firmware/audio/build/fb200-audio.vectors.bin
+            firmware/audio/build/fb200-audio.blob.bin
+            firmware/audio/build/fb200-audio.mr
