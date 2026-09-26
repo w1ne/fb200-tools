@@ -52,10 +52,12 @@ Artifacts land in `build/`:
 The packer needs a template image that supplies the container header and page
 math. For a real flash, use your stock `FB200.mr`; the checked-in synthetic
 generator builds a vendor-free stand-in with the same fields and is what CI
-uses (the template itself is never flashed — only the packed output is):
+uses (the template itself is never flashed — only the packed output is). Run
+these from the repo root and prefix `fb200` with `.venv/bin/` outside an
+active venv:
 
 ```bash
-python firmware/hello/tools/synthetic_template.py -o firmware/hello/build/synthetic-template.mr
+python3 firmware/hello/tools/synthetic_template.py -o firmware/hello/build/synthetic-template.mr
 fb200 fw pack --template firmware/hello/build/synthetic-template.mr firmware/hello/build/fb200-hello.bin -o firmware/hello/build/fb200-hello.mr
 fb200 fw flash firmware/hello/build/fb200-hello.mr            # dry run
 fb200 fw flash firmware/hello/build/fb200-hello.mr --yes      # write; recover before unplugging
@@ -66,13 +68,19 @@ is app-only: it erases and writes the 392 application pages (200,704 B) and
 never touches the model library. Never unplug the pedal until the tool reports
 it back online.
 
+Expected outcome: `fb200 fw flash fb200-hello.mr --yes` writes the image
+successfully but then exits with code `3` ("did not re-enumerate"), because
+post-flash verification looks for the stock `34DB:800F` application. The write
+itself succeeded; confirm the CDC device appears as described in Verification.
+
 ## Verification
 
 With the pedal running this firmware and connected over USB:
 
 ```bash
 # macOS (ioreg prints VID/PID in decimal; 51966 = 0xCAFE)
-ioreg -p IOUSB -l -w 0 | grep -i cafe
+ioreg -p IOUSB -l -w 0 | grep -iE "cafe|FB200 Hello"
+ioreg -p IOUSB -l -w 0 | grep 51966
 # Linux
 lsusb | grep -i cafe
 ```
@@ -90,16 +98,24 @@ this firmware exposes no HID interface and no audio.
 
 ## Recovery
 
-Flash the stock image to restore the pedal (the tool sends `0xC1` to jump from
-the hello firmware); add `--no-jump` if the pedal is already in update mode:
+`fb200-hello` exposes only a CDC interface, not the vendor HID interface, so
+the `0xC1` jump that stock tooling uses to enter update mode is unavailable
+while hello runs. `fb200 fw flash fb200-stock.mr --yes` will fail with
+`FB200 not found` for the same reason. To return to stock:
+
+1. Put the pedal into update mode using a power-on footswitch combination.
+   These combinations are not yet verified on hardware; see
+   [`docs/UPDATE_AND_RECOVERY.md`](../../docs/UPDATE_AND_RECOVERY.md) §5.3.
+2. Flash the stock image without the jump:
 
 ```bash
-fb200 fw flash fb200-stock.mr --yes
 fb200 fw flash fb200-stock.mr --yes --no-jump
 ```
 
-Keep the stock image locally and never commit or redistribute it. The full
-recovery procedure, including the power-on footswitch combinations, is in
+**Do not flash `fb200-hello` until a working update-mode entry has been
+confirmed on your unit**: with no HID interface, update mode is the only route
+back to the stock firmware. Keep the stock image locally and never commit or
+redistribute it. The full recovery procedure is in
 [`docs/UPDATE_AND_RECOVERY.md`](../../docs/UPDATE_AND_RECOVERY.md).
 
 ## How it boots
@@ -130,7 +146,8 @@ firmware/hello/
   src/memfuncs.c        # freestanding memcpy/memset/memmove/strlen
   src/system_clock.c    # SystemCoreClock symbols for the BSP
   src/compat/           # freestanding libc shims (assert, stdio, stdlib,
-                        # string, inttypes) for toolchains without newlib
+                        # string, inttypes); used unconditionally and shadow
+                        # newlib where present so builds are identical
   board/board_config.h  # FB200 facts: crystal 24 MHz, VID/PID, strings
   board/README.md       # BSP composition and licensing notes
   tools/synthetic_template.py  # vendor-free FB200 template for CI/pack tests
