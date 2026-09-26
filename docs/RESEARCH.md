@@ -86,7 +86,7 @@ findings, not copied.
 - The erase/write/exit flash plan, replayed byte-for-byte against the official
   updater's frame stream.
 - Firmware static analysis results (vector table, version strings, Bluetooth
-  name, model-table counts).
+  name, model-table counts, main SoC identification as NXP i.MX RT10xx).
 
 **Verified on hardware (2026-09-26):**
 
@@ -136,6 +136,7 @@ findings, not copied.
 | 09-26, 03:02 | `fw flash` hardening: transport closure, target identification, `--yes` path coverage |
 | 09-26 | This document set: update/recovery, patching and research notes |
 | 09-26 | Hardware validation: stock round-trip, proof patch (`V1.0.1` → `V9.9.9` observed via `fb200 info`), stock revert, hardware smoke tests. Found and fixed the erase-ack timeout (measured ~11.5 s; now 60 s) |
+| 09-26 | Hardware ID pass: main SoC identified as NXP i.MX RT10xx (Cortex-M7) with a copy-to-ITCM startup; custom-firmware feasibility assessed in [`HARDWARE.md`](HARDWARE.md) §2–§3 |
 
 ## References
 

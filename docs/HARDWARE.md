@@ -2,11 +2,12 @@
 
 Hardware-level observations for the FLAMMA FB200 (Mooer-based) bass
 multi-effects pedal: its USB topology, the evidence for its MCU family, memory
-map hypotheses, and local verification commands.
+map, startup scheme, custom-firmware feasibility, and local verification
+commands.
 
-All USB identities and the vector-table values were verified against a real
-FB200 and its stock `V1.0.1` firmware. Memory-map entries are hypotheses and
-are labelled as such.
+All USB identities, vector-table values and peripheral addresses below were
+verified against a real FB200 and its stock `V1.0.1` firmware / stock `.mr`
+image. Items that remain unproven are explicitly marked.
 
 ## 1. USB topology
 
@@ -29,48 +30,99 @@ are labelled as such.
   with the erase/write/exit commands from
   [`FIRMWARE_FORMAT.md`](FIRMWARE_FORMAT.md) §7.
 
-## 2. Evidence for an i.MX RT-class MCU
+## 2. MCU: NXP i.MX RT10xx (Cortex-M7)
 
-Static analysis of block 0 (the application image) gives three independent
-pointers to an NXP i.MX RT-class Cortex-M part:
+Static analysis of block 0 (the application image) identifies the main SoC as
+an **NXP i.MX RT10xx-class Cortex-M7**:
 
-1. **Cortex-M vector table.** Block 0 begins with the standard two-word table:
-   initial stack pointer `0x20058000` and reset vector `0x600104d9` (thumb bit
-   set). The reset handler therefore executes from a `0x60000000`-based
-   address, i.e. externally mapped flash, not from on-chip flash or RAM.
-2. **FlexSPI mapping at `0x60000000`.** On i.MX RT10xx parts, `0x60000000` is
+1. **Cortex-M boot contract.** Block 0 begins with initial stack pointer
+   `0x20058000` and reset vector `0x600104d9` (thumb bit set). The reset
+   handler sets `SCB->VTOR` (`0xE000ED08`) to `0x60010000`, loads MSP from
+   `[0x60010000]`, and executes from external mapped flash.
+2. **i.MX RT register fingerprint in the reset path.** The reset handler writes
+   `IOMUXC_GPR` registers `0x400AC038` / `0x400AC040` / `0x400AC044` (TCM /
+   FlexRAM bank configuration; values `0x00200007` and `0xFFAAAAA9`) before
+   touching RAM. This is the standard i.MX RT FlexRAM setup sequence and is
+   specific to this family. Other i.MX RT bases found in the image:
+   `CCM 0x400FC000` (x8), `ANADIG/PMU 0x400D8000` (x21),
+   `IOMUXC_GPR 0x400AC000`, `FlexSPI1 0x402A8000` (x11).
+3. **FlexSPI mapping at `0x60000000`.** On i.MX RT10xx parts, `0x60000000` is
    the memory-mapped alias of the FlexSPI controller where external serial NOR
-   flash lives. Code fetched there runs execute-in-place. The stock image's
-   page math agrees: `START_PAGE 0x40` × 512 = `0x8000`, matching the
-   application base `0x60008000` that follows a 32 KiB
-   (`0x60000000`–`0x60007FFF`) bootloader region.
-3. **SRAM size hint.** The initial stack pointer `0x20058000` shows at least
-   352 KiB of SRAM below `0x20058000`, which is compatible with mid/high-end
-   RT10xx variants.
+   flash lives. The image is linked at `0x60010000` (the reset handler's VTOR
+   literal is exactly `0x60010000`).
+4. **Cortex-M7 FPU.** The application code contains double-precision FPU
+   instructions (`vcvt.f64.f32`, `vmla.f64`, `vmls.f64`), which requires the
+   FPv5 double-precision unit found on Cortex-M7 (not the single-precision-only
+   FPU of Cortex-M4). The effects math therefore runs on the M7 itself; there
+   is no separate DSP for it.
+5. **Peripheral map** (all i.MX RT10xx bases): `SAI1 0x40384000`,
+   `SAI2 0x4038C000` (I2S audio), `LPI2C1..4 0x403F0000..0x403FC000` (codec /
+   control I2C), `eDMA0/1 0x400E8000/0x400EC000`, `GPIO1..4`
+   `0x401B8000..0x401C4000`, `USB1 0x402E0000` (+ PHY `0x402E0200`).
+6. **Software audio path.** USB audio + HID (`USB1`) and the SAI/I2S codec path
+   are driven by this one M7; the Bluetooth module is a separate device
+   controlled over UART with the AT commands catalogued in
+   [`FIRMWARE_ANALYSIS.md`](FIRMWARE_ANALYSIS.md) §1.3.
 
-The exact part number (e.g. RT1010 vs RT1015 vs RT1020) has not been
-established: all of them share the `0x60000000` FlexSPI alias, so the
-firmware alone does not distinguish them.
+The exact part number within the RT10xx family (e.g. RT1052 vs RT1062) and the
+external flash chip are not established from the image alone; the ≥352 KiB SRAM
+implied by the initial stack pointer narrows it to a mid/high-end variant.
 
-## 3. Memory-map hypotheses
+## 3. Memory map
 
-Everything in this table is a **hypothesis** derived from the container values
-and vector table; only the vector-table words and the block sizes/pages are
-observed facts.
+| Address range | Size | Status |
+|---------------|------|--------|
+| `0x00000000`–... | ≤ 200,704 B | ITCM: runtime location of the application code (see §3.1) |
+| `0x20000000`–`0x20057FFF` | ≥ 352 KiB | DTCM/OCRAM; initial stack top `0x20058000` |
+| `0x60000000`–`0x60007FFF` | 32 KiB | bootloader (pages 0–63 of the container; not part of block 0) |
+| `0x60008000`–`0x6000FFFF` | 32 KiB | head of the update page space (container pages 0–63); purpose unverified |
+| `0x60010000`–`0x60040FFF` | 200,704 B | application image (container `START_PAGE 0x40`, pages 64–455) |
+| elsewhere | 3,286,016 B | model library (block 1, 95.7 % float32 data, `START_PAGE 0x00`) |
 
-| Address range | Size | Hypothesis |
-|---------------|------|------------|
-| `0x20000000`–`0x20057FFF` | ≥ 352 KiB | on-chip SRAM; stack starts at `0x20058000` |
-| `0x60000000`–`0x60007FFF` | 32 KiB | bootloader (pages 0–63; never part of block 0) |
-| `0x60008000`–`0x60038FFF` | 200,704 B | application image (`START_PAGE 0x40`, pages 64–455) |
-| elsewhere | 3,286,016 B | model library (block 1, `START_PAGE 0x00`) |
+The container's `START_PAGE` counts 512-byte pages in the update address space,
+whose base is `0x60008000` (immediately after the bootloader). Hence
+`START_PAGE 0x40` × 512 = `0x8000` offset → application base `0x60010000`,
+matching the reset handler's `VTOR` literal exactly.
 
 Block 1 numbering restarts at page 0 even though page 0 is inside the block 0
-bootloader area, and the erase frame selects a target with `ROM_ID`. The
-likely explanation is that block 1 is erased/written on a **different
-`ROM_ID` target** (a second flash region or device) whose page numbering
-starts at zero. The actual `ROM_ID` values and address mapping have not been
-verified.
+page space, and the erase frame selects a target with `ROM_ID`. The likely
+explanation is that block 1 is erased/written on a **different `ROM_ID`
+target** (a second flash region or device) whose page numbering starts at zero.
+The actual `ROM_ID` values and address mapping have not been verified.
+
+### 3.1 Startup and relocation
+
+The image contains an unusual vector table that is explained by a
+copy-to-ITCM boot scheme:
+
+- Entry `[0]` is the stack pointer and entry `[1]` is an absolute flash reset
+  address (`0x600104d9`) — the only two entries the bootloader needs.
+- The remaining entries are **0-based addresses** (NMI `0x1e91`,
+  HardFault `0x9ab5`, SysTick `0x10b31`, IRQ stubs `0x1ea3`...`0x1f5f`),
+  i.e. the addresses the handlers take once the image is copied to ITCM at
+  `0x00000000`.
+- A routine at image offset `0x1a390` copies a 256-entry vector table to
+  address `0x00000000` and then writes `0` to `SCB->VTOR`
+  (`0xE000ED08`), confirming the runtime vector table lives in ITCM. Early
+  startup (called from the flash reset stub) also performs the FlexRAM/TCM
+  configuration needed before ITCM can be used.
+
+### 3.2 Custom-firmware feasibility
+
+**Verdict: realistic.** The flash contract is simple and already proven:
+
+- The bootloader accepts arbitrary erase/write pages with **no signature or
+  checksum**, and a byte-patched image still booted on hardware (see
+  [`UPDATE_AND_RECOVERY.md`](UPDATE_AND_RECOVERY.md) §7), so modified images
+  are not rejected.
+- The only observed boot contract is `[SP][reset]` at the start of the
+  application region; after reset the SoC is a plain i.MX RT10xx running the
+  image's own startup code.
+- The SoC family has mature open tooling (MCUXpresso SDK, Zephyr, GCC), a
+  documented peripheral map (SAI, LPI2C, USB, eDMA, GPIO), and a proven
+  recovery path (`fw flash stock.mr --yes --no-jump`).
+
+Remaining unknowns before writing custom firmware are listed in §5.
 
 ## 4. Verify locally (macOS)
 
@@ -113,11 +165,16 @@ fb200 probe --listen 2   # print raw HID reports for 2 seconds
 
 ## 5. Open questions
 
-- Exact MCU part number and flash part (i.MX RT10xx variant).
+- Exact MCU part number within the i.MX RT10xx family and the external flash
+  chip (size, vendor, QSPI/OSPI mode).
+- Audio codec chip on the LPI2C/SAI bus, and the display/button wiring.
 - Whether `ROM_ID` selects a second physical flash device or a region of the
-  same one.
+  same one, and where block 1 (models) is actually stored.
 - Whether the bootloader performs any image integrity check (no signature or
-  checksum is present in the container or update protocol).
+  checksum is present in the container or update protocol, and a patched image
+  booted — but an explicit check is not ruled out).
+- The exact ITCM copy strategy of the stock startup (which sections are copied,
+  which stay in flash XIP) — only the vector-table copy is confirmed.
 
 ## References
 
