@@ -65,3 +65,39 @@ def test_fw_pack_missing_app_file(tmp_path, capsys):
         ["fw", "pack", "--template", str(template), str(tmp_path / "nope.bin")]
     ) == 1
     assert "cannot read" in capsys.readouterr().err
+
+
+def test_fw_pack_refuses_to_overwrite_inputs(tmp_path, capsys):
+    template = make_template(tmp_path / "hello.mr")
+    app = tmp_path / "hello.bin"
+    app.write_bytes(b"abc")
+    assert cli.main(["fw", "pack", "--template", str(template), str(app)]) == 1
+    assert "overwrite" in capsys.readouterr().err
+    assert MrFile.from_path(template).header.update_block == 2  # template intact
+
+
+def test_fw_pack_cannot_write_output(tmp_path, capsys):
+    template = make_template(tmp_path / "template.mr")
+    app = tmp_path / "app.bin"
+    app.write_bytes(b"abc")
+    out = tmp_path / "missing-dir" / "out.mr"
+    assert cli.main(
+        ["fw", "pack", "--template", str(template), str(app), "-o", str(out)]
+    ) == 1
+    assert "cannot write" in capsys.readouterr().err
+
+
+def test_fw_pack_app_only_flag_is_accepted(tmp_path):
+    template = make_template(tmp_path / "template.mr")
+    app = tmp_path / "app.bin"
+    app.write_bytes(b"abc")
+    out_plain = tmp_path / "plain.mr"
+    out_flag = tmp_path / "flag.mr"
+    assert cli.main(
+        ["fw", "pack", "--template", str(template), str(app), "-o", str(out_plain)]
+    ) == 0
+    assert cli.main(
+        ["fw", "pack", "--template", str(template), str(app), "--app-only",
+         "-o", str(out_flag)]
+    ) == 0
+    assert out_plain.read_bytes() == out_flag.read_bytes()

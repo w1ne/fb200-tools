@@ -208,6 +208,9 @@ def _cmd_fw_pack(args) -> int:
         raise FirmwareError(f"cannot read {args.app}: {exc}") from exc
     packed = pack_app_image(template, app)
     out = Path(args.output) if args.output else Path(args.app).with_suffix(".mr")
+    inputs = {Path(args.template).resolve(), Path(args.app).resolve()}
+    if out.resolve() in inputs:
+        raise FirmwareError(f"refusing to overwrite input file {out}")
     try:
         out.write_bytes(packed.to_bytes())
     except OSError as exc:
