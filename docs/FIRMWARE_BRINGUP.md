@@ -10,8 +10,9 @@ follows it.
 
 - `fb200-hello` is built in the vendor's own image format and flashed with
   `fb200 fw flash`; no stock bootloader changes are needed.
-- Verified on hardware: cold boot through the stock bootloader, USB
-  enumeration, CDC banner `FB200 hello - fb200-tools custom firmware`, echo.
+- Verified on hardware: **cold boot** (USB power cycle) through the stock
+  bootloader, USB enumeration, CDC banner
+  `FB200 hello - fb200-tools custom firmware`, echo.
 - Recovery (A+D + stock reflash) is unaffected and remains the safety net.
 
 ## 2. The vendor boot contract
@@ -110,7 +111,9 @@ ioreg -p IOUSB | grep -i "FB200 Hello"          # 0xCAFE:0x4001
 ```
 
 Post-flash verification in `fw flash` still expects the stock app, so a
-custom image exits 3 ("device did not re-enumerate"); that is expected.
+custom image exits 3 ("device did not re-enumerate"); that is expected. After
+flashing, the bootloader's exit jumps straight into the image; cold boots
+(power cycles) also boot it, no host interaction needed.
 
 Recovery: power off, hold **A+D**, power on (~3 s), then
 `fb200 fw flash fb200-stock.mr --yes --no-jump`.
