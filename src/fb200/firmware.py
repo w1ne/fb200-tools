@@ -136,6 +136,42 @@ class MrFile:
         return count
 
 
+def pack_app_image(template: MrFile, app: bytes) -> MrFile:
+    """Build a single-block (application-only) ``.mr`` image.
+
+    The template supplies the header and block-0 tag; the bootloader's erase
+    and write commands come from those fields. The payload is padded with
+    ``0xFF`` (erased-flash value) to the template's block-0 size so the flash
+    plan covers exactly the stock application pages.
+    """
+    if template.header.product_tag != "FB200":
+        raise FirmwareError(
+            f"template is for {template.header.product_tag!r} (expected 'FB200')"
+        )
+    if not template.blocks:
+        raise FirmwareError("template has no blocks")
+    if not app:
+        raise FirmwareError("application binary is empty")
+    limit = len(template.blocks[0].data)
+    if len(app) > limit:
+        raise FirmwareError(
+            f"application binary exceeds template block 0 ({len(app)} > {limit} bytes)"
+        )
+    header = MrHeader(
+        tag=template.header.tag,
+        product_tag=template.header.product_tag,
+        send_cmd=template.header.send_cmd,
+        rec_cmd=template.header.rec_cmd,
+        timeout=template.header.timeout,
+        update_block=1,
+        update_addr=template.header.update_addr,
+        version=template.header.version,
+        raw=template.header.raw,
+    )
+    block = MrBlock(template.blocks[0].tag, app.ljust(limit, b"\xff"))
+    return MrFile(header, [block])
+
+
 def _parse_header(raw: bytes) -> MrHeader:
     return MrHeader(
         tag=raw[0:9],
