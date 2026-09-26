@@ -43,7 +43,8 @@ fb200 fw inspect stock.mr
 fb200 fw inspect stock.mr --strings --filter "FB200 Audio"
 ```
 
-Make the patch (the CLI requires equal byte lengths and writes to `-o`):
+Make the patch (the CLI requires equal byte lengths and writes to `--output`, or
+to `<file>.patched.mr` when `--output` is omitted):
 
 ```bash
 fb200 fw patch-string stock.mr \
@@ -75,8 +76,10 @@ fb200 fw extract-block patched.mr 0 patched-app.bin
 cmp -l app.bin patched-app.bin | head
 ```
 
-Do not flash until the dry run prints the expected product tag (`FB200`), block
-count and write-frame total.
+Before flashing, confirm with `fb200 fw inspect patched.mr` that the product tag
+is `FB200` and the block count and write-frame total match the stock image; the
+`fw flash` dry run prints the plan (blocks, data bytes, write frames) but not the
+product tag.
 
 ## 4. Patch table
 

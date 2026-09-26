@@ -68,9 +68,10 @@ Protocol, container and firmware details live in
 | [ThijsWithaar/MooerManager](https://github.com/ThijsWithaar/MooerManager) | USB control of Mooer pedals; prior art for talking to Mooer-based hardware from a host tool. |
 | [shpala/MooerLooperManager](https://github.com/shpala/MooerLooperManager) | Manager for Mooer GL100/GL200 loopers; shows the family of Mooer device tools that exist. |
 
-Other Mooer GE200/GL100-class tools exist in the community; the FB200 had no
-dedicated open-source tooling before this project. Where projects overlap, they
-are credited as prior art and used to cross-check findings, not copied.
+Other open-source tools exist for the Mooer family (for example GL100/GL200
+loopers); the FB200 had no dedicated open-source tooling before this project.
+Where projects overlap, they are credited as prior art and used to cross-check
+findings, not copied.
 
 ## 4. Verified vs. not yet verified
 

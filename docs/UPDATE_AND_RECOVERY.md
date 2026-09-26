@@ -16,13 +16,15 @@ Flashing is inherently risky. Read [`DISCLAIMER.md`](../DISCLAIMER.md) first.
 | Update / bootloader | `0x0483` | `0x5703` | Mooer update identity; speaks only the erase/write/exit commands |
 
 The application mode answers `fb200 info` and all `ir` commands. The update mode
-does not answer the `fn=0x00` version query; it only accepts the bootloader
-commands. See [`HARDWARE.md`](HARDWARE.md) §1 for the USB topology evidence.
+speaks only the bootloader commands; it is not expected to answer the `fn=0x00`
+version query. See [`HARDWARE.md`](HARDWARE.md) §1 for the USB topology evidence.
 
 ## 2. Official update flow
 
-Reverse-engineered from the official Electron updater; every step below was
-replayed against the pedal:
+Reverse-engineered from the official Electron updater; the sequence below was
+replayed byte-for-byte against a capture of the official updater's frame stream.
+No write has yet been performed on hardware from this project (that is the
+Task 20 validation step).
 
 1. **Jump.** From application mode the host sends `fn=0xC1` (no payload). The
    device re-enumerates as `0483:5703`.
@@ -84,14 +86,16 @@ pedal as still in the bootloader and continue with §5.
 - **Interrupted transfer.** Unplugging the cable, host sleep, or loss of power
   mid-write leaves the pedal in the bootloader (`0483:5703`). The application
   area may then be blank or partially written and will not boot.
-- **The bootloader is recoverable.** It lives in a separate 32 KiB region
-  (`0x60000000`–`0x60007FFF`, pages 0–63) that is never part of the application
-  block, so a failed application write does not erase it. The `0xC1` path cannot
-  be used while the application does not boot, but the bootloader itself still
-  accepts erase/write/exit frames.
+- **The bootloader is recoverable.** It occupies a separate region (hypothesised
+  in [`HARDWARE.md`](HARDWARE.md) §3 as 32 KiB at `0x60000000`–`0x60007FFF`,
+  pages 0–63) that is never part of the application block, so a failed
+  application write does not erase it. The `0xC1` path cannot be used while the
+  application does not boot, but the bootloader itself still accepts
+  erase/write/exit frames.
 - **No integrity fallback.** Neither the container nor the update protocol
   carries a signature or checksum, so a wrong-but-accepted image is not detected
-  by the device. Keep a stock image (below) and verify patches before flashing.
+  by anything the update protocol transmits. Keep a stock image (below) and
+  verify patches before flashing.
 
 ## 5. Recovery
 
@@ -138,8 +142,10 @@ attempts. Results will be recorded here once verified on hardware.
 While the pedal is connected, confirm which identity is present:
 
 ```bash
-# macOS
-hidutil list | grep -i 0483
+# macOS (ioreg prints VID/PID in decimal; 1155 = 0x0483, 13531 = 0x34DB)
+ioreg -p IOUSB -l -w 0 | grep -E 'idVendor" = (1155|13531)'
+# hidutil list may omit the vendor interface; if present it shows 0x483 / 0x34db
+hidutil list | grep -iE '0x483|0x34db'
 
 # Linux
 lsusb | grep 0483:5703
