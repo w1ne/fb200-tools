@@ -1,5 +1,7 @@
-/* 256-entry vector table; copied to ITCM 0x0 and selected via VTOR = 0.
- * Entry [1] keeps the flash reset-stub address (as stock does).
+/* 256-entry vector table, stored at block 0 offset 0 and copied to ITCM 0x0
+ * by stage2, which then selects it via VTOR = 0.
+ * Entry [1] keeps the vendor flash stub address (as stock does); the vendor
+ * loader reaches stage2 at ITCM 0x4d6, not through this vector.
  * SysTick and the USB OTG IRQs resolve to the BSP handlers
  * (hw/bsp/imxrt/family.c) when those are linked; weak aliases keep the table
  * valid if they are ever dropped. Every other entry spins in a known handler
@@ -8,7 +10,6 @@
 #include "fsl_device_registers.h"
 
 extern uint32_t _estack;
-extern void reset_stub(void);
 void Default_Handler(void)
 {
     for (;;) {
@@ -18,6 +19,9 @@ void Default_Handler(void)
 void SysTick_Handler(void) __attribute__((weak, alias("Default_Handler")));
 void USB_OTG1_IRQHandler(void) __attribute__((weak, alias("Default_Handler")));
 void USB_OTG2_IRQHandler(void) __attribute__((weak, alias("Default_Handler")));
+
+/* Vendor reset stub at block 0 offset 0x4d8 (flash 0x600104d8). */
+#define VENDOR_STUB 0x600104d9u
 
 /* Cortex-M7 exceptions occupy vector entries 0-15; device IRQ n lands at
  * 16 + n. The enums come from MIMXRT1062_COMMON.h (IRQn_Type). */
@@ -32,7 +36,7 @@ _Static_assert(SYSTICK_VECTOR == 15, "SysTick vector index mismatch");
 __attribute__((section(".vectors"), used))
 const void *const g_vectors[256] = {
     &_estack,
-    reset_stub,
+    (const void *)VENDOR_STUB,
     [2 ... 14] = Default_Handler,
     [SYSTICK_VECTOR] = SysTick_Handler,
     [16 ... 127] = Default_Handler,

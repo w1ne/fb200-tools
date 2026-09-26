@@ -1,17 +1,17 @@
-/* Flash-resident reset stub: mirrors the stock startup (docs/HARDWARE.md 3.1).
- * Configures FlexRAM/TCM, copies the image to ITCM, sets VTOR = 0 and jumps.
- */
+/* C body of the vendor-loader entry (see src/stage2.S for the 0x4d6 stub).
+ * The loader has already copied the blob to ITCM 0x400 and (in the stock
+ * flow) configured FlexRAM; we mirror the stock stub defensively, install
+ * the vector table, zero .bss and run app_main.
+ * See docs/FIRMWARE_BRINGUP.md. */
 #include <stdint.h>
 
-extern uint32_t __itcm_start__[], __itcm_end__[], __itcm_lma__[];
-extern uint32_t __data_start__[], __data_end__[], __data_lma__[];
 extern uint32_t __bss_start__[], __bss_end__[];
 void app_main(void);
 
 #define GPR(n) (*(volatile uint32_t *)(0x400AC000u + (n)))
 
-__attribute__((section(".boot_stub"), used, noreturn))
-void reset_stub(void)
+__attribute__((used, noreturn))
+void stage2_main(void)
 {
     __asm volatile ("cpsid i" ::: "memory");
 
@@ -22,19 +22,14 @@ void reset_stub(void)
     *(volatile uint32_t *)0xE000ED88u |= (3u << 20) | (3u << 22);   /* CPACR: FPU on */
     __asm volatile ("dsb 0xF" ::: "memory");
 
-    uint32_t sp = *(volatile uint32_t *)0x60010000u;
+    uint32_t sp = *(volatile uint32_t *)0x60010000u;   /* image[0] */
     __asm volatile ("msr msp, %0" :: "r" (sp) : "memory");
 
-    volatile uint32_t *dst = __itcm_start__;
-    volatile uint32_t *src = __itcm_lma__;
-    while (dst < __itcm_end__) {
-        *dst++ = *src++;
-    }
-
-    dst = __data_start__;
-    src = __data_lma__;
-    while (dst < __data_end__) {
-        *dst++ = *src++;
+    /* Copy the vector table (block 0 offsets 0..0x400) to ITCM 0x0. */
+    volatile uint32_t *dst = (volatile uint32_t *)0x0u;
+    const volatile uint32_t *src = (const volatile uint32_t *)0x60010000u;
+    for (unsigned i = 0; i < 256u; i++) {
+        dst[i] = src[i];
     }
 
     for (volatile uint32_t *b = __bss_start__; b < __bss_end__; ) {

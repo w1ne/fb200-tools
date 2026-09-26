@@ -1,45 +1,37 @@
-/* fb200-hello: code runs from ITCM at 0x0; the image lives in FlexSPI flash
- * at 0x60010000 behind an 8-byte boot header ([SP][reset stub]) consumed by
- * the stock bootloader. See docs/HARDWARE.md sections 2-3. */
+/* fb200-hello, vendor image format.
+ *
+ * Block 0 layout (see docs/FIRMWARE_BRINGUP.md):
+ *   0x000..0x400  vector table, copied to ITCM 0x0 by stage2
+ *   0x400..0x7d4  vendor boot region (stub, loader, table) - supplied by the
+ *                 packer from the stock template, not built here
+ *   0x7d4..0x1e39c ITCM payload, memcpy'd to ITCM 0x400 by the vendor loader
+ *
+ * The vendor loader jumps to the fixed address ITCM 0x4d6 after loading,
+ * which is blob offset 0xd6 - stage2 sits exactly there. */
 
-ENTRY(reset_stub)
+ENTRY(stage2)
 
 MEMORY
 {
-  BOOT   (rx)  : ORIGIN = 0x60010000, LENGTH = 8
-  FLASH  (rx)  : ORIGIN = 0x60010008, LENGTH = 200696
   ITCM   (rwx) : ORIGIN = 0x00000000, LENGTH = 0x20000
-  DTCM   (rwx) : ORIGIN = 0x20000000, LENGTH = 0x58000
+  FLASH  (rx)  : ORIGIN = 0x60010000, LENGTH = 0x31000
 }
 
 SECTIONS
 {
-  .boot_header : { KEEP(*(.boot_header)) } > BOOT
+  /* Vector table: VMA ITCM 0x0, stored at block0 0x0. */
+  .vectors 0x0 : { KEEP(*(.vectors)) } > ITCM AT> FLASH
 
-  .boot_stub : {
-    KEEP(*(.boot_stub))
-    . = ALIGN(4);
-  } > FLASH
-
-  .itcm : {
-    . = ALIGN(4);
-    __itcm_start__ = .;
-    KEEP(*(.vectors))
+  /* ITCM payload: VMA ITCM 0x400, stored at block0 0x7d4 (LMA). */
+  .blob 0x400 : AT(0x600107d4) {
+    . += 0xd6;                 /* vendor loader's fixed entry point (ITCM 0x4d6) */
+    KEEP(*(.stage2))
     *(.text*)
     *(.rodata*)
-    . = ALIGN(4);
-    __itcm_end__ = .;
-  } > ITCM AT> FLASH
-  __itcm_lma__ = LOADADDR(.itcm);
-
-  .data : {
-    . = ALIGN(4);
-    __data_start__ = .;
     *(.data*)
     . = ALIGN(4);
-    __data_end__ = .;
-  } > DTCM AT> FLASH
-  __data_lma__ = LOADADDR(.data);
+    __blob_end__ = .;
+  } > ITCM
 
   .bss (NOLOAD) : {
     . = ALIGN(4);
@@ -48,9 +40,10 @@ SECTIONS
     *(COMMON)
     . = ALIGN(4);
     __bss_end__ = .;
-  } > DTCM
+  } > ITCM
 
-  _estack = ORIGIN(DTCM) + LENGTH(DTCM);
+  /* Stock stack top (image[0] = initial SP). */
+  _estack = 0x20058000;
 
   /DISCARD/ : { *(.ARM.exidx*) *(.ARM.extab*) *(.comment) }
 }

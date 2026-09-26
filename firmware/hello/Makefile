@@ -64,7 +64,7 @@ SRC_C := \
   $(MCUX_CORE)/drivers/lpuart/fsl_lpuart.c \
   $(MCUX_CORE)/drivers/ocotp/fsl_ocotp.c \
   $(MCU_DIR)/drivers/fsl_clock.c
-SRC_S := src/boot_header.S
+SRC_S := src/stage2.S
 OBJS  := $(patsubst %,$(TARGET)/%.o,$(SRC_C) $(SRC_S))
 
 .PHONY: all build clean layout deps
@@ -75,13 +75,15 @@ $(OBJS): | deps
 
 all: build
 
-build: deps $(TARGET).bin
+build: deps $(TARGET).vectors.bin $(TARGET).blob.bin
 
 $(TARGET).elf: $(OBJS) linker.ld
 	$(CC) $(OBJS) $(LDFLAGS) -lgcc -o $@
 
-$(TARGET).bin: $(TARGET).elf
-	$(OBJCOPY) -O binary $< $@
+# .vectors goes to block 0 offset 0; .blob to offset 0x7d4 (LMA in linker.ld).
+$(TARGET).vectors.bin $(TARGET).blob.bin: $(TARGET).elf
+	$(OBJCOPY) -O binary -j .vectors $< $(TARGET).vectors.bin
+	$(OBJCOPY) -O binary -j .blob $< $(TARGET).blob.bin
 
 $(TARGET)/%.c.o: %.c
 	@mkdir -p $(dir $@)
@@ -92,7 +94,7 @@ $(TARGET)/%.S.o: %.S
 	$(CC) $(CFLAGS) -c $< -o $@
 
 layout: deps $(TARGET).elf
-	$(NM) $(TARGET).elf | grep -E '(_estack|__itcm_|__data_|__bss_|reset_stub|app_main)' | sort > build/layout.txt
+	$(NM) $(TARGET).elf | grep -E '(_estack|__bss_|__blob_end__|stage2|app_main)' | sort > build/layout.txt
 	cat build/layout.txt
 
 clean:

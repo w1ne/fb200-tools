@@ -7,7 +7,8 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 FW = ROOT / "firmware" / "hello"
-BIN = FW / "build" / "fb200-hello.bin"
+VECTORS = FW / "build" / "fb200-hello.vectors.bin"
+BLOB = FW / "build" / "fb200-hello.blob.bin"
 
 pytestmark = pytest.mark.skipif(
     any(shutil.which(tool) is None for tool in ("arm-none-eabi-gcc", "make", "curl", "git", "python3")),
@@ -15,36 +16,48 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def build():
+def build() -> tuple[bytes, bytes]:
     subprocess.run(["make", "clean", "build", "layout"], cwd=FW, check=True)
-    return BIN.read_bytes()
+    return VECTORS.read_bytes(), BLOB.read_bytes()
 
 
-def test_image_boot_header_and_size():
-    data = build()
-    assert len(data) <= 200_704
-    sp, reset = int.from_bytes(data[0:4], "little"), int.from_bytes(data[4:8], "little")
-    assert sp == 0x20058000
-    assert reset & 1
-    assert 0x60010008 <= reset < 0x60010000 + len(data)
+def symbols() -> dict[str, int]:
+    text = (FW / "build" / "layout.txt").read_text()
+    return {
+        name: int(addr, 16)
+        for addr, name in re.findall(r"^([0-9a-f]{8}) \S+ (\S+)$", text, re.MULTILINE)
+    }
+
+
+def test_vectors_table():
+    vectors, _ = build()
+    assert len(vectors) == 0x400
+    assert int.from_bytes(vectors[0:4], "little") == 0x20058000
+    # [1] must keep the vendor flash stub so the stock boot path stays intact
+    assert int.from_bytes(vectors[4:8], "little") == 0x600104D9
+    # the first handlers (NMI, HardFault, ...) live in the ITCM blob
+    for off in range(8, 0x40, 4):
+        addr = int.from_bytes(vectors[off:off + 4], "little")
+        assert 0x400 <= addr < 0x20000
+
+
+def test_blob_placement():
+    _, blob = build()
+    syms = symbols()
+    # the vendor loader jumps to ITCM 0x4d6; stage2 sits exactly there
+    assert syms["stage2"] == 0x4D6
+    assert len(blob) == syms["__blob_end__"] - 0x400
+    assert len(blob) > 0xD6
+    assert len(blob) <= 0x1E39C - 0x7D4
 
 
 def test_layout_symbols():
-    subprocess.run(["make", "layout"], cwd=FW, check=True, capture_output=True)
-    text = (FW / "build" / "layout.txt").read_text()
-    syms = {
-        name: addr
-        for addr, name in re.findall(r"^([0-9a-f]{8}) \S+ (\S+)$", text, re.MULTILINE)
-    }
-    assert int(syms["_estack"], 16) == 0x20058000
-    assert int(syms["__itcm_start__"], 16) == 0
-    assert 0x60010008 <= int(syms["__itcm_lma__"], 16) < 0x60040000
-    assert int(syms["__itcm_end__"], 16) <= 0x20000
-    assert int(syms["__data_end__"], 16) <= int(syms["__bss_start__"], 16)
-    assert int(syms["__bss_end__"], 16) <= int(syms["_estack"], 16)
-    assert int(syms["app_main"], 16) < 0x20000
-    reset = int(syms["reset_stub"], 16)
-    assert 0x60010000 <= reset < 0x60010000 + len(BIN.read_bytes())
+    build()
+    syms = symbols()
+    assert syms["_estack"] == 0x20058000
+    assert syms["app_main"] > 0x4D6
+    assert syms["app_main"] < 0x20000
+    assert syms["__bss_end__"] <= 0x20000
     out = subprocess.run(
         ["arm-none-eabi-nm", str(FW / "build" / "fb200-hello.elf")],
         check=True, capture_output=True, text=True,
@@ -59,13 +72,13 @@ def test_layout_symbols():
 
 
 def test_usb_descriptors_present():
-    data = build()
+    _, blob = build()
     # device descriptor: bLength=0x12, bDescriptorType=1, bcdUSB=0x0200,
     # class/subclass/protocol 0xEF/0x02/0x01, VID 0xCAFE, PID 0x4001
     device_prefix = b"\x12\x01\x00\x02\xef\x02\x01\x40\xfe\xca\x01\x40"
-    assert device_prefix in data
+    assert device_prefix in blob
     # configuration descriptor: bLength=9, type=2, wTotalLength=75 (0x4b),
     # 2 interfaces, IAD present
     config_prefix = b"\x09\x02\x4b\x00\x02\x01\x00\x80\x32"
-    assert config_prefix in data
-    assert b"FB200 hello - fb200-tools custom firmware\r\n" in data
+    assert config_prefix in blob
+    assert b"FB200 hello - fb200-tools custom firmware\r\n" in blob

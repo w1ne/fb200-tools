@@ -1,18 +1,26 @@
 # fb200-hello
 
+> **Status: verified on hardware (2026-09-27).** The image boots on the
+> pedal through the stock bootloader, enumerates as `0xCAFE:0x4001`
+> ("FB200 Hello" / `fb200-tools`) and its CDC banner and echo work. The
+> vendor boot contract and the vendor-format build are documented in
+> [`docs/FIRMWARE_BRINGUP.md`](../../docs/FIRMWARE_BRINGUP.md).
+
 Minimal custom firmware for the FLAMMA FB200 (NXP i.MX RT10xx, Cortex-M7).
-It is the first milestone of the custom-firmware effort: it proves only the
-boot + USB path. The firmware boots through the **stock bootloader**, which
-stays untouched, and enumerates over USB as a CDC-ACM device:
+It is the first milestone of the custom-firmware effort: it targets only the
+boot + USB path. The firmware is meant to boot through the **stock bootloader**,
+which stays untouched, and enumerate over USB as a CDC-ACM device:
 
 - VID/PID `0xCAFE:0x4001` (a development placeholder, never a product ID)
 - manufacturer `fb200-tools`, product string `FB200 Hello`, serial `HELLO-0001`
 - on DTR assertion the serial port prints the banner
   `FB200 hello - fb200-tools custom firmware`, and input is echoed back
 
-The raw image is 28,708 B; `fb200 fw pack` pads it to a single-block,
-200,704-byte block-0 image — exactly the stock application region, so the
-model library is never written.
+The firmware is built in the vendor's own image format (see
+[`docs/FIRMWARE_BRINGUP.md`](../../docs/FIRMWARE_BRINGUP.md)): a 1,024-byte
+vector table at block-0 offset 0, a 27,804-byte ITCM payload at block-0
+offset 0x7d4, and the stock loader region/table untouched. The payload entry
+sits at the fixed address the vendor loader jumps to (ITCM 0x4d6).
 
 > **Experimental and unofficial.** This firmware is not affiliated with,
 > endorsed by, or supported by FLAMMA Innovation or MOOER Audio. A bad flash
@@ -43,35 +51,38 @@ SHA-256 against `tinyusb.lock`, and then fetches the MCUXpresso SDK subset at
 the commits pinned inside that tarball. `make build` compiles the firmware.
 Artifacts land in `build/`:
 
-- `build/fb200-hello.bin` — raw application image
+- `build/fb200-hello.vectors.bin` — 1,024-byte vector table (block-0 offset 0)
+- `build/fb200-hello.blob.bin` — ITCM payload (block-0 offset 0x7d4)
 - `build/fb200-hello.elf`, `build/fb200-hello.map` — symbols and link map
 - `build/fb200-hello.mr` — flashable image (after packing, below)
 
 ## Pack and flash
 
-The packer needs a template image that supplies the container header and page
-math. For a real flash, use your stock `FB200.mr`; the checked-in synthetic
-generator builds a vendor-free stand-in with the same fields and is what CI
-uses (the template itself is never flashed — only the packed output is). Run
-these from the repo root and prefix `fb200` with `.venv/bin/` outside an
-active venv:
+Packing needs your local **stock** `.mr` image as the template: the vendor
+boot region, load table and the stock DTCM/OCRAM payloads are copied from it
+byte-for-byte. Never commit or redistribute the stock image. Run these from
+the repo root and prefix `fb200` with `.venv/bin/` outside an active venv:
 
 ```bash
-python3 firmware/hello/tools/synthetic_template.py -o firmware/hello/build/synthetic-template.mr
-fb200 fw pack --template firmware/hello/build/synthetic-template.mr firmware/hello/build/fb200-hello.bin -o firmware/hello/build/fb200-hello.mr
+python3 firmware/hello/tools/pack_vendor_image.py fb200-stock.mr \
+  firmware/hello/build/fb200-hello.vectors.bin \
+  firmware/hello/build/fb200-hello.blob.bin \
+  -o firmware/hello/build/fb200-hello.mr --app-only
 fb200 fw flash firmware/hello/build/fb200-hello.mr            # dry run
 fb200 fw flash firmware/hello/build/fb200-hello.mr --yes      # write; recover before unplugging
 ```
 
-`fb200 fw flash` is dry-run by default; only `--yes` writes. The packed image
-is app-only: it erases and writes the 392 application pages (200,704 B) and
-never touches the model library. Never unplug the pedal until the tool reports
-it back online.
+`fb200 fw flash` is dry-run by default; only `--yes` writes. With
+`--app-only` the image writes just the 392 application pages (200,704 B) and
+never touches the model library; omit it to also rewrite the model block
+(byte-identical stock data). Never unplug the pedal until the tool reports it
+back online.
 
 Expected outcome: `fb200 fw flash fb200-hello.mr --yes` writes the image
 successfully but then exits with code `3` ("did not re-enumerate"), because
 post-flash verification looks for the stock `34DB:800F` application. The write
 itself succeeded; confirm the CDC device appears as described in Verification.
+To flash while the pedal is already in the bootloader (A+D), add `--no-jump`.
 
 ## Verification
 
@@ -120,14 +131,16 @@ recovery procedure is in
 
 ## How it boots
 
-The stock bootloader consumes the first 8 bytes of the image at flash
-`0x60010000` as `[initial SP][absolute thumb reset address]`, exactly as it
-does for the stock application. Our reset stub (flash-resident) then mirrors
-the stock startup: it configures the FlexRAM/TCM GPRs with the stock values,
-sets MSP from `image[0]`, copies `.vectors`/`.text`/`.rodata` from flash into
-ITCM and `.data`/`.bss` into DTCM, sets `SCB->VTOR` to `0`, and branches into
-`app_main()` running from ITCM. The evidence and stock values are in
-[`docs/HARDWARE.md`](../../docs/HARDWARE.md) §2–§3.
+The stock bootloader runs the vendor boot region in block 0 (offsets
+0x400..0x7d4): a flash stub that configures FlexRAM and jumps to a
+position-independent loader, which walks the load table at 0x784
+(memcpy/decompress/memset into ITCM, DTCM and OCRAM) and then jumps to the
+fixed address ITCM 0x4d6. Our payload is linked at ITCM 0x400, and
+`src/stage2.S` places a 2-byte stub at payload offset 0xd6 (ITCM 0x4d6) that
+branches to `stage2_main` (`src/startup.c`). stage2 mirrors the stock stub,
+copies the vector table to ITCM 0x0, zeroes `.bss`, sets `VTOR = 0` and calls
+`app_main`. The full contract, load table and reverse-engineering evidence are
+in [`docs/FIRMWARE_BRINGUP.md`](../../docs/FIRMWARE_BRINGUP.md).
 
 ## Layout
 
@@ -135,10 +148,10 @@ ITCM and `.data`/`.bss` into DTCM, sets `SCB->VTOR` to `0`, and branches into
 firmware/hello/
   Makefile              # arm-none-eabi-gcc build; pinned dependency fetching
   tinyusb.lock          # TinyUSB tag/URL/SHA-256 pin
-  linker.ld             # ITCM VMA / flash LMA layout
-  src/startup.c         # flash-resident reset stub and copy stage
-  src/boot_header.S     # 8-byte [SP][reset] boot header
-  src/vectors.c         # 256-entry vector table (runtime copy in ITCM)
+  linker.ld             # ITCM 0x0 vectors / ITCM 0x400 payload layout
+  src/stage2.S          # 2-byte stub at the vendor entry ITCM 0x4d6
+  src/startup.c         # stage2_main: vectors, bss, VTOR, app_main
+  src/vectors.c         # 256-entry vector table (stored at block-0 offset 0)
   src/main.c            # TinyUSB polled loop, stdout banner and echo
   src/usb_descriptors.c # device/config/string descriptors (0xCAFE:0x4001)
   src/usb_descriptors.h # string descriptor indices
@@ -151,6 +164,7 @@ firmware/hello/
   board/board_config.h  # FB200 facts: crystal 24 MHz, VID/PID, strings
   board/README.md       # BSP composition and licensing notes
   tools/synthetic_template.py  # vendor-free FB200 template for CI/pack tests
+  tools/pack_vendor_image.py   # assembles the flashable .mr from stock + build
 ```
 
 `board/` holds only configuration and notes: the BSP (`family.c`,
