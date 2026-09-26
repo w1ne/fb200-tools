@@ -163,6 +163,14 @@ fb200 probe --listen 2   # print raw HID reports for 2 seconds
 `V1.0.0`, Bluetooth `V1.0.0`, hardware revision `A` (see
 [`PROTOCOL.md`](PROTOCOL.md) §5.1).
 
+## 5. Board photos
+
+Teardown photos of the main board are in [`pcb/`](pcb/README.md). They
+establish the SoC part number (`MIMXRT1062DVL6A`, §2) and show the audio codec
+area: a Nuvoton NAU88-series part marked `NAU88BL21` on the LPI2C bus next to
+the 24 MHz crystal. The SWD header (TCK/TMS/GND/VCC) and a second 4-wire
+header (RST/CLK/D1/MOSI) are visible as well.
+
 ## 5. Open questions
 
 - Exact MCU part number within the i.MX RT10xx family and the external flash
