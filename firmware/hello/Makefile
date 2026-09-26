@@ -9,7 +9,7 @@ NM      := $(CROSS)nm
 CPUFLAGS := -mcpu=cortex-m7 -mthumb -mfloat-abi=hard -mfpu=fpv5-d16
 CFLAGS   := $(CPUFLAGS) -O2 -g3 -ffreestanding -fno-builtin -fno-common \
             -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables \
-            -Wall -Wextra -Wno-unused-parameter -std=gnu11 -I src
+            -Wall -Wextra -Wno-unused-parameter -std=gnu11 -I src -MMD -MP
 LDFLAGS  := $(CPUFLAGS) -nostdlib -T linker.ld -Wl,-Map=$(TARGET).map,--cref
 
 SRC_C := src/startup.c src/vectors.c src/main.c
@@ -23,7 +23,7 @@ all: build
 build: $(TARGET).bin
 
 $(TARGET).elf: $(OBJS) linker.ld
-	$(CC) $(OBJS) $(LDFLAGS) -o $@
+	$(CC) $(OBJS) $(LDFLAGS) -lgcc -o $@
 
 $(TARGET).bin: $(TARGET).elf
 	$(OBJCOPY) -O binary $< $@
@@ -46,3 +46,5 @@ clean:
 # TinyUSB fetching is added in Task 5.
 deps:
 	@echo "no dependencies yet"
+
+-include $(OBJS:.o=.d)

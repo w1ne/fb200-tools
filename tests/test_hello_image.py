@@ -26,7 +26,7 @@ def test_image_boot_header_and_size():
     sp, reset = int.from_bytes(data[0:4], "little"), int.from_bytes(data[4:8], "little")
     assert sp == 0x20058000
     assert reset & 1
-    assert 0x60010000 <= reset < 0x60010000 + len(data)
+    assert 0x60010008 <= reset < 0x60010000 + len(data)
 
 
 def test_layout_symbols():
@@ -38,7 +38,10 @@ def test_layout_symbols():
     }
     assert int(syms["_estack"], 16) == 0x20058000
     assert int(syms["__itcm_start__"], 16) == 0
-    int(syms["__itcm_lma__"], 16)  # exists and parses
+    assert 0x60010008 <= int(syms["__itcm_lma__"], 16) < 0x60040000
+    assert int(syms["__itcm_end__"], 16) <= 0x20000
+    assert int(syms["__data_end__"], 16) <= int(syms["__bss_start__"], 16)
+    assert int(syms["__bss_end__"], 16) <= int(syms["_estack"], 16)
     assert int(syms["app_main"], 16) < 0x40000
     reset = int(syms["reset_stub"], 16)
     assert 0x60010000 <= reset < 0x60010000 + len(BIN.read_bytes())

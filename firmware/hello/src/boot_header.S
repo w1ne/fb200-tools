@@ -2,5 +2,5 @@
  * image[1] = absolute (thumb) reset stub address. */
     .syntax unified
     .section .boot_header,"a",%progbits
-    .word 0x20058000
+    .word _estack
     .word reset_stub + 1

@@ -19,11 +19,14 @@ void reset_stub(void)
     GPR(0x40) = 0x00200007u;   /* IOMUXC_GPR16: TCM control */
     GPR(0x44) = 0xFFAAAAA9u;   /* IOMUXC_GPR17: FlexRAM banks */
 
+    *(volatile uint32_t *)0xE000ED88u |= (3u << 20) | (3u << 22);   /* CPACR: FPU on */
+    __asm volatile ("dsb 0xF" ::: "memory");
+
     uint32_t sp = *(volatile uint32_t *)0x60010000u;
     __asm volatile ("msr msp, %0" :: "r" (sp) : "memory");
 
-    uint32_t *dst = __itcm_start__;
-    uint32_t *src = __itcm_lma__;
+    volatile uint32_t *dst = __itcm_start__;
+    volatile uint32_t *src = __itcm_lma__;
     while (dst < __itcm_end__) {
         *dst++ = *src++;
     }
@@ -34,11 +37,13 @@ void reset_stub(void)
         *dst++ = *src++;
     }
 
-    for (uint32_t *b = __bss_start__; b < __bss_end__; ) {
+    for (volatile uint32_t *b = __bss_start__; b < __bss_end__; ) {
         *b++ = 0;
     }
 
     *(volatile uint32_t *)0xE000ED08u = 0;   /* SCB->VTOR = ITCM base */
+    __asm volatile ("dsb 0xF" ::: "memory");
+    __asm volatile ("isb 0xF" ::: "memory");
     __asm volatile ("cpsie i" ::: "memory");
     app_main();
     __builtin_unreachable();
