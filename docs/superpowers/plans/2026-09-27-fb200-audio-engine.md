@@ -106,8 +106,14 @@ mkdir -p firmware/audio/{src,board,tools}
 cp firmware/hello/tinyusb.lock firmware/audio/tinyusb.lock
 cp -r firmware/hello/src/compat firmware/audio/src/compat
 cp firmware/hello/src/{stage2.S,startup.c,vectors.c} firmware/audio/src/
+cp firmware/hello/src/{memfuncs.c,system_clock.c,usb_descriptors.c,usb_descriptors.h,tusb_config.h} firmware/audio/src/
 cp firmware/hello/board/board_config.h firmware/audio/board/
 ```
+
+In `firmware/audio/src/usb_descriptors.c` and `firmware/audio/board/board_config.h`,
+rename the `HELLO_USB_*` macros to `AUDIO_USB_*`, set PID `0x4002`, product
+`FB200 Audio` and serial `AUDIO_0001` (CDC port becomes
+`/dev/tty.usbmodemAUDIO_00011`; use that path in later tasks).
 
 Changes to the copies:
 - `firmware/audio/src/stage2.S`: unchanged (vendor entry stub at ITCM 0x4D6).
@@ -208,12 +214,15 @@ void app_main(void)
 - [ ] **Step 4: Write the Makefile (adapt hello's)**
 
 Copy `firmware/hello/Makefile` to `firmware/audio/Makefile`, then:
-- `SRC_C`: replace `src/main.c src/memfuncs.c src/system_clock.c src/usb_descriptors.c src/compat/stubs.c` with `src/main.c src/memfuncs.c src/system_clock.c src/usb_descriptors.c src/compat/stubs.c src/dsp/dsp.c src/dsp/gain.c src/dsp/testgen.c src/debug/cdc_log.c` (the audio files arrive in later tasks; create empty stubs now so the build is green: `touch src/dsp/dsp.c src/dsp/gain.c src/dsp/testgen.c src/debug/cdc_log.c` and put a single `#include` line in each).
+- `SRC_C`: start from hello's list (main, memfuncs, system_clock, usb_descriptors, compat/stubs) and add `src/dsp/*.c` and `src/debug/cdc_log.c` in the tasks that create them (Task 2 / Task 3).
 - Keep `src/stage2.S` in `SRC_S`.
 - Add to `TUSB_INC`: `-I src` (already present via CFLAGS) and nothing else.
 - The `layout` target greps `stage2|app_main|__bss_|__blob_end__|_estack` (same as hello).
 - Artifacts: `$(TARGET).vectors.bin` and `$(TARGET).blob.bin` (same objcopy rules as hello).
 - `TARGET := build/fb200-audio`.
+- **No libm on this toolchain** (`arm-none-eabi-gcc -print-file-name=libm.a`
+  returns a bare name: Homebrew's arm-none-eabi-gcc ships no newlib/libm).
+  Do not link `-lm`; Task 2 provides small math shims in `src/dsp/math.c`.
 
 - [ ] **Step 5: Write the image test**
 
@@ -251,7 +260,7 @@ def test_vectors_and_entry():
     text = (FW / "build" / "layout.txt").read_text()
     syms = {n: int(a, 16) for a, n in re.findall(r"^([0-9a-f]{8}) \S+ (\S+)$", text, re.M)}
     assert syms["stage2"] == 0x4D6
-    assert syms["__bss_start__"] == 0x20018B44
+    assert 0x20018B44 <= syms["__bss_start__"] <= 0x2004E3E8   # .bss may be aligned up
     assert syms["__bss_end__"] <= 0x2004E3E8
     assert len(blob) == syms["__blob_end__"] - 0x400
     assert len(blob) <= 0x1DBC8          # vendor entry 0 payload limit
@@ -294,6 +303,7 @@ Create `firmware/audio/tests/dsp_host_test.c`:
 #include <string.h>
 #include "dsp/dsp.h"
 #include "dsp/gain.h"
+#include "dsp/math.h"
 #include "dsp/testgen.h"
 
 static void fill(dsp_block_t *b, float v) {
@@ -345,6 +355,12 @@ int main(void) {
     fill(&b, 0.25f);
     dsp_chain_run(&(dsp_chain_t){0}, &b, DSP_BLOCK);
     assert(b.data[0][0] == 0.25f);
+
+    /* math shims vs libm (host only) */
+    for (float x = -3.2f; x < 3.2f; x += 0.017f)
+        assert(fabsf(dsp_sinf(x) - sinf(x)) < 1e-5f);
+    for (float db = -24.0f; db <= 24.0f; db += 0.5f)
+        assert(fabsf(dsp_db_to_gain(db) - powf(10.0f, db / 20.0f)) < 0.01f);
 
     printf("dsp host tests OK\n");
     return 0;
@@ -491,10 +507,49 @@ void testgen_process(void *ctx, dsp_block_t *b, size_t n);
 #endif
 ```
 
+Create `firmware/audio/src/dsp/math.h` and `math.c` (no libm on the target):
+
+```c
+#ifndef FB200_DSP_MATH_H
+#define FB200_DSP_MATH_H
+float dsp_sinf(float x);
+float dsp_exp2f(float x);
+float dsp_db_to_gain(float db);
+#endif
+```
+
+```c
+#include "math.h"
+
+/* range-reduced minimax sine, |error| < 1e-6 over [-pi, pi] */
+float dsp_sinf(float x)
+{
+    const float pi = 3.14159265358979f;
+    while (x > pi) x -= 2.0f * pi;
+    while (x < -pi) x += 2.0f * pi;
+    float x2 = x * x;
+    return x * (1.0f + x2 * (-0.16666667f + x2 * (0.00833333f + x2 * (-0.00019841f + x2 * 0.00000276f))));
+}
+
+/* 2^x via exponent split + degree-4 polynomial */
+float dsp_exp2f(float x)
+{
+    int e = (int)x;
+    float f = x - (float)e;
+    if (f < 0.0f) { f += 1.0f; e -= 1; }
+    float p = 1.0f + f * (0.6931472f + f * (0.2402265f + f * (0.0555041f + f * 0.0096181f)));
+    union { float f; uint32_t u; } v;
+    v.u = (uint32_t)(e + 127) << 23;
+    return p * v.f;
+}
+
+float dsp_db_to_gain(float db) { return dsp_exp2f(db * 0.16609640474f); }
+```
+
 Create `firmware/audio/src/dsp/testgen.c`:
 
 ```c
-#include <math.h>
+#include "math.h"
 #include "testgen.h"
 
 void testgen_init(testgen_ctx_t *c, float fs)
@@ -519,7 +574,7 @@ void testgen_process(void *ctx, dsp_block_t *b, size_t n)
         float s = 0.0f;
         switch (c->mode) {
         case TESTGEN_SINE:
-            s = c->amp * sinf(c->phase);
+            s = c->amp * dsp_sinf(c->phase);
             c->phase += c->step;
             if (c->phase > 6.28318530718f) c->phase -= 6.28318530718f;
             break;
@@ -638,7 +693,7 @@ Flash (see Task 4 Step 4 for the exact command) and open the CDC port:
 ```bash
 .venv/bin/python - <<'EOF'
 import time, serial
-s = serial.Serial("/dev/tty.usbmodemHELLO_00011", 115200, timeout=3)
+s = serial.Serial("/dev/tty.usbmodemAUDIO_00011", 115200, timeout=3)
 time.sleep(0.5)
 print(s.read(512))
 EOF
@@ -766,7 +821,7 @@ Expected: builds within the payload limit.
 # 2. Open the CDC port and send 's':
 .venv/bin/python - <<'EOF'
 import time, serial
-s = serial.Serial("/dev/tty.usbmodemHELLO_00011", 115200, timeout=3)
+s = serial.Serial("/dev/tty.usbmodemAUDIO_00011", 115200, timeout=3)
 time.sleep(0.5); print(s.read(512))
 s.write(b"s"); time.sleep(2); print(s.read(4096))
 EOF
@@ -791,7 +846,7 @@ EOF
 .venv/bin/fb200 fw flash firmware/audio/build/fb200-audio.mr --yes --no-jump
 .venv/bin/python - <<'EOF'
 import time, serial
-s = serial.Serial("/dev/tty.usbmodemHELLO_00011", 115200, timeout=3)
+s = serial.Serial("/dev/tty.usbmodemAUDIO_00011", 115200, timeout=3)
 time.sleep(0.5)
 s.write(b"d"); time.sleep(3)
 data = s.read(8192)
@@ -821,6 +876,11 @@ git commit -m "audio: I2C probe firmware (bus scan + codec register dump)"
 Use the Unicorn harness (see `docs/FIRMWARE_BRINGUP.md` §2 for the recipe) to emulate the stock boot, then **isolate the SAI init function** (stock ITCM 0xF180 for SAI1, 0xF408 for SAI2): map the regions, set up the RAM pointers it reads, run from its entry with a code hook, and log every write to `0x40384000..0x4038C000` (SAI1) and `0x400FC000..0x400FD000` (CCM) / `0x400D8000..0x400D9000` (ANALOG). Record the register values.
 
 Expected outcome: SAI TCR2..TCR5 / RCR2..RCR5 values, MCLK divider, and the PLL4 settings for the stock 44.1 kHz rate. Write them to `tests/fixtures/fb200-sai-config.txt` with a header naming the source (ITCM addresses + emulator run).
+
+If isolating the init function fails, fall back to datasheet-recommended
+dividers for 48 kHz + the EVK clock config, and verify the rate empirically in
+Task 7 (measure the testgen tone frequency against the USB capture rate).
+Record which path was taken.
 
 - [ ] **Step 2: Extract GPIO/analog routing**
 
@@ -924,7 +984,7 @@ Create `firmware/audio/src/audio/codec.h`:
 /* Values from docs/AUDIO_PATH.md (Task 5). Update there first, then here. */
 #define CODEC_I2C_BUS   1
 #define CODEC_I2C_ADDR  0x1A
-#define CODEC_REG_DAC_CTRL 0x0A     /* placeholder: replace with the real map */
+#define CODEC_REG_DAC_CTRL 0x0A     /* register number from docs/AUDIO_PATH.md */
 
 typedef struct { uint8_t reg, value; } codec_write_t;
 
@@ -986,7 +1046,7 @@ compile command (add `-DCODEC_HOST_TEST` in `tests/test_codec_init.py`).
 - [ ] **Step 4: Run the host test**
 
 Run: `.venv/bin/pytest tests/test_codec_init.py -q`
-Expected: `1 passed` after the table contains a real sequence (Task 5); until then, keep the test red and mark it `xfail` with a reason referencing Task 5 — remove the marker in Task 5's commit.
+Expected: `1 passed` (the table is filled from the Task 5 findings in this step).
 
 - [ ] **Step 5: Hardware: codec init + register read-back**
 
@@ -1064,11 +1124,32 @@ void sai_audio_init(void)
     DMAMUX_SetSource(DMAMUX_BASE, DMA_TX_CH, DMA_TX_REQ);
     DMAMUX_EnableChannel(DMAMUX_BASE, DMA_TX_CH);
 
-    EDMA_Init(DMA_BASE, &(edma_config_t){0});
+    edma_config_t dcfg;
+    EDMA_GetDefaultConfig(&dcfg);
+    EDMA_Init(DMA_BASE, &dcfg);
     EDMA_CreateHandle(&rx_dma, DMA_BASE, DMA_RX_CH);
     EDMA_CreateHandle(&tx_dma, DMA_BASE, DMA_TX_CH);
     EDMA_SetCallback(&rx_dma, rx_cb, (void *)(uintptr_t)0);
     EDMA_SetCallback(&tx_dma, tx_cb, (void *)(uintptr_t)0);
+
+    /* Ping-pong: two queued TCDs per direction, one 32-bit slot per request,
+     * 32 frames per transfer; the callback re-submits the finished buffer. */
+    static edma_transfer_config_t xfer;
+    for (int i = 0; i < 2; i++) {
+        EDMA_PrepareTransfer(&xfer, (void *)&SAI_BASE->RDR, sizeof(uint32_t),
+                             rx_xfer[i].data, sizeof(uint32_t), 4,
+                             DSP_BLOCK * 4, kEDMA_PeripheralToMemory);
+        EDMA_SubmitTransfer(&rx_dma, &xfer);
+        EDMA_PrepareTransfer(&xfer, tx_xfer[i].data, sizeof(uint32_t),
+                             (void *)&SAI_BASE->TDR, sizeof(uint32_t), 4,
+                             DSP_BLOCK * 4, kEDMA_MemoryToPeripheral);
+        EDMA_SubmitTransfer(&tx_dma, &xfer);
+    }
+    EDMA_EnableChannelInterrupts(DMA_BASE, DMA_RX_CH, kEDMA_MajorInterruptEnable);
+    EDMA_EnableChannelInterrupts(DMA_BASE, DMA_TX_CH, kEDMA_MajorInterruptEnable);
+    EnableIRQ(DMA0_IRQn);
+    EDMA_StartTransfer(&rx_dma);
+    EDMA_StartTransfer(&tx_dma);
 
     SAI_TxEnableDMA(SAI_BASE, kSAI_FIFORequestDMAEnable, true);
     SAI_RxEnableDMA(SAI_BASE, kSAI_FIFORequestDMAEnable, true);
@@ -1105,7 +1186,7 @@ void engine_init(void)
     dsp_chain_add(&chain, testgen_process, &testgen);
 }
 
-void engine_set_gain_db(float db) { gain_set(&gain, powf(10.0f, db / 20.0f)); }
+void engine_set_gain_db(float db) { gain_set(&gain, dsp_db_to_gain(db)); }
 void engine_set_testgen(testgen_mode_t m, float amp, float freq) { testgen_set(&testgen, m, amp, freq); }
 
 /* Called from the superloop when an RX buffer is complete. */
@@ -1194,6 +1275,18 @@ Base the descriptor set on TinyUSB's UAC2 device example in the deps tree
 hello firmware (`fb200-tools` / `FB200 Audio`).
 
 - [ ] **Step 3: Implement the audio callbacks + FIFOs**
+
+Create `firmware/audio/src/audio/usb_audio.h`:
+
+```c
+#ifndef FB200_USB_AUDIO_H
+#define FB200_USB_AUDIO_H
+#include <stddef.h>
+void usb_audio_init(void);
+size_t usb_audio_pull(float *dst, size_t frames);       /* host playback -> engine */
+void usb_audio_push(const float *src, size_t frames);   /* engine -> host capture */
+#endif
+```
 
 Create `firmware/audio/src/audio/usb_audio.c`:
 
@@ -1304,6 +1397,12 @@ Expected: FAIL (no `engine_host_test.c` target yet)
   `fifo_inserts++`; if it is full for >N blocks, advance the tail and
   `fifo_drops++`.
 - Meters: peak/RMS per channel per block, logged at 1 Hz over CDC when enabled.
+- Fault handling: check `SAI_TxGetStatusFlags`/`SAI_RxGetStatusFlags` for FIFO
+  error flags each block; on error increment `dma_errors`, call
+  `codec_mute(1)`, re-arm the DMA, and log it. A codec init failure must also
+  start muted.
+- Underrun check: add a command `x` that stops refilling TX for 2 s; record in
+  `docs/AUDIO_PATH.md` whether the DAC outputs silence or stale samples.
 - CDC commands (one byte each): `g` cycle gain 0/−6/−12 dB, `t` testgen
   sine on/off, `w` white on/off, `i` impulse, `m` mute toggle, `s` stats dump.
   Keep the Task 4 `s`/`d` probe commands reachable via `p` + subcommand to
