@@ -19,3 +19,30 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: pytest -q
+
+  firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi make curl
+      - name: Install package
+        run: pip install -e .
+      - name: Build firmware
+        working-directory: firmware/hello
+        run: make deps build
+      - name: Generate synthetic template
+        run: python firmware/hello/tools/synthetic_template.py -o firmware/hello/build/synthetic-template.mr
+      - name: Pack flashable image
+        run: fb200 fw pack --template firmware/hello/build/synthetic-template.mr firmware/hello/build/fb200-hello.bin -o firmware/hello/build/fb200-hello.mr
+      - name: Inspect packed image
+        run: fb200 fw inspect firmware/hello/build/fb200-hello.mr
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fb200-hello
+          path: |
+            firmware/hello/build/fb200-hello.bin
+            firmware/hello/build/fb200-hello.mr
