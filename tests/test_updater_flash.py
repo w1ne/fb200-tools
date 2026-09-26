@@ -84,8 +84,8 @@ def test_flash_uses_longer_erase_timeout():
 
         def read_report(self, timeout_ms=500):
             if self.slow:
-                self.slow = False
                 if timeout_ms >= 200:
+                    self.slow = False
                     return super().read_report(timeout_ms)
                 return None
             return super().read_report(timeout_ms)

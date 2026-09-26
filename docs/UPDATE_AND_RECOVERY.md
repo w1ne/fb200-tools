@@ -24,9 +24,8 @@ use it only to detect that the device is present. See [`HARDWARE.md`](HARDWARE.m
 ## 2. Official update flow
 
 Reverse-engineered from the official Electron updater; the sequence below was
-replayed byte-for-byte against a capture of the official updater's frame stream.
-No write has yet been performed on hardware from this project (that is the
-Task 20 validation step).
+replayed byte-for-byte against a capture of the official updater's frame stream,
+and the complete flow was later exercised on hardware (results in §7).
 
 1. **Jump.** From application mode the host sends `fn=0xC1` (no payload). The
    device re-enumerates as `0483:5703`.
@@ -130,11 +129,11 @@ enumeration using the commands in §5.4.
 
 | Power-on footswitch combo | Expected if it forces update mode | Result |
 |---------------------------|-----------------------------------|--------|
-| A + B | `0483:5703` enumerates | TBD — hardware validation pending (Task 20) |
-| B + C | `0483:5703` enumerates | TBD — hardware validation pending (Task 20) |
-| C + D | `0483:5703` enumerates | TBD — hardware validation pending (Task 20) |
-| A + D | `0483:5703` enumerates | TBD — hardware validation pending (Task 20) |
-| all four (A + B + C + D) | `0483:5703` enumerates | TBD — hardware validation pending (Task 20) |
+| A + B | `0483:5703` enumerates | TBD — not tested (open question; see [`RESEARCH.md`](RESEARCH.md) §5) |
+| B + C | `0483:5703` enumerates | TBD — not tested (open question; see [`RESEARCH.md`](RESEARCH.md) §5) |
+| C + D | `0483:5703` enumerates | TBD — not tested (open question; see [`RESEARCH.md`](RESEARCH.md) §5) |
+| A + D | `0483:5703` enumerates | TBD — not tested (open question; see [`RESEARCH.md`](RESEARCH.md) §5) |
+| all four (A + B + C + D) | `0483:5703` enumerates | TBD — not tested (open question; see [`RESEARCH.md`](RESEARCH.md) §5) |
 
 The combos are non-destructive: power-cycle the pedal to leave any of these
 attempts. Results will be recorded here once verified on hardware.

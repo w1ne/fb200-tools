@@ -17,6 +17,10 @@ is documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
   backup manifest.
 - WAV → IR conversion matching the official editor: 44.1 kHz, channel 0,
   1024 `float32` samples.
+- Firmware container tooling: `fw inspect`, `fw extract-block`, and
+  `fw patch-string` for same-length patches.
+- Safe flash client: `fw flash` (dry-run by default, explicit `--yes`,
+  `--no-jump` recovery).
 - Mock transport so the full test suite runs without a pedal.
 - `fb200 probe` — raw frame research tool for protocol exploration.
 - Protocol documentation derived from the official app and verified on hardware.
@@ -27,7 +31,7 @@ is documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
 |---------|--------|----------|
 | v0.1 | Done | device info, IR list/import/delete/backup, docs |
 | v0.2 | Done | firmware container tooling: `fw inspect`, `fw extract-block`, `fw patch-string`, plus format/analysis docs |
-| v0.3 (current) | In progress | flashing (`fw flash`), recovery docs, stock round-trip and a hardware-verified proof patch (firmware version string) |
+| v0.3 | Done | flashing (`fw flash`), recovery docs, stock round-trip and a hardware-verified proof patch (firmware version string) |
 
 ## Install
 
@@ -80,6 +84,17 @@ fb200 probe --listen 2              # print raw HID reports for 2 seconds
 fb200 probe --send "aa55010000c8cf" # send a raw frame
 ```
 
+Firmware images and flashing:
+
+```bash
+fb200 fw inspect stock.mr                     # container fields, blocks, pages
+fb200 fw patch-string stock.mr \
+  --find "FB200 Audio" --replace "FB200 Tools" -o patched.mr
+fb200 fw flash patched.mr                     # dry run: plan only, nothing written
+fb200 fw flash patched.mr --yes               # erase, write and jump back
+fb200 fw flash stock.mr --yes --no-jump       # recover a pedal already in update mode
+```
+
 ![fb200-tools protocol stack: the CLI and library layers (`pedal.py`/`updater.py` request/response and flash orchestration, `protocol.py` frames `AA 55 | len u16le | fn | data | CRC16`, `transport.py` HID reports of 64 B whose first byte is the valid length) down to the pedal over USB](images/protocol-stack.svg)
 
 ## Safety
@@ -96,6 +111,14 @@ pedal temporarily or permanently unusable — use at your own risk. See
 
 - [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — USB identities, HID report framing,
   CRC16, command set, IR format, and the firmware update mode.
+- [`docs/FIRMWARE_FORMAT.md`](docs/FIRMWARE_FORMAT.md) — the `.mr` container.
+- [`docs/UPDATE_AND_RECOVERY.md`](docs/UPDATE_AND_RECOVERY.md) — the update flow,
+  risks, recovery, and hardware validation results.
+- [`docs/PATCHING.md`](docs/PATCHING.md) — rules for safe same-length patches
+  and the proof patch walkthrough.
+- [`docs/RESEARCH.md`](docs/RESEARCH.md) — how the protocol and firmware format
+  were reverse-engineered.
+- [`docs/HARDWARE.md`](docs/HARDWARE.md) — USB topology and observation commands.
 - [`DISCLAIMER.md`](DISCLAIMER.md) — risk and affiliation notice.
 
 ## Credits
