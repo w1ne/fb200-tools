@@ -216,6 +216,19 @@ about 3 seconds, release. This is now the documented manual route into the
 bootloader when the application does not provide the `0xC1` command (e.g.
 custom firmware), and it makes flashing `fb200-hello` recoverable.
 
+### fb200-hello custom firmware (2026-09-26)
+
+| Check | Result |
+|-------|--------|
+| `fb200 fw pack` of the hello image (app-only and 2-block) | PASS — valid containers, 392 / 6,810 write frames |
+| Flash `fb200-hello` in the vendor image format | PASS — `wrote 3486720 bytes`; pedal boots it: USB `0xCAFE:0x4001` ("FB200 Hello"), CDC banner + echo |
+| Recovery via A+D + stock reflash | PASS — `fb200 info` reported `FB200 V1.0.1` after every attempt |
+
+Custom firmware bring-up is **solved**: see
+[`FIRMWARE_BRINGUP.md`](FIRMWARE_BRINGUP.md) for the vendor boot contract and
+the verified flashing procedure. The stock firmware and all documented
+recovery paths are unaffected.
+
 ## References
 
 - Update frames and command set: [`PROTOCOL.md`](PROTOCOL.md) §8

@@ -34,7 +34,7 @@ is documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
 | v0.1 | Done | device info, IR list/import/delete/backup, docs |
 | v0.2 | Done | firmware container tooling: `fw inspect`, `fw extract-block`, `fw patch-string`, plus format/analysis docs |
 | v0.3 | Done | flashing (`fw flash`), recovery docs, stock round-trip and a hardware-verified proof patch (firmware version string) |
-| v0.4 (current) | In progress | app-only .mr packer (`fw pack`) and the fb200-hello custom firmware |
+| v0.4 (current) | In progress | app-only `.mr` packer (`fw pack`) and `fb200-hello` custom firmware — boots on hardware (`docs/FIRMWARE_BRINGUP.md`) |
 
 ## Install
 

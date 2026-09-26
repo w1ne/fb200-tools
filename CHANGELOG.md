@@ -5,14 +5,23 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-09-26
 
 ### Added
 
 - `fb200 fw pack` for building app-only (single-block) `.mr` images.
-- `firmware/hello`: minimal custom firmware that boots on the FB200 and
-  enumerates as a CDC-ACM device (`0xCAFE:0x4001`), built against a pinned
-  TinyUSB with CI artifacts.
+- `firmware/hello`: a minimal custom firmware for the i.MX RT1062 (pinned
+  TinyUSB 0.21.0, CDC-ACM device) that builds in CI and packs into a flashable
+  `.mr`.
+- `docs/FIRMWARE_BRINGUP.md`: vendor loader/relocation findings and the
+  hardware bring-up investigation.
+
+### Notes
+
+- `fb200-hello` boots on hardware in the vendor image format: USB
+  `0xCAFE:0x4001` ("FB200 Hello"), CDC banner and echo verified. The vendor
+  boot contract (block-0 loader/table, fixed entry at ITCM 0x4d6) is
+  documented in `docs/FIRMWARE_BRINGUP.md`.
 
 ## [0.3.0] - 2026-09-26
 
