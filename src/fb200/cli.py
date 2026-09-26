@@ -198,6 +198,27 @@ def _cmd_fw_patch_string(args) -> int:
     return 0
 
 
+def _cmd_fw_pack(args) -> int:
+    from fb200.firmware import MrFile, pack_app_image
+
+    template = MrFile.from_path(args.template)
+    try:
+        app = Path(args.app).read_bytes()
+    except OSError as exc:
+        raise FirmwareError(f"cannot read {args.app}: {exc}") from exc
+    packed = pack_app_image(template, app)
+    out = Path(args.output) if args.output else Path(args.app).with_suffix(".mr")
+    try:
+        out.write_bytes(packed.to_bytes())
+    except OSError as exc:
+        raise FirmwareError(f"cannot write {out}: {exc}") from exc
+    print(
+        f"packed {len(app)} bytes into {out} "
+        f"({len(packed.blocks[0].data)}-byte block 0)"
+    )
+    return 0
+
+
 def _cmd_fw_flash(args) -> int:
     import time
 
@@ -328,6 +349,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_patch.add_argument("--replace", required=True)
     p_patch.add_argument("-o", "--output")
     p_patch.set_defaults(func=_cmd_fw_patch_string)
+
+    p_pack = fw_sub.add_parser("pack", help="pack a raw binary into an app-only .mr")
+    p_pack.add_argument("--template", required=True,
+                        help="stock .mr whose header/tag fields are reused")
+    p_pack.add_argument("app", help="raw application binary")
+    p_pack.add_argument("--app-only", action="store_true",
+                        help="single-block application image (default and only mode)")
+    p_pack.add_argument("-o", "--output")
+    p_pack.set_defaults(func=_cmd_fw_pack)
 
     p_flash = fw_sub.add_parser("flash", help="flash a .mr image (dry-run unless --yes)")
     p_flash.add_argument("file")
