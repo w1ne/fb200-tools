@@ -10,14 +10,23 @@ extern int g_bss_writable;
 
 void app_main(void)
 {
-    board_init();
-    tusb_init();
     cdc_log_init();
+    log_printf("app_main entered, bss_writable=%d\r\n", g_bss_writable);
+    board_init();
+    log_printf("board_init done\r\n");
+    tusb_init();
+    log_printf("tusb_init done\r\n");
     i2c_probe_init();
-    log_printf("fb200-audio up, bss_writable=%d\r\n", g_bss_writable);
+    log_printf("probe init done\r\n");
+
+    uint32_t loops = 0;
     while (1) {
         tud_task();
         cdc_log_task();
+        if (++loops >= 2000000u) {          /* heartbeat, no timer needed */
+            loops = 0;
+            log_printf("hb, cdc=%d\r\n", (int)tud_cdc_connected());
+        }
         if (tud_cdc_available()) {
             char cmd = (char)tud_cdc_read_char();
             if (cmd == 's') i2c_scan_all();

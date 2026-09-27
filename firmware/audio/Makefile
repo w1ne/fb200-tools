@@ -40,7 +40,8 @@ TUSB_DEFS := \
   -DCFG_TUSB_MCU=OPT_MCU_MIMXRT10XX \
   -DCPU_MIMXRT1062DVL6A \
   -DXIP_EXTERNAL_FLASH=1 \
-  -DNDEBUG
+  -DNDEBUG \
+  -DI2C_RETRY_TIMES=100000
 CFLAGS    := $(CPUFLAGS) -O2 -g3 -ffreestanding -fno-builtin -fno-common \
              -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables \
              -Wall -Wextra -Wno-unused-parameter -std=gnu11 \
