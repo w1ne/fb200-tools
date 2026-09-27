@@ -45,13 +45,44 @@ static int mem_ok(uint32_t addr)
 {
     return (addr < 0x400000u) ||                       /* ITCM/DTCM */
            (addr >= 0x20000000u && addr < 0x20300000u) ||   /* DTCM/OCRAM */
+           (addr >= 0x400F8000u && addr < 0x400F9000u) ||   /* SRC (always on) */
            (addr >= 0x60000000u && addr < 0x60800000u);     /* flash */
+}
+
+static void hexdump(uint32_t addr, uint32_t len)
+{
+    for (uint32_t i = 0; i < len; i++) {
+        if ((i & 15u) == 0) log_printf("%08x:", (unsigned)(addr + i));
+        log_printf(" %02x", *(volatile uint8_t *)(addr + i));
+        if ((i & 15u) == 15u) log_printf("\r\n");
+    }
+    if (len & 15u) log_printf("\r\n");
+}
+
+static void cmd_dumpmem(const char *a1, const char *a2)
+{
+    int ok1, ok2;
+    uint32_t addr = parse_num(a1, &ok1);
+    uint32_t len = parse_num(a2, &ok2);
+    if (!ok1 || !ok2) { log_printf("usage: dumpmem <addr> <len>\r\n"); return; }
+    if (len > 4096u) len = 4096u;
+    if (!mem_ok(addr) || !mem_ok(addr + len)) { log_printf("address not allowed\r\n"); return; }
+    hexdump(addr, len);
+}
+
+static void cmd_src(void)
+{
+    log_printf("SRC_SRSR=%08x SRC_SBMR1=%08x SRC_SBMR2=%08x\r\n",
+               (unsigned)*(volatile uint32_t *)0x400F8020u,
+               (unsigned)*(volatile uint32_t *)0x400F8004u,
+               (unsigned)*(volatile uint32_t *)0x400F801Cu);
 }
 
 static void cmd_help(void)
 {
-    log_printf("commands: help | stats | hb on|off | scan | dump [bus addr] |\r\n"
-               "          peek <addr> [len] | poke <addr> <val> | reset | reboot\r\n");
+    log_printf("commands: help | stats | src | hb on|off | scan | dump [bus addr] |\r\n"
+               "          peek <addr> [len] | dumpmem <addr> <len> | poke <addr> <val> |\r\n"
+               "          reset | reboot\r\n");
 }
 
 static void cmd_stats(void)
@@ -69,12 +100,7 @@ static void cmd_peek(const char *a1, const char *a2)
     if (a2) { len = parse_num(a2, &ok); if (!ok) { log_printf("bad len\r\n"); return; } }
     if (len > 256) len = 256;
     if (!mem_ok(addr) || !mem_ok(addr + len)) { log_printf("address not allowed\r\n"); return; }
-    for (uint32_t i = 0; i < len; i++) {
-        if ((i & 15u) == 0) log_printf("%08x:", (unsigned)(addr + i));
-        log_printf(" %02x", *(volatile uint8_t *)(addr + i));
-        if ((i & 15u) == 15u) log_printf("\r\n");
-    }
-    if (len & 15u) log_printf("\r\n");
+    hexdump(addr, len);
 }
 
 static void cmd_poke(const char *a1, const char *a2)
@@ -135,6 +161,8 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "scan")) i2c_scan_all();
     else if (streq(argv[0], "dump")) cmd_dump(argv[1], argv[2]);
     else if (streq(argv[0], "peek")) cmd_peek(argv[1], argv[2]);
+    else if (streq(argv[0], "dumpmem")) cmd_dumpmem(argv[1], argv[2]);
+    else if (streq(argv[0], "src")) cmd_src();
     else if (streq(argv[0], "poke")) cmd_poke(argv[1], argv[2]);
     else if (streq(argv[0], "reset") || streq(argv[0], "reboot")) {
         log_printf("rebooting (handover)\r\n");

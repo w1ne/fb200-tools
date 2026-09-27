@@ -34,10 +34,12 @@ void cdc_log_task(void)
 {
     if (!tud_cdc_connected()) return;
     size_t written = 0;
-    while (tail != head && written < 64) {
+    /* Only consume the ring when TinyUSB accepts the byte: dropping here
+     * corrupted console output under load (the FIFO is 256 bytes). */
+    while (tail != head && tud_cdc_write_available() > 0u) {
         uint8_t ch = (uint8_t)ring[tail];
+        if (tud_cdc_write(&ch, 1) != 1u) break;
         tail = (tail + 1) % sizeof ring;
-        tud_cdc_write(&ch, 1);
         written++;
     }
     if (written) tud_cdc_write_flush();
