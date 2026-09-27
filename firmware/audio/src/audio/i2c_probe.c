@@ -8,6 +8,10 @@
 
 static LPI2C_Type *const kBuses[4] = { LPI2C1, LPI2C2, LPI2C3, LPI2C4 };
 
+/* First device found by the scan; 'd' dumps it. */
+static uint8_t g_found_bus = 0;
+static uint8_t g_found_addr = 0;
+
 /* Address probe: one-byte read through the SDK transfer (bounded by
  * I2C_RETRY_TIMES). A present device ACKs the address; absent ones NACK and
  * the transfer returns kStatus_LPI2C_Nak. */
@@ -83,12 +87,19 @@ void i2c_scan_all(void)
                 bool readable = read_reg(kBuses[bus], a, 0x00, &v);
                 log_printf(" %02x", a);
                 if (readable) log_printf("[%02x]", v);
+                if (!found) { g_found_bus = (uint8_t)(bus + 1); g_found_addr = a; }
                 found++;
             }
         }
         if (!found) log_printf(" (none)");
         log_printf("\r\n");
     }
+}
+
+void i2c_dump_found(void)
+{
+    if (g_found_addr == 0) { log_printf("no device found yet\r\n"); return; }
+    i2c_dump(g_found_bus, g_found_addr);
 }
 
 void i2c_dump(uint8_t bus, uint8_t addr)

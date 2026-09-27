@@ -2,6 +2,7 @@
  * ('s' scan, 'd' dump bus1/0x1A, 'D' dump bus2/0x1A); audio bring-up lands in
  * later tasks (codec, SAI/eDMA, USB audio). */
 #include <stdint.h>
+#include "fsl_device_registers.h"
 #include "tusb.h"
 #include "bsp/board_api.h"
 #include "debug/cdc_log.h"
@@ -14,16 +15,13 @@ extern int g_bss_writable;
  * without needing A+D at power-on. */
 __attribute__((noreturn)) static void jump_to_bootloader(void)
 {
-    __asm volatile ("cpsid i" ::: "memory");
+    /* The stock app's 0xC1 handler mutes the codec and issues a software
+     * reset (SCB->AIRCR SYSRESETREQ); the bootloader then enters DFU because
+     * the reset source is software. Mirror exactly that. */
     tud_disconnect();
     for (volatile uint32_t i = 0; i < 4000000u; i++) {
     }
-    uint32_t sp = *(volatile uint32_t *)0x60000000u;
-    uint32_t pc = *(volatile uint32_t *)0x60000004u;
-    __asm volatile ("msr msp, %0" :: "r" (sp) : "memory");
-    __asm volatile ("dsb 0xf" ::: "memory");
-    __asm volatile ("isb 0xf" ::: "memory");
-    ((void (*)(void))pc)();
+    NVIC_SystemReset();
     __builtin_unreachable();
 }
 
@@ -49,7 +47,7 @@ void app_main(void)
         if (tud_cdc_available()) {
             char cmd = (char)tud_cdc_read_char();
             if (cmd == 's') i2c_scan_all();
-            else if (cmd == 'd') i2c_dump(1, 0x1A);
+            else if (cmd == 'd') i2c_dump_found();
             else if (cmd == 'D') i2c_dump(2, 0x1A);
             else if (cmd == 'e') i2c_dump(3, 0x1A);
             else if (cmd == 'f') i2c_dump(4, 0x1A);

@@ -4,4 +4,5 @@
 void i2c_probe_init(void);
 void i2c_scan_all(void);
 void i2c_dump(uint8_t bus, uint8_t addr);
+void i2c_dump_found(void);
 #endif
