@@ -207,8 +207,13 @@ int ui_save(void) { return save_to(bank, slot); }
 static void toggle_module(int m)
 {
     unsigned off = kModuleEnable[m];
-    pset(&edit, off, pget(&edit, off) ? 0 : 1);
-    if (m == M_AMP) pset(&edit, P_CAB_EN, pget(&edit, P_AMP_EN));   /* stock: C = amp + cab */
+    if (m == M_AMP) {   /* stock 0xa4e2: C = amp + cab; either on -> both off, else both on */
+        uint16_t on = !pget(&edit, P_AMP_EN) && !pget(&edit, P_CAB_EN);
+        pset(&edit, P_AMP_EN, on);
+        pset(&edit, P_CAB_EN, on);
+    } else {
+        pset(&edit, off, pget(&edit, off) ? 0 : 1);
+    }
     revision++;
     proto_notify_module(kProtoModule[m]);
     if (m == M_AMP) proto_notify_module(kProtoModule[M_CAB]);
@@ -407,6 +412,7 @@ static void leds(uint32_t now)
     bool blink_on = (now / 250u) & 1u;
     for (int k = 0; k < KNOB_COUNT; k++) {
         if (kKnob[k].led < 0) continue;
+        if (tuner_mode) { knob_led(kKnob[k].led, false); continue; }   /* stock: off while tuning */
         if (kKnob[k].module == M_NONE) { knob_led(kKnob[k].led, true); continue; }   /* master */
         bool enabled = pget(&edit, kModuleEnable[kKnob[k].module]) != 0;
         knob_led(kKnob[k].led, enabled && (caught[k] || blink_on));

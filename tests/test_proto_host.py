@@ -439,6 +439,29 @@ def test_rhythm_mode_buttons_as_stock(h):
     assert drums(h)[0] == 0
 
 
+def test_live_mode_c_turns_amp_and_cab_off_if_either_is_on(h):
+    tap(h, "b", "c")                                           # live mode
+    e = bytearray(h.edit())
+    struct.pack_into("<H", e, 0x2C, 0)                         # amp off, cab on
+    h.send(0x97, b"\xff" + bytes(e))
+    out = frames(tap(h, "c"))
+    assert [fn for _, fn, _ in out] == [0x82, 0x83]
+    assert struct.unpack_from("<H", h.edit(), 0x2C)[0] == 0 and struct.unpack_from("<H", h.edit(), 0x44)[0] == 0
+    tap(h, "c")                                                # both off -> both on
+    assert struct.unpack_from("<H", h.edit(), 0x2C)[0] == 1 and struct.unpack_from("<H", h.edit(), 0x44)[0] == 1
+
+
+def test_knob_leds_off_in_tuner_mode(h):
+    h.cmd("tick 10")
+    assert h.cmd("leds")[0][5 + 14] == "1"                     # MASTER LED is always on
+    h.send(0xB8, bytes([5, 0, 1, 1]))
+    h.cmd("tick 10")
+    assert h.cmd("leds")[0] == "LEDS " + "0" * 16
+    tap(h, "a")                                                # leave the tuner
+    h.cmd("tick 10")
+    assert h.cmd("leds")[0][5 + 14] == "1"
+
+
 # ---------------------------------------------------------------- IR slots
 
 def test_ir_import_list_query_delete_with_the_client(h):
