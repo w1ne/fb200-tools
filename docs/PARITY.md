@@ -144,7 +144,8 @@ Budgets on this chip: 600 MHz / 44.1 kHz = 13.6k cycles per sample; RAM
 - **M1 - audio bring-up: DONE on hardware.** Guitar/bass in, headphone out,
   USB UAC2 in/out, codec, SAI/eDMA, 44.1 kHz stock clock tree, console,
   recovery + USB self-update, crash dumps.
-- **M2 - parity sound (in progress).** Stock chain ported with parity tests
+- **M2 - parity sound: DONE on hardware** (2026-09-27; the user played
+  through it and stepped presets). Was: Stock chain ported with parity tests
   against a bit-exact emulation of the stock DSP: gate, compressor, amp
   (Wiener-Hammerstein, 10 models) + tone stack, cab (512-tap FIR, 10 +
   user IRs), 11 modulations, 5 reverbs. Stock coefficients are extracted at
