@@ -27,6 +27,7 @@
 #include "ui/controls.h"
 #include "ui/power.h"
 #include "ui/ui.h"
+#include "ui/rgb.h"
 #endif
 
 extern int g_bss_writable;
@@ -109,7 +110,7 @@ static void cmd_help(void)
              "          testgen off|sine|white|impulse [freq] | meters on|off | x\r\n"
              "  led   : led on|off|scan | ledpin <gpio> <pin>\r\n"
              "  ui    : ui | uimon on|off | disp <text> | kled <0-15> on|off | power\r\n"
-             "          preset [0-39] | save\r\n"
+             "          preset [0-39] | save | rgb 0xRRGGBB [led] | rgb cfg 0xIIS0S1\r\n"
              "  tests : crash | hang\r\n"
 #endif
              "  debug : stats | src | hb on|off | clocks | crumbs | crashdump | crashclear\r\n"
@@ -498,6 +499,26 @@ static void dispatch(char *cmd)
                    pget(p, P_REV_EN), pget(p, P_REV_TYPE), ui_master());
     }
     else if (streq(argv[0], "save")) ui_save();
+    else if (streq(argv[0], "rgb")) {   /* rgb <rrggbb> | rgb cfg <inv> <sym0> <sym1> */
+        int ok, ok2, ok3;
+        if (argc > 1 && streq(argv[1], "cfg")) {
+            /* argv holds 3 tokens max: "rgb cfg <inv:sym0:sym1 as 0xIIS0S1>" */
+            uint32_t v = parse_num(argv[2], &ok);
+            if (ok) rgb_config((v >> 16) & 1u, (uint8_t)(v >> 8), (uint8_t)v);
+            log_printf("rgb cfg %s\r\n", ok ? "ok" : "usage: rgb cfg 0x<inv><sym0><sym1>");
+        } else {
+            uint32_t c = parse_num(argv[1], &ok);
+            uint32_t i = parse_num(argv[2], &ok2);
+            (void)ok3;
+            if (!ok) { log_printf("usage: rgb 0xRRGGBB [led]\r\n"); }
+            else {
+                if (argc > 2 && ok2) rgb_set((int)i, (uint8_t)(c >> 16), (uint8_t)(c >> 8), (uint8_t)c);
+                else rgb_fill((uint8_t)(c >> 16), (uint8_t)(c >> 8), (uint8_t)c);
+                rgb_show();
+                log_printf("ok\r\n");
+            }
+        }
+    }
     else if (streq(argv[0], "power")) {
         const power_state_t *p = power_state();
         log_printf("power: battery=%u (level %u) supply=%u%s charging=%u\r\n",

@@ -58,6 +58,7 @@ TUSB_INC  := \
   -I $(MCU_DIR)/drivers/romapi \
   -I $(MCUX_CORE)/drivers/flexspi \
   -I $(MCUX_CORE)/drivers/adc_12b1msps_sar \
+  -I $(MCUX_CORE)/drivers/flexio -I $(MCUX_CORE)/drivers/flexio/uart \
   -I $(DSP_DIR)/Include -I $(DSP_DIR)/PrivateInclude
 TUSB_DEFS := \
   -DCFG_TUSB_MCU=OPT_MCU_MIMXRT10XX \
@@ -83,7 +84,7 @@ SRC_C := \
   src/audio/i2c_probe.c \
   src/audio/usb_audio.c src/audio/engine.c src/audio/frontend.c \
   src/ui/pads.c src/ui/display.c src/ui/controls.c src/ui/power.c \
-  src/ui/ui.c src/preset/preset.c src/audio/codec.c \
+  src/ui/ui.c src/ui/rgb.c src/preset/preset.c src/audio/codec.c \
   src/audio/sai.c src/audio/drift.c \
   $(TUSB_DIR)/src/tusb.c \
   $(TUSB_DIR)/src/common/tusb_fifo.c \
@@ -107,14 +108,17 @@ SRC_C := \
   $(MCUX_CORE)/drivers/lpi2c/fsl_lpi2c.c \
   $(MCU_DIR)/drivers/fsl_clock.c \
   $(MCUX_CORE)/drivers/flexspi/fsl_flexspi.c \
-  $(MCUX_CORE)/drivers/adc_12b1msps_sar/fsl_adc.c
+  $(MCUX_CORE)/drivers/adc_12b1msps_sar/fsl_adc.c \
+  $(MCUX_CORE)/drivers/flexio/fsl_flexio.c \
+  $(MCUX_CORE)/drivers/flexio/uart/fsl_flexio_uart.c \
+  $(MCUX_CORE)/drivers/flexio/uart/fsl_flexio_uart_edma.c
 # The recovery image is a resident launcher: it must stay below ITCM 0x1F000
 # (the copier), so it carries none of the audio/DSP/LED code.
 ifeq ($(VARIANT),recovery)
 SRC_C := $(filter-out src/led.c src/dsp/% src/audio/engine.c \
                     src/audio/usb_audio.c src/audio/codec.c src/audio/sai.c \
                     src/audio/drift.c src/audio/frontend.c src/ui/% src/preset/% \
-                    $(MCUX_CORE)/drivers/adc_12b1msps_sar/% \
+                    $(MCUX_CORE)/drivers/adc_12b1msps_sar/% $(MCUX_CORE)/drivers/flexio/% \
                     $(MCUX_CORE)/drivers/sai/% $(MCUX_CORE)/drivers/edma/% \
                     $(MCUX_CORE)/drivers/dmamux/%,$(SRC_C))
 endif

@@ -17,6 +17,7 @@
 #include "ui/controls.h"
 #include "ui/power.h"
 #include "ui/ui.h"
+#include "ui/rgb.h"
 
 extern int g_bss_writable;
 extern uint32_t tusb_time_millis_api(void);
@@ -71,6 +72,7 @@ void app_main(void)
     display_init();
     controls_init();
     power_init();
+    rgb_init();
     ui_init();
     if (!codec_ok) {
         engine_set_mute(true); /* start muted when the codec did not answer */
