@@ -27,7 +27,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from fb200.firmware import MrFile  # noqa: E402
+from fb200.firmware import MrFile
 
 ITCM_BASE, ITCM_SIZE = 0x0, 0x200000
 DTCM_BASE, DTCM_SIZE = 0x20000000, 0x100000
@@ -57,10 +57,14 @@ def main() -> int:
     parser.add_argument("--max-instructions", type=int, default=4_000_000)
     args = parser.parse_args()
 
-    from unicorn import (  # noqa: PLC0415
-        UC_ARCH_ARM, UC_HOOK_CODE, UC_MODE_MCLASS, UC_MODE_THUMB, Uc,
+    from unicorn import (
+        UC_ARCH_ARM,
+        UC_HOOK_CODE,
+        UC_MODE_MCLASS,
+        UC_MODE_THUMB,
+        Uc,
     )
-    from unicorn.arm_const import UC_ARM_REG_PC, UC_ARM_REG_SP  # noqa: PLC0415
+    from unicorn.arm_const import UC_ARM_REG_PC, UC_ARM_REG_SP
 
     mr = MrFile.from_path(args.image)
     syms = elf_symbols(args.elf)
