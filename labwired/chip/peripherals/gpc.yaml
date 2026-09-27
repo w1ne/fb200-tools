@@ -1,0 +1,148 @@
+peripheral: GPC
+version: 0.1.0
+registers:
+- id: CNTR
+  address_offset: 0
+  size: 32
+  access: READ_WRITE
+  reset_value: 5373952
+  fields:
+  - name: MEGA_PDN_REQ
+    bit_range:
+    - 2
+    - 2
+    description: MEGA domain power down request
+  - name: MEGA_PUP_REQ
+    bit_range:
+    - 3
+    - 3
+    description: MEGA domain power up request
+  - name: PDRAM0_PGE
+    bit_range:
+    - 22
+    - 22
+    description: FlexRAM PDRAM0 Power Gate Enable
+  side_effects: null
+- id: IMR1
+  address_offset: 8
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: IMR1
+    bit_range:
+    - 31
+    - 0
+    description: 'IRQ[31:0] masking bits: 1-irq masked, 0-irq is not masked'
+  side_effects: null
+- id: IMR2
+  address_offset: 12
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: IMR2
+    bit_range:
+    - 31
+    - 0
+    description: 'IRQ[63:32] masking bits: 1-irq masked, 0-irq is not masked'
+  side_effects: null
+- id: IMR3
+  address_offset: 16
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: IMR3
+    bit_range:
+    - 31
+    - 0
+    description: 'IRQ[95:64] masking bits: 1-irq masked, 0-irq is not masked'
+  side_effects: null
+- id: IMR4
+  address_offset: 20
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: IMR4
+    bit_range:
+    - 31
+    - 0
+    description: 'IRQ[127:96] masking bits: 1-irq masked, 0-irq is not masked'
+  side_effects: null
+- id: ISR1
+  address_offset: 24
+  size: 32
+  access: READ_ONLY
+  reset_value: 0
+  fields:
+  - name: ISR1
+    bit_range:
+    - 31
+    - 0
+    description: IRQ[31:0] status, read only
+  side_effects: null
+- id: ISR2
+  address_offset: 28
+  size: 32
+  access: READ_ONLY
+  reset_value: 0
+  fields:
+  - name: ISR2
+    bit_range:
+    - 31
+    - 0
+    description: IRQ[63:32] status, read only
+  side_effects: null
+- id: ISR3
+  address_offset: 32
+  size: 32
+  access: READ_ONLY
+  reset_value: 0
+  fields:
+  - name: ISR3
+    bit_range:
+    - 31
+    - 0
+    description: IRQ[95:64] status, read only
+  side_effects: null
+- id: ISR4
+  address_offset: 36
+  size: 32
+  access: READ_ONLY
+  reset_value: 0
+  fields:
+  - name: ISR4
+    bit_range:
+    - 31
+    - 0
+    description: IRQ[127:96] status, read only
+  side_effects: null
+- id: IMR5
+  address_offset: 52
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: IMR5
+    bit_range:
+    - 31
+    - 0
+    description: 'IRQ[159:128] masking bits: 1-irq masked, 0-irq is not masked'
+  side_effects: null
+- id: ISR5
+  address_offset: 56
+  size: 32
+  access: READ_ONLY
+  reset_value: 0
+  fields:
+  - name: ISR4
+    bit_range:
+    - 31
+    - 0
+    description: IRQ[159:128] status, read only
+  side_effects: null
+interrupts:
+  GPC: 97
+timing: null

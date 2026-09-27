@@ -1,0 +1,224 @@
+peripheral: SRC
+version: 0.1.0
+registers:
+- id: SCR
+  address_offset: 0
+  size: 32
+  access: READ_WRITE
+  reset_value: 2689074464
+  fields:
+  - name: mask_wdog_rst
+    bit_range:
+    - 10
+    - 7
+    description: Mask wdog_rst_b source
+  - name: core0_rst
+    bit_range:
+    - 13
+    - 13
+    description: Software reset for core0 only
+  - name: core0_dbg_rst
+    bit_range:
+    - 17
+    - 17
+    description: Software reset for core0 debug only
+  - name: dbg_rst_msk_pg
+    bit_range:
+    - 25
+    - 25
+    description: Do not assert debug resets after power gating event of core
+  - name: mask_wdog3_rst
+    bit_range:
+    - 31
+    - 28
+    description: Mask wdog3_rst_b source
+  side_effects: null
+- id: SBMR1
+  address_offset: 4
+  size: 32
+  access: READ_ONLY
+  reset_value: 0
+  fields:
+  - name: BOOT_CFG1
+    bit_range:
+    - 7
+    - 0
+    description: Refer to fusemap.
+  - name: BOOT_CFG2
+    bit_range:
+    - 15
+    - 8
+    description: Refer to fusemap.
+  - name: BOOT_CFG3
+    bit_range:
+    - 23
+    - 16
+    description: Refer to fusemap.
+  - name: BOOT_CFG4
+    bit_range:
+    - 31
+    - 24
+    description: Refer to fusemap.
+  side_effects: null
+- id: SRSR
+  address_offset: 8
+  size: 32
+  access: READ_WRITE
+  reset_value: 1
+  fields:
+  - name: ipp_reset_b
+    bit_range:
+    - 0
+    - 0
+    description: Indicates whether reset was the result of ipp_reset_b pin (Power-up sequence)
+  - name: lockup_sysresetreq
+    bit_range:
+    - 1
+    - 1
+    description: Indicates a reset has been caused by CPU lockup or software setting of SYSRESETREQ bit in Application Interrupt and Reset Control Register of the ARM core
+  - name: csu_reset_b
+    bit_range:
+    - 2
+    - 2
+    description: Indicates whether the reset was the result of the csu_reset_b input.
+  - name: ipp_user_reset_b
+    bit_range:
+    - 3
+    - 3
+    description: Indicates whether the reset was the result of the ipp_user_reset_b qualified reset.
+  - name: wdog_rst_b
+    bit_range:
+    - 4
+    - 4
+    description: IC Watchdog Time-out reset
+  - name: jtag_rst_b
+    bit_range:
+    - 5
+    - 5
+    description: HIGH - Z JTAG reset. Indicates whether the reset was the result of HIGH-Z reset from JTAG.
+  - name: jtag_sw_rst
+    bit_range:
+    - 6
+    - 6
+    description: JTAG software reset. Indicates whether the reset was the result of software reset from JTAG.
+  - name: wdog3_rst_b
+    bit_range:
+    - 7
+    - 7
+    description: IC Watchdog3 Time-out reset
+  - name: tempsense_rst_b
+    bit_range:
+    - 8
+    - 8
+    description: Temper Sensor software reset
+  side_effects: null
+- id: SBMR2
+  address_offset: 28
+  size: 32
+  access: READ_ONLY
+  reset_value: 0
+  fields:
+  - name: SEC_CONFIG
+    bit_range:
+    - 1
+    - 0
+    description: SECONFIG[1] shows the state of the SECONFIG[1] fuse
+  - name: DIR_BT_DIS
+    bit_range:
+    - 3
+    - 3
+    description: DIR_BT_DIS shows the state of the DIR_BT_DIS fuse
+  - name: BT_FUSE_SEL
+    bit_range:
+    - 4
+    - 4
+    description: BT_FUSE_SEL (connected to gpio bt_fuse_sel) shows the state of the BT_FUSE_SEL fuse
+  - name: BMOD
+    bit_range:
+    - 25
+    - 24
+    description: BMOD[1:0] shows the latched state of the BOOT_MODE1 and BOOT_MODE0 signals on the rising edge of POR_B
+  side_effects: null
+- id: GPR1
+  address_offset: 32
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: PERSISTENT_ENTRY0
+    bit_range:
+    - 31
+    - 0
+    description: Holds entry function for core0 for waking-up from low power mode
+  side_effects: null
+- id: GPR2
+  address_offset: 36
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: PERSISTENT_ARG0
+    bit_range:
+    - 31
+    - 0
+    description: Holds argument of entry function for core0 for waking-up from low power mode
+  side_effects: null
+- id: GPR3
+  address_offset: 40
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields: []
+  side_effects: null
+- id: GPR4
+  address_offset: 44
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields: []
+  side_effects: null
+- id: GPR5
+  address_offset: 48
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields: []
+  side_effects: null
+- id: GPR6
+  address_offset: 52
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields: []
+  side_effects: null
+- id: GPR7
+  address_offset: 56
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields: []
+  side_effects: null
+- id: GPR8
+  address_offset: 60
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields: []
+  side_effects: null
+- id: GPR9
+  address_offset: 64
+  size: 32
+  access: READ_ONLY
+  reset_value: 0
+  fields: []
+  side_effects: null
+- id: GPR10
+  address_offset: 68
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields: []
+  side_effects: null
+interrupts:
+  SRC: 98
+timing: null
