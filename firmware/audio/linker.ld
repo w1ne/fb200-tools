@@ -12,6 +12,12 @@ MEMORY
   ITCM   (rwx) : ORIGIN = 0x00000000, LENGTH = 0x20000
   FLASH  (rx)  : ORIGIN = 0x60010000, LENGTH = 0x31000
   DTCM   (rw)  : ORIGIN = 0x20018B44, LENGTH = 0x358A4
+  /* OCRAM2 (512 kB, 0x20200000..0x2027FFFF). The vendor loader unpacks the
+   * stock's 0x5AA0-byte OCRAM data to 0x20200000 at boot (its load table
+   * entry 3, docs/FIRMWARE_BRINGUP.md); nothing of ours reads it. We start
+   * above it. Not kept over a warm reset (recovery.c): NOLOAD, code clears
+   * what it uses (delay_init). */
+  OCRAM  (rw)  : ORIGIN = 0x20210000, LENGTH = 0x70000
 }
 
 SECTIONS
@@ -58,6 +64,15 @@ SECTIONS
     . = ALIGN(4);
     __bss_end__ = .;
   } > DTCM
+
+  /* big buffers that do not fit in DTCM (the delay line) */
+  .ocram (NOLOAD) : {
+    . = ALIGN(4);
+    __ocram_start__ = .;
+    *(.ocram*)
+    . = ALIGN(4);
+    __ocram_end__ = .;
+  } > OCRAM
 
   _estack = 0x20058000;
 

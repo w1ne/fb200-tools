@@ -31,6 +31,7 @@
 #include "bt/bt.h"
 #include "audio/bt_audio.h"
 #include "dsp/stock_data.h"
+#include "dsp/delay.h"
 #include "proto/proto.h"
 #endif
 
@@ -118,6 +119,7 @@ static void cmd_help(void)
              "          preset [0-39] | save | factory [yes] | rgb 0xRRGGBB [led] | rgb cfg 0xIIS0S1\r\n"
              "  bt    : bt | bt send <AT+...> | btaudio\r\n"
              "  music : stock | tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>]\r\n"
+             "  delay : delay [on|off] [time 20-1000 ms] [fb 0-100] [mix 0-100] [lowcut 0-100] [tone 0-100]\r\n"
              "  tests : crash | hang\r\n"
 #endif
              "  debug : stats | src | hb on|off | clocks | crumbs | crashdump | crashclear\r\n"
@@ -129,6 +131,53 @@ static void cmd_help(void)
 }
 
 #ifndef FB200_RECOVERY
+
+/* delay [on|off] [time ms] [fb] [mix] [lowcut] [tone]: edits the delay block
+ * of the edit buffer (save with `save` or a held footswitch). A preset
+ * without our marker (every stock preset) does not play its stock delay
+ * fields; the first edit writes the marker and our defaults
+ * (src/preset/preset.h preset_delay_on). */
+static void cmd_delay(int argc, char **argv)
+{
+    const preset_t *e = ui_edit_preset();
+    bool marked = pget(e, P_DLY_MARK) == DLY_MARK;
+    unsigned en = marked && pget(e, P_DLY_EN) != 0;
+    unsigned v[5] = {DELAY_DEF_MS, DELAY_DEF_FB, DELAY_DEF_MIX, DELAY_DEF_LOWCUT, DELAY_DEF_TONE};
+    if (marked) {
+        v[0] = pget(e, P_DLY_TIME); v[1] = pget(e, P_DLY_FB); v[2] = pget(e, P_DLY_MIX);
+        v[3] = pget(e, P_DLY_LOWCUT); v[4] = pget(e, P_DLY_TONE);
+    }
+    int i = 1, change = 0;
+    if (i < argc && (streq(argv[i], "on") || streq(argv[i], "off"))) {
+        en = streq(argv[i], "on");
+        change = en || marked;          /* off on a stock preset: nothing to do */
+        i++;
+    }
+    for (unsigned k = 0; i < argc && k < 5; i++, k++) {
+        int ok;
+        uint32_t n = parse_num(argv[i], &ok);
+        if (!ok) {
+            log_printf("usage: delay [on|off] [time 20-1000 ms] [fb 0-100] [mix 0-100] "
+                       "[lowcut 0-100] [tone 0-100]\r\n");
+            return;
+        }
+        v[k] = k == 0 ? (n < DELAY_MS_MIN ? DELAY_MS_MIN : n > DELAY_MS_MAX ? DELAY_MS_MAX : n)
+                      : (n > 100u ? 100u : n);
+        change = 1;
+    }
+    if (change) {
+        uint16_t w[8] = {(uint16_t)en, pget(e, P_DLY_TYPE), (uint16_t)v[2], (uint16_t)v[1],
+                         (uint16_t)v[0], DLY_MARK, (uint16_t)v[3], (uint16_t)v[4]};
+        uint8_t b[16];
+        for (unsigned k = 0; k < 8; k++) { b[2 * k] = (uint8_t)w[k]; b[2 * k + 1] = (uint8_t)(w[k] >> 8); }
+        ui_edit_write(P_DLY_EN, b, sizeof b);
+        marked = true;
+    }
+    float hz = delay_lowcut_hz(v[3]);
+    log_printf("delay %s%s: time %u ms fb %u mix %u lowcut %u (%d Hz) tone %u%s\r\n",
+               en ? "on" : "off", marked ? "" : " (stock preset, never plays)",
+               v[0], v[1], v[2], v[3], (int)hz, v[4], v[4] >= 100u ? " (off)" : "");
+}
 
 static void cmd_ui(void)
 {
@@ -461,8 +510,8 @@ static int tokenize(char *s, char **argv, int max)
 
 static void dispatch(char *cmd)
 {
-    char *argv[3] = {0, 0, 0};
-    int argc = tokenize(cmd, argv, 3);
+    char *argv[7] = {0, 0, 0, 0, 0, 0, 0};
+    int argc = tokenize(cmd, argv, 7);
     if (argc == 0) { cmd_help(); return; }
 
     if (streq(argv[0], "help")) cmd_help();
@@ -526,6 +575,7 @@ static void dispatch(char *cmd)
                    pget(p, P_REV_EN), pget(p, P_REV_TYPE), ui_master());
     }
     else if (streq(argv[0], "save")) ui_save();
+    else if (streq(argv[0], "delay")) cmd_delay(argc, argv);
     else if (streq(argv[0], "factory")) {
         if (argc > 1 && streq(argv[1], "yes"))
             log_printf("factory reset: %s\r\n", proto_factory_reset() == 0 ? "ok" : "FAILED");
