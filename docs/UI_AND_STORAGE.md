@@ -34,7 +34,9 @@ No LCD, no controller, no frame buffer; the "font" is a code switch
 Footswitches: pads `GPIO_SD_B0_00/01/02` and `GPIO_B1_08`, ALT5, pad
 **0xF0B0** (22k pull-up), **active low**.
 
-| GPIO / pad | slot | label (inferred) |
+**Verified on the pedal** (A-D select slots A-D, chords work):
+
+| GPIO / pad | slot | label |
 | --- | --- | --- |
 | GPIO3_IO12 / SD_B0_00 | 3 | D |
 | GPIO3_IO13 / SD_B0_01 | 1 | B |
