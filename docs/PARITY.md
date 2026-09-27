@@ -40,25 +40,43 @@ list; evidence for the stock side is in `FIRMWARE_ANALYSIS.md`,
 
 ## Roadmap
 
-- **M1 — audio engine bring-up** (current): 48 kHz pass-through, DSP hook,
-  USB UAC2, codec, SAI/eDMA, console, LED. Remaining: hardware verification.
-- **M2 — the sound**: open DSP chain (noise gate, EQ/biquads, drive/amp
-  stage, cab IR convolution, modulation/delay/reverb), presets of our own,
-  measured against stock (`docs/MEASUREMENTS.md`).
-- **M3 — the UI**: LCD driver (RE the stock controller/pins), footswitch
-  handling, preset browse/edit, tuner.
-- **M4 — storage**: preset + config persistence in flash with wear leveling;
-  model/IR management (open formats, not the stock blob).
-- **M5 — connectivity**: USB MIDI, Bluetooth module (AT control + BT audio
-  path once RE'd), optional USB host/audio interface modes.
-- **M6 — extras**: looper, drum machine/metronome, web-based editor over USB
-  CDC, measurement suite integration.
+Research behind the "better" items (sources, budgets): `ROADMAP_RESEARCH.md`.
+Budgets on this chip: 600 MHz / 44.1 kHz = 13.6k cycles per sample; RAM
+(512 KB FlexRAM, no external RAM) is the tighter limit.
+
+- **M1 - audio bring-up: DONE on hardware.** Guitar/bass in, headphone out,
+  USB UAC2 in/out, codec, SAI/eDMA, 44.1 kHz stock clock tree, console,
+  recovery + USB self-update, crash dumps.
+- **M2 - parity sound (in progress).** Stock chain ported with parity tests
+  against a bit-exact emulation of the stock DSP: gate, compressor, amp
+  (Wiener-Hammerstein, 10 models) + tone stack, cab (512-tap FIR, 10 +
+  user IRs), 11 modulations, 5 reverbs. Stock coefficients are extracted at
+  build time from the user's own stock image, never committed.
+- **M3 - parity UI: mostly DONE.** Display, footswitches (stock chords),
+  knobs with pickup, knob LEDs, presets in the stock format, battery/charger
+  monitor. Open: power-fail save + latch, RGB LED ring, tuner, drum machine,
+  Bluetooth (AT + app protocol + BT audio on SAI3).
+- **M4 - better core (after parity):** 48 kHz / 24-bit engine (needed for
+  NAM; stock assets resampled offline), latency <3 ms, CPU/RAM profiler;
+  bass chain additions: crossover clean-blend drive, 5-7 band EQ + HPF/LPF,
+  delay (the stock has none), better tuner, drum level fix.
+- **M5 - IR engine:** up to 4096 taps (partitioned convolution, already in
+  `dsp/conv.c`), WAV import, 50+ slots, low/high cut, dual-IR blend.
+- **M6 - open ecosystem:** class-compliant USB MIDI, documented protocol,
+  WebMIDI editor (self-describing blocks), JSON presets, browser firmware
+  update, multichannel UAC2 (dry DI + processed + re-amp).
+- **M7 - NAM A2-Lite player** (~50 % CPU on this class of M7; MIT stack:
+  NeuralAmpModelerCore, nam-binary-loader, nam-pedal), TONE3000 browsing in
+  the editor, A1 -> A2-Lite distillation tool on the host.
+- **M8 - bass effects:** mono octaver (poly later), envelope filter/synth,
+  multiband compressor; ADPCM looper (~8-16 s in RAM); AIDA-X/RTNeural.
 
 ## Why ours is better
 
-- 48 kHz throughout (stock: 44.1 kHz) with a 12.288 MHz clock tree and UAC2.
+- Parity first at the stock 44.1 kHz, then a 48 kHz/24-bit core (M4).
 - Open, SOTA DSP: IR convolution and models in the open, no proprietary blob.
-- USB-only flashing + recovery (`handover`), live console, self-update.
+- USB-only flashing with a resident recovery (no A+D), live console, crash
+  dumps, self-update (`docs/BOOTLOADER.md` §4).
 - Everything scriptable and testable: host tests, dry-run gate before every
   flash, measurement suite for objective comparisons.
 - Open preset/IR formats and a web editor, no vendor tooling required.
