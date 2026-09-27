@@ -153,7 +153,7 @@ def test_web_js_matches_python(tmp_path):
     fixture.write_text(json.dumps(build_fixture()))
     tests = sorted(str(p) for p in WEB_TEST.glob("*.test.mjs"))
     assert tests, "no web/test/*.test.mjs found"
-    proc = subprocess.run(["node", "--test", *tests], capture_output=True, text=True, check=False,
+    proc = subprocess.run(["node", "--test", "--test-reporter=tap", *tests], capture_output=True, text=True, check=False,
                           env={**os.environ, "FB200_PARITY_FIXTURE": str(fixture)}, timeout=120)
     out = proc.stdout + proc.stderr
     assert proc.returncode == 0, out
