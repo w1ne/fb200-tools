@@ -45,9 +45,10 @@ Footswitches: pads `GPIO_SD_B0_00/01/02` and `GPIO_B1_08`, ALT5, pad
 
 Scanner every 10 ms, 2-sample debounce, long press 1 s then repeat every
 100 ms. Stock actions: A-D (on release) select slot; C+D bank up; A+B bank
-down; B+C toggles preset/stomp mode; B held + A long = tuner; A long =
-save preset (M); in stomp mode the switches toggle modules; boot with D held
-= test mode (L).
+down (the chords only browse the bank, see `STOCK_FEATURES.md`); B+C
+toggles preset/stomp mode; B held + A long = tuner; C held + B long = rhythm
+mode; any switch long = save to that slot (H); in stomp mode the switches
+toggle modules; boot with D held = test mode (L).
 
 Knobs: 16, through two 74HC4051 muxes. Select lines GPIO2_IO17/18/19
 (pads `B1_01/02/03`); outputs ADC1 IN3 (`AD_B0_14`, k0-k7) and IN4

@@ -3,7 +3,10 @@
 Goal: everything the stock FB200 (V1.0.1) does, then better. This page is the
 status and the gap list. The stock feature list and its evidence (manual, stock
 code, emulation) are in [`STOCK_FEATURES.md`](STOCK_FEATURES.md). Last audit:
-2026-09-27, firmware 0.6.x.
+2026-09-27, firmware 0.6.x. Gaps 1-3 and 5-8 of that audit were closed the same
+day; their evidence is host tests (`tests/test_proto_host.py`, `test_stockdata.py`,
+`test_dsp_host.py`) against the stock code. The checks on the pedal are listed
+under [Pedal checks](#pedal-checks).
 
 Status words:
 
@@ -28,7 +31,7 @@ Status words:
 | MOD, 12 types | DONE | `dsp/mod.c`; <= -105 dB, `tests/test_fx_parity.py` |
 | Reverb, 5 types | DONE | `dsp/reverb.c`; <= -110 dB, `tests/test_fx_parity.py` |
 | Master volume, smoothed | DONE | `engine.c` (`s_master`), knob k15 |
-| Input gain (global `S+0x1a`, app, -55..+5 dB) | MISSING | engine uses unity gain; default (0 dB) matches the stock |
+| Input gain (global `S+0x1a`, app, -55..+6 dB) | DONE | `dsp/gain.c` `gain_input_stock` (stock table dB steps, within 1 ulp; `dsp_host_test.c`), stock smoother in `engine.c`; 0 dB keeps the bit-parity value |
 | Delay (preset fields `0x8c..0x94`, protocol `0x85`) | not needed | the stock DSP ignores them (emulation); stored and echoed by `proto.c` |
 | Module order (`0xbc`) | not needed | the stock ignores it (emulation); stored by `proto.c` `0xA0` |
 | Sample rate 44.1 kHz | DONE | `audio_config.h` `AUDIO_FS`; stock clock tree |
@@ -38,17 +41,17 @@ Status words:
 | Stock feature | Status | Our implementation and evidence |
 | --- | --- | --- |
 | 40 presets in the stock flash format | DONE | `preset/preset.c`; stock presets load on the pedal ("Fat Bass", "Clean Pick") |
-| Slot select A-D, bank up C+D / down A+B | DONE | `ui/ui.c` `action_single`, `action_chord`; footswitch map checked on the pedal |
-| Live (stomp) mode B+C: A reverb, B MOD, C amp+cab, D comp | DONE | `ui.c` `toggle_module`; matches stock code 0x9fca-0xa6f8. Edge case: amp off + cab on -> stock turns both off, ours turns both on |
-| Save: hold **any** switch to save to **that** slot, in preset and live mode | PARTIAL | `ui.c`: only hold A, only in preset mode, only to the current slot |
-| Save to another bank (BANK +/- then hold) | UNKNOWN | ours: a bank chord loads the preset, so edits are lost; the stock behaviour is from the manual only |
-| Save feedback (light bar blinks 1 s) | PARTIAL | ours shows `SAV` on the display; no light bar |
+| Slot select A-D, bank up C+D / down A+B | DONE | `ui/ui.c` `action_single`, `action_chord`; footswitch map checked on the pedal. A bank chord browses (below) |
+| Live (stomp) mode B+C: A reverb, B MOD, C amp+cab, D comp | DONE | `ui.c` `toggle_module`; stock code 0x9fca-0xa6f8, incl. C: amp or cab on -> both off (0xa4e2); host test |
+| Save: hold **any** switch to save to **that** slot, in preset and live mode | DONE | `ui.c` `save_to`; stock 0x9f12, 0xa17c, 0xa3e6, 0xa62c; notifications 97, 98, B0 (0x67e0); host test |
+| Save to another bank (BANK +/- then hold) | DONE | stock 0x1bc0c: a bank chord only moves the shown bank (edit buffer kept); 0x19af4: in preset mode the display flashes (133 ms on/off) and the browse ends after 1666 ticks (~1.7 s); A-D load from the shown bank. `ui.c` browse; host test |
+| Save feedback (light bar blinks 1 s) | PARTIAL | ours shows `SAV` and writes at once; the stock (0x67e0) blinks the light bar off/on for 1 s, then writes |
 | 16 knobs with pickup, knob LEDs (on / blink / off) | DONE, BETTER | `ui.c` `knobs`, `leds`; knob table measured on the pedal; display names the knob and marks "not picked up" |
-| Knob LEDs off in tuner mode | MISSING | `ui.c` `leds` ignores tuner mode |
+| Knob LEDs off in tuner mode | DONE | `ui.c` `leds`; host test |
 | Display: `P`/`L` + bank + slot, `d`, 0-100 values, tuner | DONE | `ui/display.c`, `ui.c` |
-| 40-LED RGB light bar (switch status, app colours, save blink, tempo flash) | MISSING | `ui/rgb.c` driver only: `rgb_init` clears it and nothing else writes it; LED layout unknown |
-| Status LED (battery level, charging) | PARTIAL | `ui/power.c`: level colours from stock thresholds; LED is **off** while charging, manual says solid red (charging) / solid green (full) |
-| Factory reset (app `B2`) | MISSING | `proto.c` calls `proto_hook_factory_reset`, which has no target implementation (weak stub returns -1: the app gets "failed"); the 20 factory presets are vendor data and are not in the stock data blob yet |
+| 40-LED RGB light bar (switch status, app colours, save blink, tempo flash) | MISSING | `ui/rgb.c` driver only: `rgb_init` clears it and nothing else writes it. Stock code hints: 4 groups of 10 LEDs, one per switch (0x19414), rhythm mode uses 0-9, 10-19, 20-29 (0x68ca) |
+| Status LED (battery level, charging) | DONE | `ui/power.c`: level colours from stock thresholds. While charging the stock code turns the LED off too (0x1897c); the manual's red/green must come from the charger chip. Check on the pedal |
+| Factory reset (app `B2`, console `factory yes`) | DONE | stock routine 0x18fe0: 40 presets (20 factory + 20 EMPTY), default settings, rhythm block, IR list; factory presets from the stock data blob v2; `ui_factory_reset`, `proto_factory_reset`; host test. Keeps the master volume (stock default 0) |
 | Test mode (boot with D held) | MISSING | low priority, meaning not known |
 
 ### Tuner and drums
@@ -56,11 +59,12 @@ Status words:
 | Stock feature | Status | Our implementation and evidence |
 | --- | --- | --- |
 | Tuner (YIN), hold A+B | DONE | `dsp/tuner.c`; same readings as the stock, `tests/test_drums_tuner.py`; `ui.c` B held + A long |
-| Tuner calibration (`S+0x2c`, A4 = 435 + v) | MISSING | `engine.c` `tuner_init(&s_tuner, 440)`; `tuner_set_a4` exists, nothing calls it |
-| Tuner mute option (`S+0x2e`) | MISSING | engine always mutes while tuning (the stock default) |
+| Tuner calibration (`S+0x2c`, A4 = 435 + v) | DONE | `engine.c` `engine_apply_settings` |
+| Tuner mute option (`S+0x2e`) | DONE | `engine.c`: 0 lets the sound through while tuning (drums stay off) |
+| Tuner on/off from the app (`B8`, `B0` `S+0x2d`) | DONE | `ui.c` `ui_settings_changed`; host test |
 | Drum machine: 40 rhythms, 40-260 BPM, level, stock samples | DONE, BETTER | `dsp/drums.c`; bit-exact, `tests/test_drums_tuner.py`; drums in the USB recording; hits on time |
 | Rhythm mode (hold B+C, display `d`) | DONE | `ui.c` C held + B long |
-| Buttons in rhythm mode: A/B rhythm, C tap tempo, D start/stop | PARTIAL | ours: A start/stop, B/C rhythm, D tap. Stock: manual p.14 and code 0x9fec |
+| Buttons in rhythm mode: A/B rhythm, C tap tempo, D start/stop | DONE | `ui.c` `rhythm_single`; stock 0x9fec (A: - 1, wraps to 40), 0xa2d6 (B), 0xa54e (C), 0xa714 (D); BA sent on every button; host test |
 | Tempo flash on the light bar | MISSING | needs the light bar |
 | Count-in | UNKNOWN | `drums_count_in` exists, nothing calls it; how the stock starts it is not known (rhythm byte 1?) |
 | Knob control of drums (LEVEL/RATE/MOD) | BETTER | `ui.c` `knobs`; the stock has only the app |
@@ -70,19 +74,19 @@ Status words:
 | Stock feature | Status | Our implementation and evidence |
 | --- | --- | --- |
 | BT module start-up (AT) | DONE | `bt/bt.c`; module answers on the pedal |
-| BT audio on/off kept over a reboot (`S+0x17`) | PARTIAL | the app toggle works (`proto_hook_bt_enable`); at boot `bt.c` always sends `AT+B501` |
+| BT audio on/off kept over a reboot (`S+0x17`) | BETTER | `bt.c` sends `AT+B500` at boot when off. The stock always sends `AT+B501` at boot (0x1b8f0); its 0x190e4 call is inside the factory reset |
 | BT rename (`B3`) | DONE | `proto_port.c` `proto_hook_bt_name` |
 | BT audio in (SAI3), mixed x1.3 | PARTIAL | `audio/bt_audio.c`; SAI3 runs on the pedal; audible playback from a phone not logged |
 | App protocol: all commands (`00`..`FA`) | DONE | `proto/proto.c`; `tests/test_proto_host.py` |
 | App: live edit, presets, IRs, settings over BLE | UNKNOWN | code path runs; not tried with the Flamma Manager phone app |
-| App: drums (`BA`), rhythm mode (`C9`), tuner (`B8`/`B0`) | PARTIAL | `proto.c` stores them in flash/settings, but the engine and `ui.c` never read them: app play/stop does nothing, and the pedal's `BA` notifications send stale values (`proto.c` `rhythm[]` is not updated by `ui.c`) |
+| App: drums (`BA`), rhythm mode (`C9`), tuner (`B8`/`B0`) | DONE | `BA` drives the drum machine at once (`ui_rhythm_set`); the drum machine is the one copy of the rhythm state, so `BA` notifications are current; `C9`/`B8`/`B0` switch the modes at once; host test. Not tried with the phone app |
 | Light-bar colours from the app (`B7`, probably `S+0x1b..0x1e`) | MISSING | stored only |
 | USB identity 34DB:800F + vendor HID | DONE | `usb_descriptors.c`, `usb_hid.c`; `fb200 info`, `fb200 ir list` on the pedal |
 | PC editor (official Electron app) | UNKNOWN | same protocol; not tried with the official app |
 | USB audio 44.1 kHz, 2 in / 2 out | DONE, BETTER | UAC2 (stock UAC1), `audio/usb_audio.c`; recording and playback on the pedal (M1) |
 | USB OTG recording to a phone | UNKNOWN | class-compliant, not tried on a phone; the stock "OTG volume" setting is not identified |
 | Battery level (4 steps) and charger sense, `BB` to the app | DONE | `ui/power.c`, `proto_port.c` `proto_battery` |
-| Battery notification on change | MISSING | `proto_notify_battery` exists, nothing calls it |
+| Battery notification on change | DONE | `ui/power.c`: `BB` when the level or the charger changes (stock 0x18a5e); level 4 while charging (0x1897c) |
 | Power-fail settings save | DONE (different) | the switch is a hard cut (checked on the pedal); settings are written 3 s after a change |
 | Firmware update | DONE, BETTER | USB recovery + app slot, `fb200 update`, browser updater (v0.6.0); no A+D. The official PC updater (`C1`) goes to our recovery, not the vendor DFU: going back to stock needs A+D |
 
@@ -92,15 +96,40 @@ Not in the stock (so not gaps): looper, MIDI, delay, auto power-off.
 
 | # | Gap | Evidence | Size |
 | --- | --- | --- | --- |
-| 1 | **Save**: hold any switch A-D saves to that slot, also in live mode; bank chords before saving should keep the edits (save-as) | manual p.13; stock code sets the save slot 0-3 at 0x9f12, 0xa17c, 0xa3e6, 0xa62c; ours: `ui.c` long A only, preset mode only | S (any switch) / M (save-as: confirm the stock first) |
-| 2 | **Rhythm-mode buttons** differ: stock A/B = rhythm, C = tap tempo, D = start/stop | manual p.14; stock code 0x9fec (A = rhythm - 1); ours `ui.c` `rhythm_single` | S |
-| 3 | **App drum and mode commands do nothing live**: `BA` (play/stop, rhythm, level, tempo), `C9` (rhythm mode), `B8`/`B0` tuner; `BA` notifications are stale | `proto.c` dispatch `0xBA`, `0xC9`, `0xB8`; `ui.c` keeps `rhythm_mode`, `tuner_mode` and drum state apart | S |
-| 4 | **Light bar** (40 RGB LEDs) is dark: switch status, colours from the app, save blink, tempo flash | manual p.6, p.13-14; `ui/rgb.c` only cleared at init; LED layout unknown | M |
-| 5 | **Factory reset** from the app fails | `proto_hook_factory_reset` not implemented; needs the 20 factory presets added to the stock data blob (`stockdata.py`) | M |
-| 6 | **Global settings ignored**: input gain `S+0x1a`, tuner calibration `S+0x2c`, tuner mute `S+0x2e`, BT on/off at boot `S+0x17` | emulation (input gain, mute); stock code 0x913c (calibration), 0x190e4 (BT at boot); `engine.c`, `bt.c` | S |
-| 7 | **Status LED while charging** is off; stock: solid red charging, solid green full | manual p.6; `ui/power.c` `power_task` | S (check the colours on the pedal) |
-| 8 | Small UI details: knob LEDs off in tuner mode; stomp C edge case; battery notification on change | `ui.c` `leds`, `toggle_module`; `proto_notify_battery` unused | S |
-| 9 | **Not verified**: phone app over BLE, official PC editor, BT audio by ear, OTG to a phone, count-in, meaning of `S+0x1b..0x1e`, `S+0x24..0x2b`, rhythm byte 1 | see the UNKNOWN rows | S each (a test session) |
+| 1 | **Light bar** (40 RGB LEDs) is dark: switch status, colours from the app, save blink, tempo flash | manual p.6, p.13-14; `ui/rgb.c` only cleared at init; stock 0x19414 (4 x 10 LEDs), 0x67e0 (save blink); order of the LEDs on the bar unknown | M |
+| 2 | **Not verified**: phone app over BLE, official PC editor, BT audio by ear, OTG to a phone, count-in, meaning of `S+0x1b..0x1e`, `S+0x1d` (indexes the input-gain table: a second level?), `S+0x24..0x2b`, rhythm byte 1 | see the UNKNOWN rows | S each (a test session) |
+| 3 | Test mode (boot with D held) | meaning not known | S |
+
+Closed on 2026-09-27 (host tests; pedal checks below): save to any slot and to
+another bank, rhythm-mode buttons, app drum/mode/tuner commands, factory reset,
+input gain, tuner calibration and mute, BT audio at boot, battery notification,
+knob LEDs in tuner mode, live-mode C. The status LED while charging already
+matched the stock code.
+
+### Pedal checks
+
+The changes of 2026-09-27 are tested on the host only. On the pedal:
+
+1. Hold B for 1 s in preset mode: `SAV`, the display then shows `P<bank>b`;
+   select another slot and back: the edits are there.
+2. Change a knob, press C+D: the display flashes the next bank and the sound
+   does not change; hold A: saved to slot A of that bank. Without a choice the
+   display returns to the current bank after about 2 s.
+3. Live mode (B+C), hold D: saves; the compressor does not toggle.
+4. Rhythm mode: A/B step the rhythm (from `d01`, A goes to `d40`), C tapped
+   twice sets the tempo, D starts/stops.
+5. Tuner: knob LEDs go dark.
+6. Live mode with amp off and cab on (set in the app): C turns both off.
+7. App: play/stop and rhythm from the drum page act at once; the tuner and
+   rhythm-mode buttons switch the pedal; input gain changes the level; the
+   tuner calibration moves the reading; tuner mute off lets the sound through;
+   BT audio off survives a power cycle; the battery page updates when the
+   charger is plugged in.
+8. Factory reset (`fb200 console "factory yes"` or the app): 20 named + 20
+   EMPTY presets, preset `P0A` "Fat Bass", IR list empty. With a v1 sound
+   data blob it must refuse and change nothing.
+9. Charging: status LED red while charging, green when full (charger chip;
+   see the TODO in `ui/power.c`).
 
 ## Stock effect ports
 
@@ -210,14 +239,14 @@ Budgets on this chip: 600 MHz / 44.1 kHz = 13.6k cycles per sample; RAM
   against an emulation of the stock DSP: gate, compressor, amp
   (Wiener-Hammerstein, 10 models) + tone stack, cab (512-tap FIR, 10 +
   user IRs), 12 modulations, 5 reverbs. Stock data comes from the user's own
-  stock image (`fb200 update stock`), never committed. Open: input gain
-  (gap 6).
+  stock image (`fb200 update stock`), never committed. Input gain done
+  (host test).
 - **M3 - parity UI: mostly DONE.** Done: display, footswitches (stock
-  chords, live mode, tuner, rhythm mode), knobs with pickup, knob LEDs,
-  presets in the stock format, battery/charger monitor, settings save,
-  tuner, drum machine, Bluetooth (AT, app protocol, BT audio on SAI3). Open,
-  in order: gaps 1-3 (save, rhythm buttons, app drum/mode commands), gap 4
-  (light bar), gap 5 (factory reset), gaps 6-8, then the test session (gap 9).
+  chords with bank browse, live mode, save to any slot, tuner, rhythm mode
+  with the stock buttons), knobs with pickup, knob LEDs, presets in the stock
+  format, factory reset, battery/charger monitor, settings save, tuner, drum
+  machine, Bluetooth (AT, app protocol, BT audio on SAI3). Open: the light
+  bar (gap 1), the pedal checks above, then the test session (gap 2).
 - **M4 - better core (after parity):** 48 kHz / 24-bit engine (needed for
   NAM; stock assets resampled offline), latency <3 ms, CPU/RAM profiler;
   bass chain additions: crossover clean-blend drive, 5-7 band EQ + HPF/LPF,

@@ -25,20 +25,24 @@ Its firmware is closed and frozen. This project aims to:
   See [`docs/PARITY.md`](docs/PARITY.md) and
   [`docs/ROADMAP_RESEARCH.md`](docs/ROADMAP_RESEARCH.md).
 
-## Status (v0.5.0)
+## Status (v0.6)
 
 Verified on a real pedal:
 
 | Area | What works |
 | --- | --- |
 | **Sound** | Stock chain: noise gate → compressor → 10 amp models + 4-band tone stack → 10 cab IRs + 9 user-IR slots → 12 modulations → 5 reverbs. Parity against the stock DSP: amp and tone bit-exact, the rest within -105 dB. |
-| **Front panel** | 3-digit display, 16 knobs with LEDs, 4 footswitches with the stock actions (slot select, bank chords, stomp mode, tuner, save), 40 RGB LEDs |
+| **Front panel** | 3-digit display, 16 knobs with LEDs, 4 footswitches with the stock actions (slot select, bank chords, stomp mode, tuner, save). The 40-LED light bar stays dark. |
 | **Presets** | Your stock presets load and save in the stock format and survive switching firmware |
 | **Drums & tuner** | Stock drum machine (40 rhythms, played from the samples already in your pedal's flash) and stock YIN tuner |
 | **USB** | Class-compliant audio interface (record and play back, 44.1 kHz). The stock USB identity and control protocol, so `fb200 info` and IR import work. |
-| **Bluetooth** | Module link, app protocol (presets, settings, IRs), Bluetooth audio in |
+| **Bluetooth** | Module link. The Bluetooth audio input runs; playback from a phone is not yet checked by ear. The app protocol is implemented and tested on the host, but not yet with the Flamma Manager phone app. |
 | **Power** | Battery level, charger sense, status LED |
 | **Updates & recovery** | USB updates with no button combo. A resident recovery keeps the USB console after a crash or hang. Crash dumps survive a reset. |
+
+New since then, tested on the host but **not yet on a pedal**: save to any slot and to
+another bank, the stock rhythm-mode buttons, drum/tuner/rhythm-mode commands from the app,
+input gain, tuner calibration and mute, factory reset.
 
 **Better than stock so far:**
 - Updates over USB without holding A+D.
@@ -48,9 +52,10 @@ Verified on a real pedal:
 - Drums are included in the USB recording.
 - Choosing an empty IR slot never silences the pedal.
 - Drum hits start on time (the stock plays each one up to 31 ms early).
+- The Bluetooth audio switch from the app survives a reboot (the stock turns it back on).
 
-Still open: RGB LED layout, the stock's in-mode drum button roles, a 48 kHz option,
-and the "better" roadmap. The code runs on the stock hardware only.
+Still open: the RGB light bar, a test session with the phone app, a 48 kHz option, and
+the "better" roadmap. The code runs on the stock hardware only.
 
 ## Flashing
 
@@ -84,6 +89,10 @@ fb200 update stock ~/Downloads/FB200_V1.0.1.mr
 fb200 update app latest
 ```
 
+The factory reset needs the factory presets in the stock sound data (sound data version 2).
+If you wrote the sound data with fb200-tools 0.6.0 or earlier, run
+`fb200 update stock ~/Downloads/FB200_V1.0.1.mr` once more (your sound works without it).
+
 **Back to stock** at any time: hold A+D while plugging in, then run
 `fb200 fw flash FB200_V1.0.1.mr --yes --no-jump`. Full guide, building from source and
 Linux permissions: **[`docs/INSTALL.md`](docs/INSTALL.md)**.
@@ -94,13 +103,13 @@ The controls work as on the stock firmware:
 
 | Action | What it does |
 | --- | --- |
-| **A / B / C / D** | select slot A–D of the current bank (display `P<bank><slot>`) |
-| **C + D** / **A + B** | bank up / bank down |
-| **B + C** | stomp mode (`L…`): A = reverb, B = mod, C = amp+cab, D = comp on/off |
-| **hold A (1 s)** | save the current preset |
-| **hold B, then A long** | tuner (display: flat arrow, note, sharp arrow); any switch exits |
-| **hold C, then B long** | rhythm mode: A play/stop, B/C previous/next rhythm, D tap tempo |
-| **hold A + turn LEVEL / RATE / MOD** | drum level / tempo / rhythm, live |
+| **A / B / C / D** | select slot A–D of the shown bank (display `P<bank><slot>`) |
+| **C + D** / **A + B** | bank up / bank down. Your edits stay: the display flashes the new bank; press A–D to load a preset from it, or hold one to save there. After about 2 s the display goes back to the current bank. |
+| **B + C** | live mode (`L…`): A = reverb, B = mod, C = amp+cab, D = comp on/off. C turns amp and cab off if either is on. |
+| **hold A, B, C or D (1 s)** | save the current sound to that slot of the shown bank (preset and live mode) |
+| **hold B, then A long** | tuner (display: flat arrow, note, sharp arrow; knob LEDs off); any switch exits |
+| **hold C, then B long** | rhythm mode (`d<rhythm>`): A / B previous / next rhythm, C tap tempo (two taps or more), D play/stop |
+| **hold A + turn LEVEL / RATE / MOD** | drum level / tempo / rhythm, live. Start turning within 1 s: holding A alone saves. |
 
 **Knobs**, left to right: MASTER, LEVEL (reverb), REVERB, MIX, RATE, MOD, CAB, VOL,
 BASS, MID, TREBLE, GAIN, AMP, LEVEL (comp), THRESH, GATE.
@@ -121,6 +130,7 @@ fb200 info                          # product, firmware, Bluetooth and hardware 
 fb200 ir list                       # IR slots
 fb200 ir import 3 my-cab.wav        # convert and upload a WAV IR to slot 3
 fb200 console [cmd ...]             # open-firmware USB console (interactive without args)
+fb200 console "factory yes"         # factory reset: presets, settings, IR list
 fb200 update app latest             # open-firmware USB update (or a file)
 fb200 update stock FB200.mr         # write the stock sound data (once)
 fb200 crash --elf fb200-app.elf     # read and symbolize the last crash dump

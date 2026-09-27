@@ -5,6 +5,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Save as the stock:** hold A, B, C or D for 1 s to save to that slot, in preset
+  and live mode. Bank chords keep your edits: the display flashes the new bank; A-D
+  load from it, a hold saves to it (save to another bank).
+- Rhythm mode buttons as the stock: A/B rhythm, C tap tempo, D play/stop.
+- App commands act at once: drums (`BA`), rhythm mode (`C9`), tuner (`B8`, `B0`);
+  the pedal's drum notifications carry the current values.
+- Input gain, tuner calibration and tuner mute from the app are used. The Bluetooth
+  audio switch survives a reboot. Battery notification to the app on change.
+- Knob LEDs off in tuner mode; live-mode C turns amp and cab off if either is on.
+- Stock sound data version 2 adds the factory presets (version 1 still works).
+
+### Added
+
+- Factory reset from the app (`B2`) or the console (`factory yes`). Needs the sound
+  data version 2: run `fb200 update stock FB200.mr` again once.
+
 ## [0.6.0] - 2026-09-27
 
 ### Added
