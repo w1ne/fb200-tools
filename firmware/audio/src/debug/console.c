@@ -28,6 +28,7 @@
 #include "ui/power.h"
 #include "ui/ui.h"
 #include "ui/rgb.h"
+#include "bt/bt.h"
 #endif
 
 extern int g_bss_writable;
@@ -111,6 +112,7 @@ static void cmd_help(void)
              "  led   : led on|off|scan | ledpin <gpio> <pin>\r\n"
              "  ui    : ui | uimon on|off | disp <text> | kled <0-15> on|off | power\r\n"
              "          preset [0-39] | save | rgb 0xRRGGBB [led] | rgb cfg 0xIIS0S1\r\n"
+             "  bt    : bt | bt send <AT+...>\r\n"
              "  tests : crash | hang\r\n"
 #endif
              "  debug : stats | src | hb on|off | clocks | crumbs | crashdump | crashclear\r\n"
@@ -499,6 +501,10 @@ static void dispatch(char *cmd)
                    pget(p, P_REV_EN), pget(p, P_REV_TYPE), ui_master());
     }
     else if (streq(argv[0], "save")) ui_save();
+    else if (streq(argv[0], "bt")) {
+        if (argc > 2 && streq(argv[1], "send")) log_printf("bt send %s\r\n", bt_at(argv[2]) == 0 ? "ok" : "busy");
+        else bt_status();
+    }
     else if (streq(argv[0], "rgb")) {   /* rgb <rrggbb> | rgb cfg <inv> <sym0> <sym1> */
         int ok, ok2, ok3;
         if (argc > 1 && streq(argv[1], "cfg")) {

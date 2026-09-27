@@ -18,6 +18,7 @@
 #include "ui/power.h"
 #include "ui/ui.h"
 #include "ui/rgb.h"
+#include "bt/bt.h"
 
 extern int g_bss_writable;
 extern uint32_t tusb_time_millis_api(void);
@@ -73,6 +74,7 @@ void app_main(void)
     controls_init();
     power_init();
     rgb_init();
+    bt_init();
     ui_init();
     if (!codec_ok) {
         engine_set_mute(true); /* start muted when the codec did not answer */
@@ -92,6 +94,7 @@ void app_main(void)
             controls_task(now);
             power_task(now);
             ui_task(now);
+            bt_task(now);
         }
 #endif
         cdc_log_task();
