@@ -263,6 +263,7 @@ def test_settings_block_and_hooks(h):
     assert any(x.startswith("HOOK bt_name 464232") for x in lines)
     assert h.flash(0x83000, 20) == b"FB200MyBass".ljust(20, b"\0")
     h.send(0xBA, bytes([1, 0, 12, 90, 120, 0]))
+    h.cmd("tick 3100")                                         # saved 3 s after the change
     assert h.flash(0x81000, 6) == bytes([1, 0, 12, 90, 120, 0])
     h.send(0xDA, bytes(range(30)))
     (aux,) = h.send(0xD9)
@@ -363,6 +364,26 @@ def test_bank_browse_loads_from_the_shown_bank_or_times_out(h):
 def drums(h) -> list[int]:
     """on, rhythm 0..39, level, bpm, last tap time"""
     return [int(v) for v in h.cmd("drums")[0].split()[1:]]
+
+
+def test_app_drum_and_mode_commands_act_live(h):
+    assert h.send(0xBA, bytes([1, 0, 12, 90, 120, 0])) == []      # no echo
+    assert drums(h)[:4] == [1, 12, 90, 120]
+    h.send(0xBA, bytes([0, 0, 50, 150, 0x2C, 1]))                  # clamped like the stock
+    assert drums(h)[:4] == [0, 0, 100, 300]
+    h.send(0xC9, b"\x01")                                          # rhythm mode from the app
+    assert disp(h) == "d01"
+    out = frames(tap(h, "b"))                                      # BA carries the live values
+    assert [(t, fn, p) for t, fn, p in out] == [("b", 0xBA, bytes([0, 0, 1, 100, 0x2C, 1]))]
+    h.send(0xC9, b"\x00")
+    assert disp(h) == "P0A"
+    h.send(0xB8, bytes([5, 0, 1, 1]))                              # tuner on from the app
+    assert disp(h) == " - "
+    assert [fn for _, fn, _ in frames(tap(h, "a"))] == [0xB0]
+    assert disp(h) == "P0A" and h.settings()[0x2D] == 0            # any switch leaves it
+    s = h.settings()
+    h.send(0xB0, bytes([0, 1, 13, 13, 13, 13, 13, 5, 1, 1, 1, 0, 100]))   # tuner on via B0
+    assert disp(h) == " - " and h.settings()[0x2D] == 1 and s[0x2D] == 0
 
 
 def test_rhythm_mode_buttons_as_stock(h):

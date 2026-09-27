@@ -61,10 +61,6 @@ void proto_notify_rhythm_mode(void);     /* 0xC9 [settings+0x20] */
 void proto_notify_battery(void);         /* 0xBB [percent, charging] */
 void proto_notify_saved(void);           /* 0x97 [index][preset] + 0x98 + 0xB0 (hold save) */
 
-/* Rhythm settings block (F:0x81000, 6 bytes: on, ?, pattern 0..39, volume,
- * tempo u16 LE; default 0,0,0,100,110). */
-const uint8_t *proto_rhythm(void);
-
 /* ---- platform hooks ---------------------------------------------------
  * Storage (strong, provided by proto_port.c on the target, by the test on
  * the host). Offsets are flash offsets from 0x60000000. write returns 0 on

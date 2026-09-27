@@ -66,7 +66,8 @@ static uint32_t overlay_until, revision, settings_dirty_ms;
 static bool settings_dirty;
 static bool ui_log;
 static bool tuner_mode, rhythm_mode;
-static bool rhythm_dirty;
+static bool rhythm_dirty, rhythm_notify;   /* unsaved drum settings; send BA when saved */
+static uint8_t rhythm_b1;                  /* rhythm block byte 1 (meaning unknown), kept */
 static bool modifier_used;   /* A held while a knob turned: A is a modifier */
 static uint32_t rhythm_dirty_ms;
 static uint32_t s_now;
@@ -121,16 +122,49 @@ static void load(unsigned b, unsigned s)
     log_printf("preset %u%c \"%s\"\r\n", bank, "AbCd"[slot], name);
 }
 
-/* Stock rhythm settings at F:0x81000: on, -, rhythm, level, bpm (u16 LE). */
+/* Stock rhythm settings at F:0x81000: on, -, rhythm, level, bpm (u16 LE).
+ * The drum machine is the one copy of this state: the app protocol (BA)
+ * reads and writes it through ui_rhythm_block / ui_rhythm_set. */
 static void rhythm_settings_load(void)
 {
     uint8_t r[RHYTHM_SIZE];
+    static const uint8_t def[RHYTHM_SIZE] = {0, 0, 0, 100, 110, 0};
     rhythm_settings_read(r);
+    /* stock validation (0x18db2): on<=1, ?<=1, pattern<=39, volume<=100 */
+    bool erased = r[0] == 0xFF && r[1] == 0xFF && r[2] == 0xFF;
+    if (erased || r[0] > 1 || r[1] > 1 || r[2] >= DRUMS_RHYTHMS || r[3] > 100u) memcpy(r, def, sizeof r);
     drums_t *d = engine_drums();
-    if (r[2] < DRUMS_RHYTHMS) drums_set_rhythm(d, r[2]);
-    if (r[3] <= 100u) drums_set_level(d, r[3]);
+    drums_stop(d);                               /* the stock always boots with the drums off */
+    rhythm_b1 = r[1];
+    drums_set_rhythm(d, r[2]);
+    drums_set_level(d, r[3] / 10u * 10u);        /* stock: level rounded to tens at boot */
     uint16_t bpm = (uint16_t)(r[4] | (r[5] << 8));
     drums_set_tempo(d, (bpm >= DRUMS_BPM_MIN && bpm <= DRUMS_BPM_MAX) ? bpm : DRUMS_BPM_DEFAULT);
+}
+
+void ui_rhythm_block(uint8_t out[RHYTHM_SIZE])
+{
+    const drums_t *d = engine_drums();
+    out[0] = d->on;
+    out[1] = rhythm_b1;
+    out[2] = d->rhythm;
+    out[3] = d->level;
+    out[4] = (uint8_t)d->bpm;
+    out[5] = (uint8_t)(d->bpm >> 8);
+}
+
+void ui_rhythm_set(const uint8_t in[RHYTHM_SIZE])
+{
+    drums_t *d = engine_drums();
+    rhythm_b1 = in[1];
+    drums_set_rhythm(d, in[2] < DRUMS_RHYTHMS ? in[2] : 0u);
+    drums_set_level(d, in[3] <= 100u ? in[3] : 100u);
+    drums_set_tempo(d, (unsigned)(in[4] | (in[5] << 8)));
+    if (in[0] && !d->on) drums_start(d);
+    else if (!in[0] && d->on) drums_stop(d);
+    rhythm_dirty = true;                         /* saved, not echoed */
+    rhythm_dirty_ms = s_now;
+    if (rhythm_mode && !overlay_until) show_rhythm();
 }
 
 void ui_init(void)
@@ -192,16 +226,23 @@ static void rhythm_single(int sw)
     rhythm_dirty = true;
     rhythm_dirty_ms = s_now;
     show_rhythm();
+    proto_notify_rhythm();                       /* stock: BA on every button */
+}
+
+static void set_tuner(bool on)
+{
+    tuner_mode = on;
+    engine_set_tuner(on);
+    settings.b[S_TUNER] = on;
+    if (on) display_text(" - ");
+    else show_preset();
 }
 
 static void action_single(int sw)
 {
     if (tuner_mode) {
-        tuner_mode = false;
-        engine_set_tuner(false);
-        settings.b[S_TUNER] = 0;
+        set_tuner(false);
         proto_notify_settings();
-        show_preset();
         return;
     }
     if (rhythm_mode) { rhythm_single(sw); return; }
@@ -242,12 +283,8 @@ static void footswitches(uint32_t now)
         } else if (ev == FSW_LONG) {
             if (sw == SW_A && (down_mask & (1u << SW_B))) {          /* stock: B held + A long */
                 long_used = true;
-                tuner_mode = !tuner_mode;
-                engine_set_tuner(tuner_mode);
-                settings.b[S_TUNER] = tuner_mode;
+                set_tuner(!tuner_mode);
                 proto_notify_settings();
-                if (tuner_mode) display_text(" - ");
-                else show_preset();
             } else if (sw == SW_B && (down_mask & (1u << SW_C))) {   /* C held + B long */
                 long_used = true;
                 rhythm_mode = !rhythm_mode;
@@ -322,7 +359,7 @@ static void knobs(uint32_t now)
                 shown = d->bpm;
                 name = "bPn";
             }
-            rhythm_dirty = true;
+            rhythm_dirty = rhythm_notify = true;
             rhythm_dirty_ms = now;
             if (k != shown_knob) { shown_knob = k; name_until = now + NAME_MS; display_text(name); }
             else if ((int32_t)(now - name_until) >= 0) show_value(k, shown, true);
@@ -416,15 +453,10 @@ void ui_task(uint32_t now_ms)
     }
     if (rhythm_dirty && now_ms - rhythm_dirty_ms > 3000u) {
         uint8_t r[RHYTHM_SIZE];
-        drums_t *d = engine_drums();
-        rhythm_settings_read(r);
-        r[2] = d->rhythm;
-        r[3] = d->level;
-        r[4] = (uint8_t)d->bpm;
-        r[5] = (uint8_t)(d->bpm >> 8);
+        ui_rhythm_block(r);
         (void)rhythm_settings_write(r);
-        rhythm_dirty = false;
-        proto_notify_rhythm();
+        if (rhythm_notify) proto_notify_rhythm();   /* knob drum changes */
+        rhythm_dirty = rhythm_notify = false;
     }
     /* settings are few and rarely change: persist 3 s after the first
      * unsaved change (the stock saves them on power fail) */
@@ -467,9 +499,16 @@ void ui_edit_load(const preset_t *p)
 
 settings_t *ui_settings(void) { return &settings; }
 
+/* After an app write (B0, B8, C9, ...): the modes follow the settings block
+ * at once, as on the stock. */
 void ui_settings_changed(void)
 {
-    stomp = settings.b[S_STOMP] == 1;
+    bool st = settings.b[S_STOMP] == 1, rh = settings.b[S_RHYTHM] == 1;
+    bool redraw = st != stomp || rh != rhythm_mode;
+    stomp = st;
+    rhythm_mode = rh;
+    if ((settings.b[S_TUNER] == 1) != tuner_mode) set_tuner(!tuner_mode);
+    else if (redraw && !tuner_mode) show_preset();
     settings_dirty = true;
     revision++;
 }

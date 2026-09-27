@@ -21,5 +21,9 @@ void ui_flush_settings(void);             /* write unsaved settings now (power f
 void ui_edit_write(unsigned off, const void *src, unsigned n);
 void ui_edit_load(const preset_t *p);
 settings_t *ui_settings(void);
-void ui_settings_changed(void);           /* after writing through ui_settings() */
+void ui_settings_changed(void);           /* after writing through ui_settings(): modes follow */
+/* Drum settings in the stock rhythm block layout (on, ?, rhythm 0..39, level,
+ * bpm u16 LE): read, or apply at once (app BA). */
+void ui_rhythm_block(uint8_t out[RHYTHM_SIZE]);
+void ui_rhythm_set(const uint8_t in[RHYTHM_SIZE]);
 #endif

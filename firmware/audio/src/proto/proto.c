@@ -57,7 +57,6 @@ static uint8_t notify_mask = PROTO_BLE;
 static uint8_t tx[PROTO_MAX_FRAME];
 static uint8_t pl[PROTO_MAX_LEN];
 
-static uint8_t rhythm[6] = {0, 0, 0, 100, 110, 0};
 static uint8_t aux[30];
 static uint8_t ir_names[IR_SLOTS * IR_NAME_LEN];
 static uint8_t ir_used[IR_SLOTS];
@@ -77,7 +76,6 @@ static const char kEmpty[] = "Empty";
 
 void proto_set_sender(proto_transport_t t, proto_send_fn fn) { senders[(t & 3u) - 1u] = fn; }
 void proto_set_notify_mask(uint8_t mask) { notify_mask = mask; }
-const uint8_t *proto_rhythm(void) { return rhythm; }
 
 static void send(uint8_t mask, uint8_t fn, const uint8_t *p, uint32_t n)
 {
@@ -87,22 +85,10 @@ static void send(uint8_t mask, uint8_t fn, const uint8_t *p, uint32_t n)
         if ((mask & (1u << t)) && senders[t]) senders[t](tx, len);
 }
 
-static bool erased(const uint8_t *p, uint32_t n)
-{
-    while (n--) if (*p++ != 0xFF) return false;
-    return true;
-}
-
 void proto_init(void)
 {
     crc_init();
     memset(rx, 0, sizeof rx);
-    uint8_t r[6];
-    proto_flash_read(RHYTHM_FLASH, r, sizeof r);
-    /* stock validation (0x18db2): on<=1, ?<=1, pattern<=39, volume<=100 */
-    if (!erased(r, 3) && r[0] <= 1 && r[1] <= 1 && r[2] <= 39 && r[3] <= 100) memcpy(rhythm, r, 6);
-    rhythm[0] = 0;                               /* the stock always boots with rhythm off */
-    rhythm[3] = (uint8_t)(rhythm[3] / 10u * 10u);
     proto_flash_read(AUX_FLASH, aux, sizeof aux);
     proto_flash_read(IR_NAMES_FLASH, ir_names, sizeof ir_names);
     proto_flash_read(IR_FLAGS_FLASH, ir_used, sizeof ir_used);
@@ -188,7 +174,12 @@ void proto_notify_preset(void)
 }
 
 void proto_notify_settings(void) { send(notify_mask, 0xB0, pl, settings_block(pl)); }
-void proto_notify_rhythm(void) { send(notify_mask, 0xBA, rhythm, 6); }
+void proto_notify_rhythm(void)
+{
+    uint8_t r[RHYTHM_SIZE];
+    ui_rhythm_block(r);
+    send(notify_mask, 0xBA, r, RHYTHM_SIZE);
+}
 void proto_notify_rhythm_mode(void) { send(notify_mask, 0xC9, &ui_settings()->b[S_RHYTHM], 1); }
 
 void proto_notify_battery(void)
@@ -478,8 +469,9 @@ static void dispatch(uint8_t src, uint8_t fn, const uint8_t *p, uint32_t n)
         send_edit(src, s[S_PRESET]);
         send(src, 0xB0, pl, settings_block(pl));
         send(src, 0xB7, s + 0x1b, 4);
-        send(src, 0xBA, rhythm, 6);
-        uint8_t b[2];
+        uint8_t b[RHYTHM_SIZE];
+        ui_rhythm_block(b);
+        send(src, 0xBA, b, RHYTHM_SIZE);
         proto_battery(&b[0], &b[1]);
         send(src, 0xBB, b, 2);
         b[0] = 1;
@@ -570,7 +562,7 @@ static void dispatch(uint8_t src, uint8_t fn, const uint8_t *p, uint32_t n)
             ui_settings_changed();
         }
         break;
-    case 0xB8:                        /* [+0x2c, (unused), +0x2d, +0x2e] */
+    case 0xB8:                        /* [+0x2c, (unused), +0x2d tuner on, +0x2e] */
         if (n >= 4) {
             s[0x2c] = p[0];
             s[0x2d] = p[2];
@@ -578,14 +570,15 @@ static void dispatch(uint8_t src, uint8_t fn, const uint8_t *p, uint32_t n)
             ui_settings_changed();
         }
         break;
-    case 0xBA:                        /* rhythm block */
-        if (n >= 6) {
-            memcpy(rhythm, p, 6);
-            if (rhythm[0] > 1) rhythm[0] = 0;
-            if (rhythm[1] > 1) rhythm[1] = 0;
-            if (rhythm[2] > 39) rhythm[2] = 0;
-            if (rhythm[3] > 100) rhythm[3] = 100;
-            proto_flash_write(RHYTHM_FLASH, rhythm, 6);
+    case 0xBA:                        /* rhythm block: applied to the drums at once */
+        if (n >= RHYTHM_SIZE) {
+            uint8_t r[RHYTHM_SIZE];
+            memcpy(r, p, sizeof r);
+            if (r[0] > 1) r[0] = 0;
+            if (r[1] > 1) r[1] = 0;
+            if (r[2] > 39) r[2] = 0;
+            if (r[3] > 100) r[3] = 100;
+            ui_rhythm_set(r);
         }
         break;
     case 0xC1: case 0xC4: {           /* "enter the updater" */
@@ -598,7 +591,7 @@ static void dispatch(uint8_t src, uint8_t fn, const uint8_t *p, uint32_t n)
         proto_hook_bootloader();
         break;
     }
-    case 0xC9:
+    case 0xC9:                        /* rhythm mode, applied by ui_settings_changed */
         if (n >= 1) { s[S_RHYTHM] = p[0]; ui_settings_changed(); }
         break;
     case 0xD6:
