@@ -11,6 +11,7 @@
 #include "console.h"
 #include "fsl_iomuxc.h"
 #include "audio/i2c_probe.h"
+#include "audio/usb_audio.h"
 #include "selfupdate.h"
 
 extern int g_bss_writable;
@@ -84,7 +85,7 @@ static void cmd_src(void)
 
 static void cmd_help(void)
 {
-    log_printf("commands: help | stats | src | hb on|off | scan | dump [bus addr] |\r\n"
+    log_printf("commands: help | stats | usb | src | hb on|off | scan | dump [bus addr] |\r\n"
                "          peek <addr> [len] | dumpmem <addr> <len> | poke <addr> <val> |\r\n"
                "          crc <addr> <len> | fwinfo | fwbegin <len> <crc32> | reset\r\n");
 }
@@ -115,6 +116,16 @@ static void cmd_stats(void)
 {
     log_printf("bss_writable=%d heartbeat=%d line_len=%u\r\n",
                g_bss_writable, heartbeat_on, (unsigned)line_len);
+}
+
+static void cmd_usb(void)
+{
+    uint32_t pf, cf, ovf, unf;
+    uint8_t spk_alt, mic_alt;
+    usb_audio_stats(&pf, &cf, &ovf, &unf, &spk_alt, &mic_alt);
+    log_printf("usb: spk_alt=%u mic_alt=%u play_fill=%lu cap_fill=%lu ovf=%lu unf=%lu\r\n",
+               (unsigned)spk_alt, (unsigned)mic_alt, (unsigned long)pf,
+               (unsigned long)cf, (unsigned long)ovf, (unsigned long)unf);
 }
 
 static void cmd_peek(const char *a1, const char *a2)
@@ -180,6 +191,7 @@ static void dispatch(char *cmd)
 
     if (streq(argv[0], "help")) cmd_help();
     else if (streq(argv[0], "stats")) cmd_stats();
+    else if (streq(argv[0], "usb")) cmd_usb();
     else if (streq(argv[0], "hb")) {
         heartbeat_on = (argc > 1 && streq(argv[1], "on"));
         log_printf("heartbeat %s\r\n", heartbeat_on ? "on" : "off");

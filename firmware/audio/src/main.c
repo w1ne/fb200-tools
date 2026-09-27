@@ -7,6 +7,8 @@
 #include "debug/cdc_log.h"
 #include "debug/console.h"
 #include "audio/i2c_probe.h"
+#include "audio/engine.h"
+#include "audio/usb_audio.h"
 
 extern int g_bss_writable;
 
@@ -31,6 +33,7 @@ void app_main(void)
     board_init();
     tusb_init();
     i2c_probe_init();
+    engine_init();
     log_printf("ready\r\n");
 
     uint32_t loops = 0;
@@ -38,6 +41,8 @@ void app_main(void)
         tud_task();
         cdc_log_task();
         console_task();
+        usb_audio_task();
+        engine_task();
         if (console_heartbeat_on() && ++loops >= 2000000u) {
             loops = 0;
             log_printf("hb\r\n");
