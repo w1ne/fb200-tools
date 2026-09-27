@@ -4,12 +4,14 @@ fake pedal on a pseudo-terminal."""
 from __future__ import annotations
 
 import os
-import pty
 import threading
-import tty
 import zlib
 
 import pytest
+
+pty = pytest.importorskip("pty")
+tty = pytest.importorskip("tty")
+pytest.importorskip("termios")  # POSIX only: the console is not supported on Windows
 
 from fb200 import console
 from fb200.errors import CommunicationError

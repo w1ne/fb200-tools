@@ -14,7 +14,6 @@ import sys
 import time
 import zlib
 from dataclasses import dataclass
-from typing import Self
 
 from fb200.errors import CommunicationError
 
@@ -47,7 +46,7 @@ class Console:
     def close(self) -> None:
         os.close(self.fd)
 
-    def __enter__(self) -> Self:
+    def __enter__(self) -> Console:
         return self
 
     def __exit__(self, *exc) -> None:
