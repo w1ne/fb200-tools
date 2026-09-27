@@ -59,7 +59,7 @@ and the "better" roadmap. The code runs on the stock hardware only.
 > power-on** always gets you back to the vendor updater.
 
 **Easiest: flash from the browser.** Open
-**[w1ne.github.io/fb200-tools/flash.html](https://w1ne.github.io/fb200-tools/flash.html)**
+**[shylenko.com/fb200-tools/flash.html](https://shylenko.com/fb200-tools/flash.html)**
 in Chrome or Edge (Windows, macOS, Linux, ChromeOS). Nothing to install. It takes the
 latest release and guides you step by step.
 

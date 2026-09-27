@@ -59,7 +59,7 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" out/fb200-app.slot out/fb200-recovery.bin \
             out/manifest.json --title "$GITHUB_REF_NAME" --notes-file <(
-              echo "Flash it from the browser: https://w1ne.github.io/fb200-tools/flash.html"
+              echo "Flash it from the browser: https://shylenko.com/fb200-tools/flash.html"
               echo
               echo "These images contain no vendor code or data. See docs/INSTALL.md."
             ) || gh release upload "$GITHUB_REF_NAME" out/fb200-app.slot \

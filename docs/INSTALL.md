@@ -10,7 +10,7 @@ firmware, and building from source.
 
 ## The easy way: in the browser
 
-Open **<https://w1ne.github.io/fb200-tools/flash.html>** in Chrome or Edge on Windows,
+Open **<https://shylenko.com/fb200-tools/flash.html>** in Chrome or Edge on Windows,
 macOS, Linux or ChromeOS. Nothing to install. The page takes the latest release and
 guides you step by step. Safari and Firefox cannot talk to USB devices.
 
