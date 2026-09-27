@@ -5,7 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.0] - 2026-09-27
+
+Stock parity: save, bank browsing, rhythm-mode buttons, app commands, global
+settings and factory reset now work as on the stock firmware (docs/PARITY.md).
+Host tools ask the pedal which stock data versions it accepts (`fwstock` with no
+arguments), so an older app never gets a blob it cannot read.
 
 ### Changed
 
