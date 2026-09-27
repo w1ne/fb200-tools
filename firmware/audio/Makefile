@@ -86,12 +86,13 @@ SRC_C := \
   src/audio/usb_audio.c src/audio/engine.c src/audio/frontend.c \
   src/ui/pads.c src/ui/display.c src/ui/controls.c src/ui/power.c \
   src/ui/ui.c src/ui/rgb.c src/preset/preset.c src/bt/bt.c src/audio/codec.c \
-  src/proto/proto.c src/proto/proto_port.c \
+  src/proto/proto.c src/proto/proto_port.c src/usb_hid.c \
   src/audio/sai.c src/audio/drift.c \
   $(TUSB_DIR)/src/tusb.c \
   $(TUSB_DIR)/src/common/tusb_fifo.c \
   $(TUSB_DIR)/src/device/usbd.c \
   $(TUSB_DIR)/src/class/cdc/cdc_device.c \
+  $(TUSB_DIR)/src/class/hid/hid_device.c \
   $(TUSB_DIR)/src/class/audio/audio_device.c \
   $(MCUX_CORE)/drivers/sai/fsl_sai.c \
   $(MCUX_CORE)/drivers/sai/fsl_sai_edma.c \

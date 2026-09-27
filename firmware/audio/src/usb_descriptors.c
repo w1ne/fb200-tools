@@ -22,7 +22,19 @@ static const tusb_desc_device_t desc_device TU_ATTR_ALIGNED(4) = {
 };
 
 #define CONFIG_TOTAL_LEN \
-    (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_AUDIO20_FB200_DESC_LEN)
+    (TUD_CONFIG_DESC_LEN + TUD_CDC_DESC_LEN + TUD_AUDIO20_FB200_DESC_LEN + TUD_HID_INOUT_DESC_LEN)
+
+/* Vendor HID, 64-byte reports without report IDs, as the stock: the first
+ * byte of a report is the payload length (docs/PROTOCOL.md §2). */
+static const uint8_t desc_hid_report[] = {
+    TUD_HID_REPORT_DESC_GENERIC_INOUT(CFG_TUD_HID_EP_BUFSIZE),
+};
+
+uint8_t const *tud_hid_descriptor_report_cb(uint8_t instance)
+{
+    (void)instance;
+    return desc_hid_report;
+}
 
 #define UAC2_FU_CTRL \
     (AUDIO20_CTRL_RW << AUDIO20_FEATURE_UNIT_CTRL_MUTE_POS) | \
@@ -111,6 +123,11 @@ static const uint8_t desc_configuration[] TU_ATTR_ALIGNED(4) = {
     TUD_AUDIO20_DESC_CS_AS_ISO_EP(
         AUDIO20_CS_AS_ISO_DATA_EP_ATT_NON_MAX_PACKETS_OK, AUDIO20_CTRL_NONE,
         AUDIO20_CS_AS_ISO_DATA_EP_LOCK_DELAY_UNIT_MILLISEC, 0x0001),
+
+    /* ---- vendor HID (app protocol) ---- */
+    TUD_HID_INOUT_DESCRIPTOR(ITF_NUM_HID, STRID_HID, HID_ITF_PROTOCOL_NONE,
+                             sizeof(desc_hid_report), EPNUM_HID_OUT, EPNUM_HID_IN,
+                             CFG_TUD_HID_EP_BUFSIZE, 1),
 };
 
 TU_VERIFY_STATIC(sizeof(desc_configuration) == CONFIG_TOTAL_LEN,
@@ -138,6 +155,7 @@ uint16_t const *tud_descriptor_string_cb(uint8_t index, uint16_t langid)
         [STRID_SERIAL] = AUDIO_USB_SERIAL,
         [STRID_CDC] = "FB200 Audio CDC",
         [STRID_AUDIO] = "FB200 Audio I/O",
+        [STRID_HID] = "FB200 Control",
     };
     uint8_t chr_count;
     if (index == STRID_LANGID) {

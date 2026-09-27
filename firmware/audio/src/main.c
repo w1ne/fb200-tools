@@ -20,6 +20,8 @@
 #include "ui/rgb.h"
 #include "bt/bt.h"
 #include "proto/proto.h"
+void usb_hid_init(void);   /* proto/usb_hid.c */
+void usb_hid_task(void);
 
 extern int g_bss_writable;
 extern uint32_t tusb_time_millis_api(void);
@@ -78,6 +80,7 @@ void app_main(void)
     bt_init();
     ui_init();
     proto_port_init();   /* after ui_init: it reads the edit buffer */
+    usb_hid_init();
     if (!codec_ok) {
         engine_set_mute(true); /* start muted when the codec did not answer */
     }
@@ -97,6 +100,7 @@ void app_main(void)
             power_task(now);
             ui_task(now);
             bt_task(now);
+            usb_hid_task();
         }
 #endif
         cdc_log_task();

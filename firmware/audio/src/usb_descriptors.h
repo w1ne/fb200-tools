@@ -7,16 +7,19 @@ enum {
     STRID_SERIAL,
     STRID_CDC,
     STRID_AUDIO,
+    STRID_HID,
 };
 
 /* Interface layout: CDC first (keeps the console tty path stable), then the
- * UAC2 audio function (IAD covering AC + two AS interfaces). */
+ * UAC2 audio function (IAD covering AC + two AS interfaces), then the vendor
+ * HID interface the stock editor and `fb200` talk to. */
 enum {
     ITF_NUM_CDC = 0,
     ITF_NUM_CDC_DATA,
     ITF_NUM_AUDIO_CONTROL,
     ITF_NUM_AUDIO_STREAMING_SPK,
     ITF_NUM_AUDIO_STREAMING_MIC,
+    ITF_NUM_HID,          /* vendor HID: the stock app protocol (docs/PROTOCOL.md) */
     ITF_NUM_TOTAL,
 };
 
@@ -34,6 +37,8 @@ enum {
 #define EPNUM_AUDIO_OUT 0x03
 #define EPNUM_AUDIO_IN  0x83
 #define EPNUM_AUDIO_INT 0x84
+#define EPNUM_HID_OUT   0x05
+#define EPNUM_HID_IN    0x85
 
 /* UAC2 function: stereo playback (host -> pedal) + stereo capture
  * (pedal -> host), 44.1 kHz, 16-bit, one format, no feedback endpoint
