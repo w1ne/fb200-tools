@@ -80,6 +80,7 @@ SRC_C := \
   src/dsp/dsp.c src/dsp/math.c src/dsp/gain.c src/dsp/testgen.c \
   src/dsp/conv.c src/dsp/biquad.c src/dsp/gate.c \
   src/dsp/drums.c src/dsp/tuner.c \
+  src/dsp/amp.c src/dsp/tone.c src/dsp/cab.c \
   src/debug/log_fmt.c src/debug/cdc_log.c src/debug/console.c \
   src/debug/selfupdate.c src/debug/recovery.c src/debug/regs.c \
   src/audio/i2c_probe.c \
@@ -130,23 +131,44 @@ ifneq ($(VARIANT),recovery)
 SRC_C += $(foreach g,$(DSP_GROUPS),$(DSP_SRC)/$(g)/$(g).c)
 endif
 
-# Optional stock drum rhythms. Vendor data: generated from the user's own
-# stock image into the (gitignored) build directory, never committed.
-#   make build STOCK_MR=../../fb200-stock.mr        (FB200_STOCK_DRUMS=1 implied)
-# Without it the drum machine builds and stays silent (drums_init() == -1).
-STOCK_MR          ?=
-FB200_STOCK_DRUMS ?= $(if $(STOCK_MR),1,)
-STOCK_DRUMS_C     := build/stock_drums_data.c
-ifeq ($(FB200_STOCK_DRUMS)$(filter recovery,$(VARIANT)),1)
-ifeq ($(STOCK_MR),)
-$(error FB200_STOCK_DRUMS=1 needs STOCK_MR=<path to the stock .mr>)
+# Stock data - amp models, cab IRs, tone-stack tables (src/dsp/amp.c, tone.c,
+# cab.c) and drum rhythms (src/dsp/drums.c) - is vendor data: generated from
+# the user's own stock .mr into build/, never committed. Without the .mr the
+# modules pass audio through (cab flat) and the drum machine stays silent.
+STOCK_MR    ?= ../../fb200-stock.mr
+PY_UNICORN  ?= python3
+STOCK_DSP_C := build/stock_dsp_data.c
+STOCK_STATE := $(if $(wildcard $(STOCK_MR)),on,off)
+STOCK_OBJS  := $(patsubst %,$(TARGET)/%.o,src/dsp/amp.c src/dsp/tone.c src/dsp/cab.c src/dsp/drums.c)
+STOCK_DRUMS_C := build/stock_drums_data.c
+ifneq ($(VARIANT),recovery)
+ifeq ($(STOCK_STATE),on)
+SRC_C  += $(STOCK_DSP_C) $(STOCK_DRUMS_C)
+CFLAGS += -DFB200_STOCK_DSP=1 -DFB200_STOCK_DRUMS
+else
+$(info NOTE: $(STOCK_MR) not found: building without the stock amp/cab data (amp passes audio through, cab is flat, drums silent))
 endif
-SRC_C  += $(STOCK_DRUMS_C)
-CFLAGS += -DFB200_STOCK_DRUMS
+endif
+# Rebuild the modules when the data appears or goes away (FB200_STOCK_DSP).
+$(shell mkdir -p build && echo $(STOCK_STATE) | cmp -s - build/stock_dsp.state || \
+  echo $(STOCK_STATE) > build/stock_dsp.state)
+$(STOCK_OBJS): build/stock_dsp.state
+build/stock_dsp.state:        # again after `make clean`
+	@mkdir -p build && echo $(STOCK_STATE) > $@
+# The stock amp's filter chains are ill-conditioned: parity needs the stock's
+# separate multiply and add, no FMA contraction (tests/test_stock_dsp_parity.py).
+$(STOCK_OBJS) $(TARGET)/$(DSP_SRC)/FilteringFunctions/FilteringFunctions.c.o: \
+  CFLAGS += -ffp-contract=off
+
+$(STOCK_DSP_C): $(STOCK_MR) ../tools/extract_stock_dsp.py
+	@$(PY_UNICORN) -c "import unicorn" 2>/dev/null || { echo "ERROR: $(STOCK_MR) exists but \
+	'$(PY_UNICORN)' cannot import unicorn; set PY_UNICORN to a Python with unicorn \
+	(pip install unicorn) or move the .mr away to build without the stock data"; exit 1; }
+	$(PY_UNICORN) ../tools/extract_stock_dsp.py $(STOCK_MR) -o $@
+
 $(STOCK_DRUMS_C): $(STOCK_MR) ../tools/gen_stock_drums.py
 	@mkdir -p $(dir $@)
 	python3 ../tools/gen_stock_drums.py $(STOCK_MR) $@
-endif
 SRC_S := src/stage2.S
 OBJS  := $(patsubst %,$(TARGET)/%.o,$(SRC_C) $(SRC_S))
 
