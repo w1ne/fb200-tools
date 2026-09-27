@@ -47,6 +47,7 @@ static int mem_ok(uint32_t addr)
     return (addr < 0x400000u) ||                       /* ITCM/DTCM */
            (addr >= 0x20000000u && addr < 0x20300000u) ||   /* DTCM/OCRAM */
            (addr >= 0x400F8000u && addr < 0x400F9000u) ||   /* SRC (always on) */
+           (addr >= 0x401B8000u && addr < 0x401C8000u) ||   /* GPIO1-4 */
            (addr >= 0x60000000u && addr < 0x60800000u);     /* flash */
 }
 
@@ -77,6 +78,17 @@ static void cmd_src(void)
                (unsigned)*(volatile uint32_t *)0x400F8008u,
                (unsigned)*(volatile uint32_t *)0x400F8004u,
                (unsigned)*(volatile uint32_t *)0x400F801Cu);
+}
+
+/* Direct call into the bootloader's DFU entry (0x6000333C, mapped in flash).
+ * Hypothesis: the stock app's 0xC1 calls it directly instead of resetting. */
+__attribute__((noreturn)) static void jump_dfu(void)
+{
+    tud_disconnect();
+    for (volatile uint32_t i = 0; i < 2000000u; i++) {
+    }
+    ((void (*)(void))(0x6000333Cu | 1u))();
+    __builtin_unreachable();
 }
 
 /* Software handover to the vendor bootloader, mirroring the stock app's 0xC1
@@ -111,7 +123,7 @@ static void cmd_help(void)
 {
     log_printf("commands: help | stats | src | hb on|off | scan | dump [bus addr] |\r\n"
                "          peek <addr> [len] | dumpmem <addr> <len> | poke <addr> <val> |\r\n"
-               "          handover (DFU) | reset | reboot\r\n");
+               "          handover (DFU) | dfu (direct) | reset | reboot\r\n");
 }
 
 static void cmd_stats(void)
@@ -193,6 +205,11 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "dumpmem")) cmd_dumpmem(argv[1], argv[2]);
     else if (streq(argv[0], "src")) cmd_src();
     else if (streq(argv[0], "poke")) cmd_poke(argv[1], argv[2]);
+    else if (streq(argv[0], "dfu")) {
+        log_printf("jumping to the bootloader DFU entry\r\n");
+        cdc_log_task();
+        jump_dfu();
+    }
     else if (streq(argv[0], "handover")) {
         log_printf("handover (DFU via the bootloader's 0xC1 path)\r\n");
         cdc_log_task();
