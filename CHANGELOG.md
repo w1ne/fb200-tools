@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Bass delay** (not in the stock): 20-1000 ms, feedback, mix, low cut on the
+  repeats (20-500 Hz), tone. Between MOD and reverb. Stock presets keep their sound:
+  the stock delay fields play only in presets with our marker (docs/PARITY.md M4).
+  Console: `delay [on|off] [time] [fb] [mix] [lowcut] [tone]`.
+
 ## [0.7.0] - 2026-09-27
 
 Stock parity: save, bank browsing, rhythm-mode buttons, app commands, global

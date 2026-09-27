@@ -179,8 +179,12 @@ or footswitch changes a module.
 | `82` amp | `0x2C` | en, model, gain, bass, mid, midfreq, treble, volume | model>120->1, p>100->100; en && model 0 -> 1 | 6 params (models 1..55) |
 | `83` cab | `0x44` | en, type, p1..p4 | type>120->1, p1>4->4, p2,p3>100->100, p4>9->9; en && type 0 -> 1 | no (type >= 11 selects user IR `type - 11`; reloads the IR) |
 | `84` mod | `0x74` | en, type, p1..p5 | type>21->1, p1..p4>100->100, p5>240->100 | 5 params |
-| `85` delay | `0x8C` | en, type, p1, p2, time | type>6->1, p>100->100, time clamped to 40..2500 ms | 3 params |
+| `85` delay | `0x8C` | en, type, p1 (mix), p2 (feedback), time | type>6->1, p>100->100, time clamped to 40..2500 ms | 3 params |
 | `86` reverb | `0xA4` | en, type, p1..p4 | type>5->1, p1>200->200, p2..p4>100->100 | 4 params |
+
+The stock DSP ignores the `85` delay block. Our firmware plays it only in a
+preset that also has our marker at `P+0x96` (`PARITY.md` M4); `85` writes
+`0x8C..0x95` and keeps the marker.
 
 ### 5.4 Presets
 

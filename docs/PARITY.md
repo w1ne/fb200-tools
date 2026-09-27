@@ -32,7 +32,7 @@ Status words:
 | Reverb, 5 types | DONE | `dsp/reverb.c`; <= -110 dB, `tests/test_fx_parity.py` |
 | Master volume, smoothed | DONE | `engine.c` (`s_master`), knob k15 |
 | Input gain (global `S+0x1a`, app, -55..+6 dB) | DONE | `dsp/gain.c` `gain_input_stock` (stock table dB steps, within 1 ulp; `dsp_host_test.c`), stock smoother in `engine.c`; 0 dB keeps the bit-parity value |
-| Delay (preset fields `0x8c..0x94`, protocol `0x85`) | not needed | the stock DSP ignores them (emulation); stored and echoed by `proto.c` |
+| Delay (preset fields `0x8c..0x94`, protocol `0x85`) | BETTER | the stock DSP ignores them (emulation). Ours plays them only in presets with our marker, so stock presets sound the same: [M4 delay](#m4-bass-delay) |
 | Module order (`0xbc`) | not needed | the stock ignores it (emulation); stored by `proto.c` `0xA0` |
 | Sample rate 44.1 kHz | DONE | `audio_config.h` `AUDIO_FS`; stock clock tree |
 
@@ -90,7 +90,7 @@ Status words:
 | Power-fail settings save | DONE (different) | the switch is a hard cut (checked on the pedal); settings are written 3 s after a change |
 | Firmware update | DONE, BETTER | USB recovery + app slot, `fb200 update`, browser updater (v0.6.0); no A+D. The official PC updater (`C1`) goes to our recovery, not the vendor DFU: going back to stock needs A+D |
 
-Not in the stock (so not gaps): looper, MIDI, delay, auto power-off.
+Not in the stock (so not gaps): looper, MIDI, auto power-off. (Delay: ours, M4.)
 
 ## Gaps, ranked by user impact
 
@@ -250,7 +250,8 @@ Budgets on this chip: 600 MHz / 44.1 kHz = 13.6k cycles per sample; RAM
 - **M4 - better core (after parity):** 48 kHz / 24-bit engine (needed for
   NAM; stock assets resampled offline), latency <3 ms, CPU/RAM profiler;
   bass chain additions: crossover clean-blend drive, 5-7 band EQ + HPF/LPF,
-  delay (the stock has none: its delay fields do nothing), better tuner.
+  delay (the stock has none: its delay fields do nothing; first version
+  done, see [below](#m4-bass-delay)), better tuner.
 - **M5 - IR engine:** up to 4096 taps (partitioned convolution, already in
   `dsp/conv.c`), WAV import, 50+ slots, low/high cut, dual-IR blend.
 - **M6 - open ecosystem:** done: documented protocol (`PROTOCOL.md`),
@@ -262,6 +263,92 @@ Budgets on this chip: 600 MHz / 44.1 kHz = 13.6k cycles per sample; RAM
   the editor, A1 -> A2-Lite distillation tool on the host.
 - **M8 - bass effects:** mono octaver (poly later), envelope filter/synth,
   multiband compressor; ADPCM looper (~8-16 s in RAM); AIDA-X/RTNeural.
+
+### M4: bass delay
+
+Status: first version on the host (2026-09-28), not tried on the pedal.
+
+**The problem.** The stock preset has a delay block (app command `0x85`,
+fields `P+0x8c` en, `0x8e` type 0-6, `0x90` mix, `0x92` feedback, `0x94`
+time 40-2500 ms). The stock DSP ignores it (emulation, all 7 types), and
+all 20 factory presets have it on with the same values (mix 9, feedback
+18, 490 ms). If we play the delay when `0x8c` is on, every stock preset
+changes its sound.
+
+**Choice: option (a), the stock fields plus our marker.** A preset plays the
+delay only when `0x8c` is on **and** the u16 at `P+0x96` is `0x4c44` ("DL")
+(`preset.h` `preset_delay_on`). Why:
+
+- `0x96..0xa3` is the unused tail of the delay block (each module has 0x18
+  bytes; the delay uses 5 words). It is 0 in every factory preset and in
+  the "EMPTY" preset (`tests/test_delay.py` reads them from the stock image).
+- The stock audio path ignores it: with our marker and our words in
+  `0x96..0x9b`, the emulated stock output is bit-identical
+  (`test_stock_dsp_ignores_the_marker`; a control edit of the amp gain in
+  the same test does change the output).
+- Presets stay in the stock format, so they still load on the stock
+  firmware (which ignores the delay) and in the app.
+- The app's `0x85` block writes only `0x8c..0x95`: it keeps our marker. So
+  after our first edit, the app can switch the delay and set mix, feedback
+  and time. A preset the app writes whole (`0x97`) with a 0 at `0x96`
+  plays no delay: the safe side.
+- Option (b), a flag in another unused byte, is the same thing with a less
+  obvious place. Option (c), a global switch, would add the delay to every
+  preset at once: that is the problem we must not have.
+
+Our words: `0x96` marker, `0x98` low cut (knob 0-100), `0x9a` tone (knob
+0-100). Mapping of the stock fields: `0x90` = mix (the stock callback
+smooths `0x90` as the delay mix, `tests/stock_emu_fx.py`), `0x92` =
+feedback, `0x94` = time in ms. The type field `0x8e` is kept but not used
+(one delay voice). The app clamps time to 40-2500 ms; our DSP clamps to
+20-1000 ms (RAM, below).
+
+**The official app.** `PROTOCOL.md` has the `0x85` block and per-type
+defaults (stock table `0x20008868`); the app files are not in this
+checkout, so it is not known if the app shows a delay page. Check with the
+phone app (test session, gap 2).
+
+**DSP** (`dsp/delay.c`): mono, in place, after MOD and before the reverb.
+`line = LP(HP(x + fb * y))`, `out = x + mix * y` (dry stays at unity). Time
+20-1000 ms with a glide (no clicks, a short pitch bend like tape), feedback
+knob x 0.95, mix knob x 1.0, low cut 12 dB/oct at 20-500 Hz (knob 63 =
+150 Hz, 0 = off), tone 6 dB/oct low-pass 1-10 kHz (100 = off). The loop gain
+is at most 0.95 at every frequency (Butterworth high-pass, no peak).
+
+**RAM.** The line is int16 (x 16384, +-2.0 full scale, truncated toward zero
+so the tail dies out to exact zeros): 1 s at up to 48 kHz = 96,008 B. DTCM
+has ~5.5 kB free (`.bss` ends at 0x2004CE68, the limit is 0x2004E3E8), so
+the line is in OCRAM2 (`linker.ld` `.ocram`, 0x20210000, NOLOAD, cleared by
+`delay_init`). OCRAM2 (512 kB) is free after boot: the vendor loader only
+unpacks the stock's 0x5AA0-byte OCRAM data to 0x20200000, which our code does
+not read. OCRAM is cached (D-cache on, default memory map); the delay
+touches it 3 times per sample. `delay_t` (116 B) stays in DTCM. ITCM code:
++2.9 kB.
+
+**CPU.** Measured by instruction count (Cortex-M7 build, `-O2`, Unicorn):
+92 instructions per sample with low cut and tone on = 0.7 % of the 600 MHz
+budget at CPI 1, 1.4 % at CPI 2. Check on the pedal with `cpu`.
+
+**Off = the stock chain.** The engine calls `delay_process` only when
+`preset_delay_on`; otherwise the chain is the same code as before. A switch
+from off to on clears the line first (no old audio).
+
+**Console** (for tests on the pedal): `delay [on|off] [time 20-1000 ms] [fb
+0-100] [mix 0-100] [lowcut 0-100] [tone 0-100]`. It edits the edit buffer
+(save with `save` or a held footswitch). The first edit of a preset without
+the marker writes the marker and our defaults (350 ms, fb 30, mix 35, low
+cut 63, tone 70). `delay off` on a stock preset writes nothing.
+
+**Tests** (`tests/test_delay.py`, `audio/tests/delay_host_test.c`, at 44.1
+and 48 kHz): first echo at exactly `time * fs`, echo ratio = feedback
+(0.475 +- 0.001), nothing between the echoes; 40 Hz through a 150 Hz low
+cut comes back at -23.2 dB (Butterworth -23.2 dB), 1 kHz at 0 dB; full
+feedback then 30 s of silence: exact zeros after ~1 s, no NaN, no subnormal;
+a time change glides and settles on the exact sample count; the preset rule
+(stock values, erased flash, byte-swapped marker, en off).
+
+Open: footswitch/knob control of the delay (none now), the light bar for
+it, a type map for `0x8e`, tap tempo.
 
 ## Why ours is better
 
