@@ -56,19 +56,28 @@ drop min/max, average; change threshold 48 counts. The notes said the
 stock inverts (4095 - v); on the pedal that turned every knob the wrong
 way (user report), so our firmware uses the raw reading.
 
-| knob | LED | target |
-| --- | --- | --- |
-| k13 | - | master volume (settings+0x18) |
-| k2 | 8 | module 0x81 (preset+0x60) |
-| k7 | 7 | preset+0x1a |
-| k0 | 6 | preset+0x1e |
-| k1 | 3 | amp type 1-10 (+0x2e) |
-| k4, k3, k5, k6, k8 | 11, 0, 1, 2, 12 | amp params +0x30/32/34/38/3a |
-| k11 | 5 | cab type 1-19 (+0x46; 11-19 user IRs) |
-| k15 | 10 | mod type 1-12 (+0x76) |
-| k14, k9 | 4, 9 | mod params +0x78/+0x7a |
-| k10 | 15 | reverb type 1-5 (+0xa6) |
-| k12 | 13 | reverb param +0xaa |
+**Measured on the pedal** (the user turned every knob left to right and read
+the panel labels; the channel table recovered from the stock code was
+wrong, its knob-LED pairing right):
+
+| panel (left -> right) | mux channel | target | knob LED |
+| --- | --- | --- | --- |
+| MASTER | k15 | master volume (settings+0x18) | 14 |
+| LEVEL | k14 | reverb level (+0xaa) | 13 |
+| REVERB | k12 | reverb type 0-4 (+0xa6) | 15 |
+| MIX | k11 | mod p2 (+0x7a) | 9 |
+| RATE | k8 | mod p1 (+0x78) | 4 |
+| MOD | k9 | mod type 0-11 (+0x76) | 10 |
+| CAB | k13 | cab 1-19 (+0x46; 11-19 user IR) | 5 |
+| VOL | k10 | amp volume (+0x3a) | 12 |
+| BASS | k4 | +0x32 | 0 |
+| MID | k6 | +0x34 | 1 |
+| TREBLE | k7 | +0x38 | 2 |
+| GAIN | k5 | +0x30 | 11 |
+| AMP | k2 | amp model 1-10 (+0x2e) | 3 |
+| LEVEL | k1 | comp level (+0x1e) | 6 |
+| THRESH | k0 | comp threshold (+0x1a) | 7 |
+| (gate) | k3 | gate threshold (+0x60) | 8 |
 
 ## 3. LEDs
 

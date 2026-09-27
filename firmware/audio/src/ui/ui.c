@@ -17,16 +17,29 @@ typedef struct {
     uint8_t base;        /* first selector value: amp/cab are 1-based, mod/rev 0-based */
 } knob_map_t;
 
-/* stock knob table (ITCM 0x5a60), indexed by mux channel k0..k15 */
+/* Knob table, indexed by mux channel k0..k15. Measured on the pedal
+ * (2026-09-27: the user turned every knob left to right and read the
+ * labels): MASTER k15, LEVEL k14, REVERB k12, MIX k11, RATE k8, MOD k9,
+ * CAB k13, VOL k10, BASS k4, MID k6, TREBLE k7, GAIN k5, AMP k2, LEVEL k1,
+ * THRESH k0, GATE k3. The channel assignment recovered from the stock code
+ * (ITCM 0x5a60) was wrong; its knob-LED pairing was right. */
 static const knob_map_t kKnob[KNOB_COUNT] = {
-    [0] = {6, M_COMP, P_COMP_LEVEL, 0},   [1] = {3, M_AMP, P_AMP_MODEL, 10, 1},
-    [2] = {8, M_GATE, P_GATE_THRESH, 0},  [3] = {0, M_AMP, P_AMP_BASS, 0},
-    [4] = {11, M_AMP, P_AMP_GAIN, 0},     [5] = {1, M_AMP, P_AMP_MID, 0},
-    [6] = {2, M_AMP, P_AMP_TREBLE, 0},    [7] = {7, M_COMP, P_COMP_THRESH, 0},
-    [8] = {12, M_AMP, P_AMP_VOLUME, 0},   [9] = {9, M_MOD, P_MOD_P2, 0},
-    [10] = {15, M_REV, P_REV_TYPE, 5, 0},    [11] = {5, M_CAB, P_CAB_TYPE, 19, 1},
-    [12] = {13, M_REV, P_REV_LEVEL, 0},   [13] = {-1, M_NONE, 0xFF, 0},
-    [14] = {4, M_MOD, P_MOD_P1, 0},       [15] = {10, M_MOD, P_MOD_TYPE, 12, 0},
+    [15] = {14, M_NONE, 0xFF, 0},             /* MASTER (global setting) */
+    [14] = {13, M_REV, P_REV_LEVEL, 0},       /* LEVEL (reverb) */
+    [12] = {15, M_REV, P_REV_TYPE, 5, 0},     /* REVERB type 0..4 */
+    [11] = {9, M_MOD, P_MOD_P2, 0},           /* MIX */
+    [8] = {4, M_MOD, P_MOD_P1, 0},            /* RATE */
+    [9] = {10, M_MOD, P_MOD_TYPE, 12, 0},     /* MOD type 0..11 */
+    [13] = {5, M_CAB, P_CAB_TYPE, 19, 1},     /* CAB 1..19 (11+ = user IR) */
+    [10] = {12, M_AMP, P_AMP_VOLUME, 0},      /* VOL */
+    [4] = {0, M_AMP, P_AMP_BASS, 0},          /* BASS */
+    [6] = {1, M_AMP, P_AMP_MID, 0},           /* MID */
+    [7] = {2, M_AMP, P_AMP_TREBLE, 0},        /* TREBLE */
+    [5] = {11, M_AMP, P_AMP_GAIN, 0},         /* GAIN */
+    [2] = {3, M_AMP, P_AMP_MODEL, 10, 1},     /* AMP model 1..10 */
+    [1] = {6, M_COMP, P_COMP_LEVEL, 0},       /* LEVEL (compressor) */
+    [0] = {7, M_COMP, P_COMP_THRESH, 0},      /* THRESH */
+    [3] = {8, M_GATE, P_GATE_THRESH, 0},      /* GATE */
 };
 static const uint8_t kModuleEnable[M_NONE] = {P_GATE_EN, P_COMP_EN, P_AMP_EN, P_CAB_EN,
                                               P_MOD_EN, P_REV_EN};
@@ -81,7 +94,7 @@ static void load(unsigned b, unsigned s)
     bank = b % 10u;
     slot = s & 3u;
     preset_read(bank * 4u + slot, &edit);
-    for (int k = 0; k < KNOB_COUNT; k++) caught[k] = (k == 13);   /* master is global */
+    for (int k = 0; k < KNOB_COUNT; k++) caught[k] = (kKnob[k].field == 0xFF);   /* master is global */
     settings.b[S_BANK] = (uint8_t)bank;
     settings.b[S_SLOT] = (uint8_t)slot;
     settings.b[S_PRESET] = (uint8_t)(bank * 4u + slot);
@@ -255,6 +268,7 @@ static void leds(uint32_t now)
     bool blink_on = (now / 250u) & 1u;
     for (int k = 0; k < KNOB_COUNT; k++) {
         if (kKnob[k].led < 0) continue;
+        if (kKnob[k].module == M_NONE) { knob_led(kKnob[k].led, true); continue; }   /* master */
         bool enabled = pget(&edit, kModuleEnable[kKnob[k].module]) != 0;
         knob_led(kKnob[k].led, enabled && (caught[k] || blink_on));
     }
