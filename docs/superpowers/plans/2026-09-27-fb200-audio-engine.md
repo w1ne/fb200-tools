@@ -719,6 +719,16 @@ git commit -m "debug: non-blocking CDC log for the audio firmware"
 
 ---
 
+## Task 3b: USB console (debug backbone)
+
+`src/debug/console.c` adds a line-based console over CDC: echoed input,
+tokenized commands, and clean output through `cdc_log` (16 KB ring, no
+heartbeat spam). Commands: `help`, `stats`, `hb on|off`, `scan`,
+`dump [bus addr]`, `peek <addr> [len]`, `poke <addr> <val>`, `reset`/`reboot`
+(software-reset handover). peek/poke are restricted to RAM and flash ranges
+because a clock-gated peripheral access can stall the AHB. This is the
+backbone for all hardware bring-up: every later task adds its commands here.
+
 ## Task 4: Probe firmware — I²C scan + codec register dump (hardware RE)
 
 **Files:**

@@ -1,23 +1,20 @@
-/* fb200-audio: milestone 1. Phase 0 adds the I2C probe commands
- * ('s' scan, 'd' dump bus1/0x1A, 'D' dump bus2/0x1A); audio bring-up lands in
- * later tasks (codec, SAI/eDMA, USB audio). */
+/* fb200-audio: milestone 1. The USB console (see `help`) is the debug
+ * backbone; audio bring-up lands in later tasks (codec, SAI/eDMA, USB audio). */
 #include <stdint.h>
 #include "fsl_device_registers.h"
 #include "tusb.h"
 #include "bsp/board_api.h"
 #include "debug/cdc_log.h"
+#include "debug/console.h"
 #include "audio/i2c_probe.h"
 
 extern int g_bss_writable;
 
-/* Hand over to the vendor bootloader (DFU) by jumping to its Cortex-M vector
- * table at 0x60000000 - the same effect as the stock app's 0xC1 command,
- * without needing A+D at power-on. */
-__attribute__((noreturn)) static void jump_to_bootloader(void)
+/* Handover to the vendor bootloader: the stock 0xC1 handler mutes the codec
+ * and issues a software reset (SCB->AIRCR SYSRESETREQ, stock ITCM 0x18c68);
+ * the bootloader decides what to do from the reset source. */
+__attribute__((noreturn)) void console_reboot(void)
 {
-    /* The stock app's 0xC1 handler mutes the codec and issues a software
-     * reset (SCB->AIRCR SYSRESETREQ); the bootloader then enters DFU because
-     * the reset source is software. Mirror exactly that. */
     tud_disconnect();
     for (volatile uint32_t i = 0; i < 4000000u; i++) {
     }
@@ -28,30 +25,22 @@ __attribute__((noreturn)) static void jump_to_bootloader(void)
 void app_main(void)
 {
     cdc_log_init();
-    log_printf("app_main entered, bss_writable=%d\r\n", g_bss_writable);
+    console_init();
+    log_printf("fb200-audio 0.5.0-dev\r\n");
+    log_printf("bss_writable=%d - type 'help'\r\n", g_bss_writable);
     board_init();
-    log_printf("board_init done\r\n");
     tusb_init();
-    log_printf("tusb_init done\r\n");
     i2c_probe_init();
-    log_printf("probe init done\r\n");
+    log_printf("ready\r\n");
 
     uint32_t loops = 0;
     while (1) {
         tud_task();
         cdc_log_task();
-        if (++loops >= 2000000u) {          /* heartbeat, no timer needed */
+        console_task();
+        if (console_heartbeat_on() && ++loops >= 2000000u) {
             loops = 0;
-            log_printf("hb, cdc=%d\r\n", (int)tud_cdc_connected());
-        }
-        if (tud_cdc_available()) {
-            char cmd = (char)tud_cdc_read_char();
-            if (cmd == 's') i2c_scan_all();
-            else if (cmd == 'd') i2c_dump_found();
-            else if (cmd == 'D') i2c_dump(2, 0x1A);
-            else if (cmd == 'e') i2c_dump(3, 0x1A);
-            else if (cmd == 'f') i2c_dump(4, 0x1A);
-            else if (cmd == 'j') jump_to_bootloader();
+            log_printf("hb\r\n");
         }
     }
 }

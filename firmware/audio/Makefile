@@ -52,7 +52,7 @@ SRC_C := \
   src/startup.c src/vectors.c src/main.c src/memfuncs.c \
   src/system_clock.c src/usb_descriptors.c src/compat/stubs.c \
   src/dsp/dsp.c src/dsp/math.c src/dsp/gain.c src/dsp/testgen.c \
-  src/debug/log_fmt.c src/debug/cdc_log.c \
+  src/debug/log_fmt.c src/debug/cdc_log.c src/debug/console.c \
   src/audio/i2c_probe.c \
   $(TUSB_DIR)/src/tusb.c \
   $(TUSB_DIR)/src/common/tusb_fifo.c \

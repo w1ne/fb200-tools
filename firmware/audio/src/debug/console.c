@@ -1,0 +1,167 @@
+/* fb200-audio console. Commands (see `help`):
+ *   help | stats | hb on|off | scan | dump [bus addr] | peek <addr> [len]
+ *   poke <addr> <val> | reset | reboot
+ * Addresses accept 0x.. hex or decimal. peek/poke are limited to RAM/flash
+ * (peripheral access can stall a clock-gated block). */
+#include <stdint.h>
+#include <string.h>
+#include "tusb.h"
+#include "cdc_log.h"
+#include "console.h"
+#include "audio/i2c_probe.h"
+
+extern int g_bss_writable;
+
+static char line[96];
+static size_t line_len;
+static int heartbeat_on;
+
+static uint32_t parse_num(const char *s, int *ok)
+{
+    uint32_t v = 0;
+    *ok = 1;
+    if (!s || !*s) { *ok = 0; return 0; }
+    if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) {
+        s += 2;
+        if (!*s) { *ok = 0; return 0; }
+        for (; *s; s++) {
+            char c = *s;
+            uint32_t d = (c >= '0' && c <= '9') ? (uint32_t)(c - '0')
+                       : (c >= 'a' && c <= 'f') ? (uint32_t)(c - 'a' + 10)
+                       : (c >= 'A' && c <= 'F') ? (uint32_t)(c - 'A' + 10) : 99u;
+            if (d > 15u) { *ok = 0; return 0; }
+            v = (v << 4) | d;
+        }
+        return v;
+    }
+    for (; *s; s++) {
+        if (*s < '0' || *s > '9') { *ok = 0; return 0; }
+        v = v * 10u + (uint32_t)(*s - '0');
+    }
+    return v;
+}
+
+static int mem_ok(uint32_t addr)
+{
+    return (addr < 0x400000u) ||                       /* ITCM/DTCM */
+           (addr >= 0x20000000u && addr < 0x20300000u) ||   /* DTCM/OCRAM */
+           (addr >= 0x60000000u && addr < 0x60800000u);     /* flash */
+}
+
+static void cmd_help(void)
+{
+    log_printf("commands: help | stats | hb on|off | scan | dump [bus addr] |\r\n"
+               "          peek <addr> [len] | poke <addr> <val> | reset | reboot\r\n");
+}
+
+static void cmd_stats(void)
+{
+    log_printf("bss_writable=%d heartbeat=%d line_len=%u\r\n",
+               g_bss_writable, heartbeat_on, (unsigned)line_len);
+}
+
+static void cmd_peek(const char *a1, const char *a2)
+{
+    int ok;
+    uint32_t addr = parse_num(a1, &ok);
+    if (!ok) { log_printf("usage: peek <addr> [len]\r\n"); return; }
+    uint32_t len = 16;
+    if (a2) { len = parse_num(a2, &ok); if (!ok) { log_printf("bad len\r\n"); return; } }
+    if (len > 256) len = 256;
+    if (!mem_ok(addr) || !mem_ok(addr + len)) { log_printf("address not allowed\r\n"); return; }
+    for (uint32_t i = 0; i < len; i++) {
+        if ((i & 15u) == 0) log_printf("%08x:", (unsigned)(addr + i));
+        log_printf(" %02x", *(volatile uint8_t *)(addr + i));
+        if ((i & 15u) == 15u) log_printf("\r\n");
+    }
+    if (len & 15u) log_printf("\r\n");
+}
+
+static void cmd_poke(const char *a1, const char *a2)
+{
+    int ok1, ok2;
+    uint32_t addr = parse_num(a1, &ok1);
+    uint32_t val = parse_num(a2, &ok2);
+    if (!ok1 || !ok2) { log_printf("usage: poke <addr> <val>\r\n"); return; }
+    if (!mem_ok(addr)) { log_printf("address not allowed\r\n"); return; }
+    *(volatile uint8_t *)addr = (uint8_t)val;
+    log_printf("ok %08x = %02x\r\n", (unsigned)addr, (unsigned)(val & 0xFFu));
+}
+
+static void cmd_dump(const char *a1, const char *a2)
+{
+    if (a1 && a2) {
+        int ok1, ok2;
+        uint32_t bus = parse_num(a1, &ok1);
+        uint32_t addr = parse_num(a2, &ok2);
+        if (!ok1 || !ok2) { log_printf("usage: dump [bus addr]\r\n"); return; }
+        i2c_dump((uint8_t)bus, (uint8_t)addr);
+    } else {
+        i2c_dump_found();
+    }
+}
+
+static int streq(const char *a, const char *b)
+{
+    while (*a && *a == *b) { a++; b++; }
+    return *a == *b;
+}
+
+static int tokenize(char *s, char **argv, int max)
+{
+    int argc = 0;
+    while (*s && argc < max) {
+        while (*s == ' ') s++;
+        if (!*s) break;
+        argv[argc++] = s;
+        while (*s && *s != ' ') s++;
+        if (*s) *s++ = 0;
+    }
+    return argc;
+}
+
+static void dispatch(char *cmd)
+{
+    char *argv[3] = {0, 0, 0};
+    int argc = tokenize(cmd, argv, 3);
+    if (argc == 0) { cmd_help(); return; }
+
+    if (streq(argv[0], "help")) cmd_help();
+    else if (streq(argv[0], "stats")) cmd_stats();
+    else if (streq(argv[0], "hb")) {
+        heartbeat_on = (argc > 1 && streq(argv[1], "on"));
+        log_printf("heartbeat %s\r\n", heartbeat_on ? "on" : "off");
+    }
+    else if (streq(argv[0], "scan")) i2c_scan_all();
+    else if (streq(argv[0], "dump")) cmd_dump(argv[1], argv[2]);
+    else if (streq(argv[0], "peek")) cmd_peek(argv[1], argv[2]);
+    else if (streq(argv[0], "poke")) cmd_poke(argv[1], argv[2]);
+    else if (streq(argv[0], "reset") || streq(argv[0], "reboot")) {
+        log_printf("rebooting (handover)\r\n");
+        cdc_log_task();
+        console_reboot();
+    }
+    else log_printf("unknown command (try help)\r\n");
+}
+
+void console_init(void) { line_len = 0; heartbeat_on = 0; }
+
+void console_task(void)
+{
+    while (tud_cdc_available()) {
+        char c = (char)tud_cdc_read_char();
+        if (c == '\r' || c == '\n') {
+            cdc_log_write("\r\n", 2);
+            line[line_len] = 0;
+            dispatch(line);
+            line_len = 0;
+        } else if (c == 8 || c == 127) {
+            if (line_len) { line_len--; cdc_log_write("\b \b", 3); }
+        } else if (line_len < sizeof line - 1) {
+            line[line_len++] = c;
+            cdc_log_write(&c, 1);
+        }
+    }
+}
+
+int console_heartbeat_on(void) { return heartbeat_on; }
