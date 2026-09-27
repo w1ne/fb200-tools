@@ -2,6 +2,7 @@
 #define FB200_USB_AUDIO_H
 
 #include <stddef.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 void usb_audio_init(void);
@@ -19,5 +20,10 @@ uint32_t usb_audio_trim(uint32_t max_fill, uint32_t *drops);
 
 void usb_audio_stats(uint32_t *play_fill, uint32_t *cap_fill, uint32_t *overflow,
                      uint32_t *underflow, uint8_t *spk_alt, uint8_t *mic_alt);
+
+/* UAC2 feature-unit state set by the host (master channel volume in 1/256 dB)
+ * and the count of class requests we had to stall. */
+bool usb_audio_playing(void);   /* host has the playback interface open */
+void usb_audio_host_controls(uint8_t *mute, int16_t *volume_db256, uint32_t *stalls);
 
 #endif

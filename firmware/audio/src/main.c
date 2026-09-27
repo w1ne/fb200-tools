@@ -55,7 +55,11 @@ void app_main(void)
     engine_init();
     led_init();
     bool codec_ok = codec_init();
-    log_printf("codec init: %s\r\n", codec_ok ? "ok" : "FAILED");
+    uint32_t codec_retries;
+    uint16_t codec_retry_reg;
+    codec_init_stats(&codec_retries, &codec_retry_reg);
+    log_printf("codec init: %s (retries=%lu first=%x)\r\n", codec_ok ? "ok" : "FAILED",
+               (unsigned long)codec_retries, (unsigned)codec_retry_reg);
     if (!codec_ok) {
         engine_set_mute(true); /* start muted when the codec did not answer */
     }

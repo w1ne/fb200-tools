@@ -116,21 +116,44 @@ bool codec_read(uint16_t reg, uint16_t *value)
     return true;
 }
 
+static uint32_t s_init_retries;
+static uint16_t s_init_first_retry_reg = 0xFFFFu;
+
+/* Each write is retried: at boot the first attempt of some writes NAKs (the
+ * codec was still settling), and one NAK used to fail the whole init and
+ * leave the pedal muted with an unconfigured codec. */
 bool codec_init(void)
 {
     codec_write_t seq[64];
     size_t n = codec_build_init_sequence(seq, 64);
     bool ok = true;
+    uint32_t cpu = CLOCK_GetFreq(kCLOCK_CpuClk);
+    s_init_retries = 0;
+    s_init_first_retry_reg = 0xFFFFu;
     for (size_t i = 0; i < n; i++) {
-        if (!codec_write(seq[i].reg, seq[i].value)) {
+        bool done = false;
+        for (int attempt = 0; attempt < 3 && !done; attempt++) {
+            if (attempt != 0) {
+                s_init_retries++;
+                if (s_init_first_retry_reg == 0xFFFFu) s_init_first_retry_reg = seq[i].reg;
+                SDK_DelayAtLeastUs(1000u, cpu);
+            }
+            done = codec_write(seq[i].reg, seq[i].value);
+        }
+        if (!done) {
             ok = false;
         }
         if (seq[i].delay_ms != 0) {
-            SDK_DelayAtLeastUs((uint32_t)seq[i].delay_ms * 1000u,
-                               CLOCK_GetFreq(kCLOCK_CpuClk));
+            SDK_DelayAtLeastUs((uint32_t)seq[i].delay_ms * 1000u, cpu);
         }
     }
     return ok;
+}
+
+void codec_init_stats(uint32_t *retries, uint16_t *first_retry_reg)
+{
+    *retries = s_init_retries;
+    *first_retry_reg = s_init_first_retry_reg;
 }
 
 bool codec_probe(void)

@@ -180,10 +180,10 @@ static void cmd_stats(void)
 #ifndef FB200_RECOVERY
     engine_stats_t es;
     engine_get_stats(&es);
-    log_printf("engine: gain=%d dB mute=%d drops=%lu inserts=%lu dma_errs=%lu\r\n",
+    log_printf("engine: gain=%d dB mute=%d drops=%lu inserts=%lu dma_errs=%lu skips=%lu\r\n",
                (int)engine_get_gain_db(), engine_get_mute() ? 1 : 0,
                (unsigned long)es.fifo_drops, (unsigned long)es.fifo_inserts,
-               (unsigned long)es.dma_errors);
+               (unsigned long)es.dma_errors, (unsigned long)es.latency_skips);
     log_printf("meters: peak L=%d R=%d (x1000)\r\n",
                (int)(g_meter_peak[0] * 1000.0f),
                (int)(g_meter_peak[1] * 1000.0f));
@@ -199,6 +199,12 @@ static void cmd_usb(void)
     log_printf("usb: spk_alt=%u mic_alt=%u play_fill=%lu cap_fill=%lu ovf=%lu unf=%lu\r\n",
                (unsigned)spk_alt, (unsigned)mic_alt, (unsigned long)pf,
                (unsigned long)cf, (unsigned long)ovf, (unsigned long)unf);
+    uint8_t mute;
+    int16_t vol;
+    uint32_t stalls;
+    usb_audio_host_controls(&mute, &vol, &stalls);
+    log_printf("usb: host mute=%u volume=%d dB ctrl_stalls=%lu\r\n", (unsigned)mute,
+               (int)(vol / 256), (unsigned long)stalls);
 }
 #endif
 

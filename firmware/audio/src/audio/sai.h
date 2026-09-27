@@ -13,6 +13,7 @@ void sai_audio_init(void);
 size_t sai_pull(int16_t *dst, size_t frames);       /* codec ADC -> engine */
 size_t sai_push(const int16_t *src, size_t frames); /* engine -> codec DAC */
 
+uint32_t sai_tx_fill(void);   /* frames queued for the DAC (= output latency) */
 void sai_stats(uint32_t *rx_fill, uint32_t *tx_fill, uint32_t *rx_blocks,
                uint32_t *tx_blocks, uint32_t *over, uint32_t *under);
 

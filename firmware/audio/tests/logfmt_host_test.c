@@ -30,6 +30,9 @@ int main(void)
     check("neg=-42", "neg=%d", -42);
     check("pad=   7", "pad=%4u", 7u);
     check("pad=0007", "pad=%04u", 7u);
+    check("fill=512 ovf=0", "fill=%lu ovf=%lu", 512ul, 0ul);
+    check("neg=-3 hex=ff", "neg=%ld hex=%lx", -3L, 0xfful);
+    check("pad=00ab", "pad=%04lx", 0xabul);
     printf("log_fmt host tests OK\n");
     return 0;
 }

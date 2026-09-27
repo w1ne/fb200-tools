@@ -17,8 +17,22 @@ static uint32_t cap_head, cap_tail;
 static uint8_t alt_spk, alt_mic;
 static uint32_t cnt_overflow, cnt_underflow;
 
+/* UAC2 control state. The host (CoreAudio) reads the clock's rate and range
+ * and the feature unit's mute/volume at attach; if any request stalls it
+ * drops the whole device (seen on macOS 2026-09-27: interfaces present, no
+ * audio device). Channel 0 = master, 1..2 = L/R. Volume in 1/256 dB. */
+#define SAMPLE_RATE     48000
+#define VOL_MIN_DB256   (-60 * 256)
+#define VOL_MAX_DB256   0
+#define VOL_RES_DB256   256
+static uint8_t fu_mute[3];
+static int16_t fu_volume[3];
+static uint32_t cnt_ctrl_stall;
+
 void usb_audio_init(void)
 {
+    for (int i = 0; i < 3; i++) { fu_mute[i] = 0; fu_volume[i] = 0; }
+    cnt_ctrl_stall = 0;
     play_head = play_tail = 0;
     cap_head = cap_tail = 0;
     alt_spk = alt_mic = 0;
@@ -43,6 +57,100 @@ bool tud_audio_set_itf_cb(uint8_t rhport, tusb_control_request_t const *p_reques
         }
     }
     return true;
+}
+
+static bool clock_get(uint8_t rhport, tusb_control_request_t const *req)
+{
+    uint8_t const sel = TU_U16_HIGH(req->wValue);
+    if (sel == AUDIO20_CS_CTRL_SAM_FREQ && req->bRequest == AUDIO20_CS_REQ_CUR) {
+        audio20_control_cur_4_t cur = {.bCur = (int32_t)tu_htole32(SAMPLE_RATE)};
+        return tud_audio_buffer_and_schedule_control_xfer(rhport, req, &cur, sizeof cur);
+    }
+    if (sel == AUDIO20_CS_CTRL_SAM_FREQ && req->bRequest == AUDIO20_CS_REQ_RANGE) {
+        audio20_control_range_4_n_t(1) range = {
+            .wNumSubRanges = tu_htole16(1),
+            .subrange[0] = {.bMin = SAMPLE_RATE, .bMax = SAMPLE_RATE, .bRes = 0},
+        };
+        return tud_audio_buffer_and_schedule_control_xfer(rhport, req, &range, sizeof range);
+    }
+    if (sel == AUDIO20_CS_CTRL_CLK_VALID && req->bRequest == AUDIO20_CS_REQ_CUR) {
+        audio20_control_cur_1_t valid = {.bCur = 1};
+        return tud_audio_buffer_and_schedule_control_xfer(rhport, req, &valid, sizeof valid);
+    }
+    return false;
+}
+
+static bool feature_get(uint8_t rhport, tusb_control_request_t const *req)
+{
+    uint8_t const sel = TU_U16_HIGH(req->wValue);
+    uint8_t const ch = TU_U16_LOW(req->wValue);
+    if (ch > 2u) return false;
+    if (sel == AUDIO20_FU_CTRL_MUTE && req->bRequest == AUDIO20_CS_REQ_CUR) {
+        audio20_control_cur_1_t mute = {.bCur = fu_mute[ch]};
+        return tud_audio_buffer_and_schedule_control_xfer(rhport, req, &mute, sizeof mute);
+    }
+    if (sel == AUDIO20_FU_CTRL_VOLUME && req->bRequest == AUDIO20_CS_REQ_RANGE) {
+        audio20_control_range_2_n_t(1) range = {
+            .wNumSubRanges = tu_htole16(1),
+            .subrange[0] = {.bMin = tu_htole16(VOL_MIN_DB256), .bMax = tu_htole16(VOL_MAX_DB256),
+                            .bRes = tu_htole16(VOL_RES_DB256)},
+        };
+        return tud_audio_buffer_and_schedule_control_xfer(rhport, req, &range, sizeof range);
+    }
+    if (sel == AUDIO20_FU_CTRL_VOLUME && req->bRequest == AUDIO20_CS_REQ_CUR) {
+        audio20_control_cur_2_t vol = {.bCur = tu_htole16(fu_volume[ch])};
+        return tud_audio_buffer_and_schedule_control_xfer(rhport, req, &vol, sizeof vol);
+    }
+    return false;
+}
+
+bool tud_audio_get_req_entity_cb(uint8_t rhport, tusb_control_request_t const *req)
+{
+    uint8_t const entity = TU_U16_HIGH(req->wIndex);
+    bool ok = entity == UAC2_ENTITY_CLOCK ? clock_get(rhport, req)
+            : entity == UAC2_ENTITY_SPK_FEATURE_UNIT ? feature_get(rhport, req) : false;
+    if (!ok) cnt_ctrl_stall++;
+    return ok;
+}
+
+bool tud_audio_set_req_entity_cb(uint8_t rhport, tusb_control_request_t const *req, uint8_t *buf)
+{
+    (void)rhport;
+    uint8_t const entity = TU_U16_HIGH(req->wIndex);
+    uint8_t const sel = TU_U16_HIGH(req->wValue);
+    uint8_t const ch = TU_U16_LOW(req->wValue);
+    bool ok = false;
+    if (req->bRequest == AUDIO20_CS_REQ_CUR) {
+        if (entity == UAC2_ENTITY_CLOCK && sel == AUDIO20_CS_CTRL_SAM_FREQ &&
+            req->wLength == sizeof(audio20_control_cur_4_t)) {
+            /* Fixed-rate clock: accept only what we run at. */
+            ok = ((audio20_control_cur_4_t const *)buf)->bCur == SAMPLE_RATE;
+        } else if (entity == UAC2_ENTITY_SPK_FEATURE_UNIT && ch <= 2u) {
+            if (sel == AUDIO20_FU_CTRL_MUTE && req->wLength == sizeof(audio20_control_cur_1_t)) {
+                fu_mute[ch] = ((audio20_control_cur_1_t const *)buf)->bCur;
+                ok = true;
+            } else if (sel == AUDIO20_FU_CTRL_VOLUME &&
+                       req->wLength == sizeof(audio20_control_cur_2_t)) {
+                int16_t v = (int16_t)((audio20_control_cur_2_t const *)buf)->bCur;
+                fu_volume[ch] = v < VOL_MIN_DB256 ? VOL_MIN_DB256 : v > VOL_MAX_DB256 ? VOL_MAX_DB256 : v;
+                ok = true;
+            }
+        }
+    }
+    if (!ok) cnt_ctrl_stall++;
+    return ok;
+}
+
+bool usb_audio_playing(void)
+{
+    return alt_spk != 0u;
+}
+
+void usb_audio_host_controls(uint8_t *mute, int16_t *volume_db256, uint32_t *stalls)
+{
+    *mute = (uint8_t)(fu_mute[0] | fu_mute[1] | fu_mute[2]);
+    *volume_db256 = fu_volume[0];
+    *stalls = cnt_ctrl_stall;
 }
 
 static void play_push(const int16_t *frame)
@@ -141,6 +249,9 @@ size_t usb_audio_pull(float *dst, size_t frames)
 
 void usb_audio_push(const float *src, size_t frames)
 {
+    if (alt_mic == 0u) {
+        return;   /* host not recording: nothing to queue */
+    }
     for (size_t i = 0; i < frames; i++) {
         float l = src[i * 2 + 0];
         float r = src[i * 2 + 1];

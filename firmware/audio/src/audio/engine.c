@@ -41,6 +41,11 @@
 #define ENGINE_FRAMES 64
 #define RING_FRAMES 512
 #define MAX_RING_FILL (RING_FRAMES - ENGINE_FRAMES)
+#define FAULT_MUTE_MS 100u
+/* DAC latency bound. At start-up the RX ring overflows before the engine
+ * runs; draining that backlog filled the TX ring (511 frames = 10.6 ms) and,
+ * with equal rates, it stayed full. Above the target, skip a block. */
+#define TX_TARGET_FILL (2u * SAI_BLOCK_FRAMES + ENGINE_FRAMES)
 
 /* ---- pure drift helpers (host-tested) ---- */
 
@@ -89,7 +94,9 @@ static testgen_ctx_t s_testgen;
 static dsp_block_t s_block;
 static engine_stats_t s_stats;
 static float s_gain_db;
-static bool s_mute;
+static bool s_mute;          /* user mute (console / later: UI) */
+static bool s_fault_mute;    /* SAI FIFO fault: short mute, then release */
+static uint32_t s_fault_ms;
 static bool s_meters;
 static uint32_t s_drop_tx_blocks;
 static uint32_t s_meter_last_ms;
@@ -104,6 +111,7 @@ void engine_init(void)
     g_meter_peak[0] = g_meter_peak[1] = 0.0f;
     s_gain_db = 0.0f;
     s_mute = false;
+    s_fault_mute = false;
     s_meters = false;
 }
 
@@ -131,12 +139,12 @@ void engine_set_testgen(int mode, float amp, float freq)
 void engine_set_mute(bool mute)
 {
     s_mute = mute;
-    codec_mute(mute);
+    codec_mute(s_mute || s_fault_mute);
 }
 
 bool engine_get_mute(void)
 {
-    return s_mute;
+    return s_mute || s_fault_mute;
 }
 
 void engine_set_meters(bool on)
@@ -157,7 +165,16 @@ static void check_sai_faults(void)
         s_stats.dma_errors++;
         SAI_RxClearStatusFlags(SAI1, kSAI_FIFOErrorFlag);
         SAI_TxClearStatusFlags(SAI1, kSAI_FIFOErrorFlag);
-        engine_set_mute(true);
+        s_fault_ms = tusb_time_millis_api();
+        if (!s_fault_mute) {
+            s_fault_mute = true;
+            codec_mute(true);
+        }
+    } else if (s_fault_mute && tusb_time_millis_api() - s_fault_ms >= FAULT_MUTE_MS) {
+        /* A fault used to mute for good; start-up underruns left the pedal
+         * silent. Release after FAULT_MUTE_MS without a new fault. */
+        s_fault_mute = false;
+        codec_mute(s_mute);
     }
 }
 
@@ -179,63 +196,69 @@ static void update_meters(const dsp_block_t *b, size_t n)
     }
 }
 
+/* Everything is paced by the codec ADC (SAI RX): each block of n input
+ * frames yields exactly n output frames = processed input + host playback.
+ * (The first version also pushed a 64-frame monitor block on every main-loop
+ * pass, paced by the CPU: the DAC ring sat full, the processed signal was
+ * dropped, and the insert counter ran away. Seen on the pedal 2026-09-27.) */
 void engine_task(void)
 {
-    static int16_t play[ENGINE_FRAMES * 2];
+    static int16_t last[2];
     int16_t in[ENGINE_FRAMES * 2];
+    int16_t play[ENGINE_FRAMES * 2];
     int16_t out[ENGINE_FRAMES * 2];
 
     check_sai_faults();
 
-    /* Codec ADC -> DSP chain -> codec DAC (+ USB capture). */
     size_t n = sai_pull(in, ENGINE_FRAMES);
-    if (n != 0) {
-        for (size_t i = 0; i < n; i++) {
-            s_block.data[0][i] = (float)in[i * 2 + 0] * (1.0f / 32768.0f);
-            s_block.data[1][i] = (float)in[i * 2 + 1] * (1.0f / 32768.0f);
-        }
-        gain_process(&s_gain, &s_block, n);
-        if (s_testgen.mode != TESTGEN_OFF) {
-            testgen_process(&s_testgen, &s_block, n);
-        }
-        if (s_meters) {
-            update_meters(&s_block, n);
-        }
-        for (size_t i = 0; i < n; i++) {
-            float l = s_block.data[0][i], r = s_block.data[1][i];
-            if (l > 1.0f) l = 1.0f; else if (l < -1.0f) l = -1.0f;
-            if (r > 1.0f) r = 1.0f; else if (r < -1.0f) r = -1.0f;
-            out[i * 2 + 0] = (int16_t)(l * 32767.0f);
-            out[i * 2 + 1] = (int16_t)(r * 32767.0f);
-        }
-        if (s_drop_tx_blocks != 0) {
-            s_drop_tx_blocks--; /* `x` underrun check: skip the refill */
-        } else {
-            (void)sai_push(out, n);
-        }
-        {
-            float fb[ENGINE_FRAMES * 2];
-            for (size_t i = 0; i < n * 2; i++) {
-                fb[i] = (float)out[i] * (1.0f / 32768.0f);
-            }
-            usb_audio_push(fb, n);
-        }
+    if (n == 0) {
+        return;
+    }
+    for (size_t i = 0; i < n; i++) {
+        s_block.data[0][i] = (float)in[i * 2 + 0] * (1.0f / 32768.0f);
+        s_block.data[1][i] = (float)in[i * 2 + 1] * (1.0f / 32768.0f);
+    }
+    gain_process(&s_gain, &s_block, n);
+    if (s_testgen.mode != TESTGEN_OFF) {
+        testgen_process(&s_testgen, &s_block, n);
+    }
+    if (s_meters) {
+        update_meters(&s_block, n);
     }
 
-    /* Host playback (monitor) -> DAC path, with drift compensation. */
+    /* USB capture carries the processed signal only. */
     {
-        int16_t mon[ENGINE_FRAMES * 2];
-        static int16_t last[2];
-        size_t frames;
-        (void)usb_audio_trim(MAX_RING_FILL, &s_stats.fifo_drops);
-        frames = usb_audio_pull16(play, ENGINE_FRAMES, last,
-                                  &s_stats.fifo_inserts);
-        if (frames != 0) {
-            for (size_t i = 0; i < frames * 2; i++) {
-                mon[i] = play[i];
-            }
-            (void)sai_push(mon, frames);
+        float fb[ENGINE_FRAMES * 2];
+        for (size_t i = 0; i < n; i++) {
+            fb[i * 2 + 0] = s_block.data[0][i];
+            fb[i * 2 + 1] = s_block.data[1][i];
         }
+        usb_audio_push(fb, n);
+    }
+
+    /* Host playback, drift-compensated, only while the host streams. */
+    if (usb_audio_playing()) {
+        (void)usb_audio_trim(MAX_RING_FILL, &s_stats.fifo_drops);
+        (void)usb_audio_pull16(play, n, last, &s_stats.fifo_inserts);
+    } else {
+        memset(play, 0, n * 2 * sizeof play[0]);
+        last[0] = last[1] = 0;
+    }
+
+    for (size_t i = 0; i < n; i++) {
+        float l = s_block.data[0][i] + (float)play[i * 2 + 0] * (1.0f / 32768.0f);
+        float r = s_block.data[1][i] + (float)play[i * 2 + 1] * (1.0f / 32768.0f);
+        if (l > 1.0f) l = 1.0f; else if (l < -1.0f) l = -1.0f;
+        if (r > 1.0f) r = 1.0f; else if (r < -1.0f) r = -1.0f;
+        out[i * 2 + 0] = (int16_t)(l * 32767.0f);
+        out[i * 2 + 1] = (int16_t)(r * 32767.0f);
+    }
+    if (s_drop_tx_blocks != 0) {
+        s_drop_tx_blocks--; /* `x` underrun check: skip the refill */
+    } else if (sai_tx_fill() > TX_TARGET_FILL) {
+        s_stats.latency_skips++;
+    } else {
+        (void)sai_push(out, n);
     }
 }
 

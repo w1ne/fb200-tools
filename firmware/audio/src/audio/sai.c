@@ -69,31 +69,37 @@ static void sai_pads(void)
     IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_15_SAI1_TX_SYNC, SAI_PAD_CFG);
 }
 
+/* eDMA ping-pong. Both buffers stay queued in the SDK handle; each completion
+ * callback refills the buffer that just finished (completion order is 0, 1,
+ * 0, 1, ...) and requeues it while the other one plays. The SDK reports
+ * kStatus_SAI_{Rx,Tx}Busy (more queued) or ..Idle (queue drained, DMA
+ * stopped) and never kStatus_Success: the first version filtered on Success,
+ * never requeued, and the SDK switched the DMA request off after one block
+ * (TCSR.FRDE=0, FIFO underrun; read on the pedal). */
 static void rx_done(I2S_Type *base, sai_edma_handle_t *handle, status_t status,
                     void *userData)
 {
     (void)handle;
     (void)userData;
-    if (status == kStatus_Success) {
-        const int16_t *buf = s_rx_buf[s_rx_idx];
-        for (size_t i = 0; i < SAI_BLOCK_FRAMES; i++) {
-            uint32_t next = (s_rx_head + 1u) % RING_FRAMES;
-            if (next == s_rx_tail) {
-                s_over++;
-                break;
-            }
-            s_rx_ring[s_rx_head * 2 + 0] = buf[i * 2 + 0];
-            s_rx_ring[s_rx_head * 2 + 1] = buf[i * 2 + 1];
-            s_rx_head = next;
+    (void)status;
+    const int16_t *buf = s_rx_buf[s_rx_idx];
+    for (size_t i = 0; i < SAI_BLOCK_FRAMES; i++) {
+        uint32_t next = (s_rx_head + 1u) % RING_FRAMES;
+        if (next == s_rx_tail) {
+            s_over++;
+            break;
         }
-        s_rx_blocks++;
-        sai_transfer_t xfer = {
-            .data = (uint8_t *)s_rx_buf[s_rx_idx],
-            .dataSize = sizeof(s_rx_buf[0]),
-        };
-        s_rx_idx ^= 1u;
-        (void)SAI_TransferReceiveEDMA(base, &s_rx, &xfer);
+        s_rx_ring[s_rx_head * 2 + 0] = buf[i * 2 + 0];
+        s_rx_ring[s_rx_head * 2 + 1] = buf[i * 2 + 1];
+        s_rx_head = next;
     }
+    s_rx_blocks++;
+    sai_transfer_t xfer = {
+        .data = (uint8_t *)s_rx_buf[s_rx_idx],
+        .dataSize = sizeof(s_rx_buf[0]),
+    };
+    s_rx_idx ^= 1u;
+    (void)SAI_TransferReceiveEDMA(base, &s_rx, &xfer);
 }
 
 static void tx_done(I2S_Type *base, sai_edma_handle_t *handle, status_t status,
@@ -101,9 +107,7 @@ static void tx_done(I2S_Type *base, sai_edma_handle_t *handle, status_t status,
 {
     (void)handle;
     (void)userData;
-    if (status != kStatus_Success) {
-        return;
-    }
+    (void)status;
     int16_t *buf = s_tx_buf[s_tx_idx];
     for (size_t i = 0; i < SAI_BLOCK_FRAMES; i++) {
         if (s_tx_tail == s_tx_head) {
@@ -137,11 +141,6 @@ void sai_audio_init(void)
     cfg.frameSync.frameSyncWidth = 16;
     cfg.syncMode = kSAI_ModeAsync;
     SAI_Init(SAI_BASE);
-    SAI_TxSetConfig(SAI_BASE, &cfg);
-    cfg.syncMode = kSAI_ModeSync; /* RX shares the TX bit clock/frame sync */
-    SAI_RxSetConfig(SAI_BASE, &cfg);
-    SAI_TxSetBitClockRate(SAI_BASE, SAI_MCLK_HZ, SAI_SAMPLE_RATE, 16, 2);
-    SAI_RxSetBitClockRate(SAI_BASE, SAI_MCLK_HZ, SAI_SAMPLE_RATE, 16, 2);
 
     DMAMUX_Init(DMAMUX);
     DMAMUX_SetSource(DMAMUX, SAI_RX_CH, (uint8_t)SAI_RX_REQ);
@@ -157,6 +156,16 @@ void sai_audio_init(void)
     SAI_TransferRxCreateHandleEDMA(SAI_BASE, &s_rx, rx_done, NULL, &s_rx_dma);
     SAI_TransferTxCreateHandleEDMA(SAI_BASE, &s_tx, tx_done, NULL, &s_tx_dma);
 
+    /* The EDMA variants also set the handle's bytes-per-frame and FIFO
+     * watermark; plain SAI_{Tx,Rx}SetConfig left them 0, so every TCD had
+     * NBYTES=0/BITER=0 and eDMA flagged a configuration error (ES=0x80000108,
+     * read on the pedal) while the SAI FIFO underran. */
+    SAI_TransferTxSetConfigEDMA(SAI_BASE, &s_tx, &cfg);
+    cfg.syncMode = kSAI_ModeSync; /* RX shares the TX bit clock/frame sync */
+    SAI_TransferRxSetConfigEDMA(SAI_BASE, &s_rx, &cfg);
+    SAI_TxSetBitClockRate(SAI_BASE, SAI_MCLK_HZ, SAI_SAMPLE_RATE, 16, 2);
+    SAI_RxSetBitClockRate(SAI_BASE, SAI_MCLK_HZ, SAI_SAMPLE_RATE, 16, 2);
+
     /* Prime the transmit buffers with silence so the DAC starts clean. */
     for (size_t i = 0; i < 2; i++) {
         for (size_t j = 0; j < SAI_BLOCK_FRAMES * 2; j++) {
@@ -164,14 +173,15 @@ void sai_audio_init(void)
         }
     }
 
-    sai_transfer_t xfer = {.data = (uint8_t *)s_rx_buf[0],
-                           .dataSize = sizeof(s_rx_buf[0])};
-    (void)SAI_TransferReceiveEDMA(SAI_BASE, &s_rx, &xfer);
-    s_rx_idx = 1;
-    xfer = (sai_transfer_t){.data = (uint8_t *)s_tx_buf[0],
-                            .dataSize = sizeof(s_tx_buf[0])};
-    (void)SAI_TransferSendEDMA(SAI_BASE, &s_tx, &xfer);
-    s_tx_idx = 1;
+    /* Queue both halves; index = the buffer that completes next. */
+    for (size_t i = 0; i < 2; i++) {
+        sai_transfer_t xfer = {.data = (uint8_t *)s_rx_buf[i], .dataSize = sizeof(s_rx_buf[0])};
+        (void)SAI_TransferReceiveEDMA(SAI_BASE, &s_rx, &xfer);
+        xfer = (sai_transfer_t){.data = (uint8_t *)s_tx_buf[i], .dataSize = sizeof(s_tx_buf[0])};
+        (void)SAI_TransferSendEDMA(SAI_BASE, &s_tx, &xfer);
+    }
+    s_rx_idx = 0;
+    s_tx_idx = 0;
 
     SAI_TxEnable(SAI_BASE, true);
     SAI_RxEnable(SAI_BASE, true);
@@ -203,6 +213,11 @@ size_t sai_push(const int16_t *src, size_t frames)
         n++;
     }
     return n;
+}
+
+uint32_t sai_tx_fill(void)
+{
+    return (s_tx_head + RING_FRAMES - s_tx_tail) % RING_FRAMES;
 }
 
 void sai_stats(uint32_t *rx_fill, uint32_t *tx_fill, uint32_t *rx_blocks,

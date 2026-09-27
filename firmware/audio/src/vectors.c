@@ -27,6 +27,10 @@ __attribute__((naked)) void Default_Handler(void)
 void SysTick_Handler(void) __attribute__((weak, alias("Default_Handler")));
 void USB_OTG1_IRQHandler(void) __attribute__((weak, alias("Default_Handler")));
 void USB_OTG2_IRQHandler(void) __attribute__((weak, alias("Default_Handler")));
+/* SDK eDMA channel IRQs (fsl_edma.c); weak so the recovery build, which has
+ * no audio path, keeps a valid table. */
+void DMA0_DMA16_DriverIRQHandler(void) __attribute__((weak, alias("Default_Handler")));
+void DMA1_DMA17_DriverIRQHandler(void) __attribute__((weak, alias("Default_Handler")));
 
 /* Vendor reset stub at block 0 offset 0x4d8 (flash 0x600104d8). */
 #define VENDOR_STUB 0x600104d9u
@@ -36,10 +40,13 @@ void USB_OTG2_IRQHandler(void) __attribute__((weak, alias("Default_Handler")));
 #define SYSTICK_VECTOR   15
 #define USB_OTG2_VECTOR  (16 + USB_OTG2_IRQn)
 #define USB_OTG1_VECTOR  (16 + USB_OTG1_IRQn)
+#define DMA0_VECTOR      (16 + DMA0_DMA16_IRQn)   /* SAI1 RX (src/audio/sai.c) */
+#define DMA1_VECTOR      (16 + DMA1_DMA17_IRQn)   /* SAI1 TX */
 
 _Static_assert(16 + USB_OTG2_IRQn == 128, "USB OTG2 vector index mismatch");
 _Static_assert(16 + USB_OTG1_IRQn == 129, "USB OTG1 vector index mismatch");
 _Static_assert(SYSTICK_VECTOR == 15, "SysTick vector index mismatch");
+_Static_assert(DMA0_VECTOR == 16 && DMA1_VECTOR == 17, "eDMA vector index mismatch");
 
 __attribute__((section(".vectors"), used))
 const void *const g_vectors[256] = {
@@ -47,7 +54,9 @@ const void *const g_vectors[256] = {
     (const void *)VENDOR_STUB,
     [2 ... 14] = Default_Handler,
     [SYSTICK_VECTOR] = SysTick_Handler,
-    [16 ... 127] = Default_Handler,
+    [DMA0_VECTOR] = DMA0_DMA16_DriverIRQHandler,
+    [DMA1_VECTOR] = DMA1_DMA17_DriverIRQHandler,
+    [18 ... 127] = Default_Handler,
     [USB_OTG2_VECTOR] = USB_OTG2_IRQHandler,
     [USB_OTG1_VECTOR] = USB_OTG1_IRQHandler,
     [130 ... 255] = Default_Handler,

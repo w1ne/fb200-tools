@@ -9,6 +9,7 @@ typedef struct {
     uint32_t fifo_drops;   /* playback ring overfull: stale frames discarded */
     uint32_t fifo_inserts; /* playback ring starved: last frame repeated */
     uint32_t dma_errors;   /* SAI FIFO error flags seen */
+    uint32_t latency_skips; /* output blocks skipped to bound DAC latency */
 } engine_stats_t;
 
 void engine_init(void);

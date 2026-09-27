@@ -18,6 +18,9 @@ size_t codec_build_init_sequence(codec_write_t *seq, size_t max);
 bool codec_write(uint16_t reg, uint16_t value);
 bool codec_read(uint16_t reg, uint16_t *value);
 bool codec_init(void); /* apply the init sequence; true if all writes ACK */
+/* Retries the last codec_init needed, and the first register that needed one
+ * (0xFFFF = none). */
+void codec_init_stats(uint32_t *retries, uint16_t *first_retry_reg);
 bool codec_probe(void); /* read the device ID register (0x58) */
 
 /* DAC/ADC digital volume fields: 0x00 = -127.5 dB ... 0xCF = 0 dB. */
