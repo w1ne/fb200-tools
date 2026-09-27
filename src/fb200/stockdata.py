@@ -235,13 +235,23 @@ def pack(d: StockData, version: int = VERSION) -> bytes:
         struct.pack("<I", zlib.crc32(body) & 0xFFFFFFFF) + body
 
 
-def build(mr: MrFile | bytes) -> bytes:
-    """The stock data blob for F:0x61000, from a stock .mr (parsed or raw bytes)."""
+def build(mr: MrFile | bytes, version: int = VERSION) -> bytes:
+    """The stock data blob for F:0x61000, from a stock .mr (parsed or raw bytes).
+    Version 1 is for firmware that accepts only 1 (see `formats_from_reply`)."""
     if isinstance(mr, (bytes, bytearray)):
         mr = MrFile.from_bytes(bytes(mr))
     if mr.header.product_tag != "FB200" or not mr.blocks:
         raise FirmwareError("not an FB200 firmware file")
-    return pack(extract(unpack_stock_ram(mr.blocks[0].data)))
+    return pack(extract(unpack_stock_ram(mr.blocks[0].data)), version)
+
+
+def formats_from_reply(reply: str) -> list[int]:
+    """Stock data versions the pedal accepts, from its reply to `fwstock` with no
+    arguments. Firmware before 0.7 does not list them and accepts only 1."""
+    for line in reply.splitlines():
+        if line.startswith("fwstock formats:"):
+            return [int(v) for v in line.split(":", 1)[1].split()]
+    return [1]
 
 
 def verify(blob: bytes) -> None:

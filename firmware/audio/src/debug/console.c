@@ -616,6 +616,7 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "poke32")) cmd_poke32(argv[1], argv[2]);
     else if (streq(argv[0], "fwbegin")) cmd_fwbegin(FW_APP, argv[1], argv[2]);
     else if (streq(argv[0], "fwrec")) cmd_fwbegin(FW_RECOVERY, argv[1], argv[2]);
+    else if (streq(argv[0], "fwstock") && argc == 1) log_printf("fwstock formats: " FW_STOCK_FORMATS "\r\n");
     else if (streq(argv[0], "fwstock")) cmd_fwbegin(FW_STOCK, argv[1], argv[2]);
     else if (streq(argv[0], "recovery")) {
 #ifdef FB200_RECOVERY

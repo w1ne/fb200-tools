@@ -358,7 +358,7 @@ def _cmd_update(args) -> int:
     if args.target == "block0":
         data = MrFile.from_path(image).blocks[0].data
     elif args.target == "stock":
-        data = stockdata.build(image.read_bytes())   # FILE is the stock .mr
+        data = image.read_bytes()                    # FILE is the stock .mr: built below
     else:
         data = release.image(args.file, args.target)
     if args.target == "app":
@@ -372,6 +372,13 @@ def _cmd_update(args) -> int:
         data = images.splice_vendor_loader(data, images.stock_image(
             Path(args.stock).read_bytes()).blocks[0].data)
     with console.Console(args.port, echo=(lambda line: print("  <", line)) if args.verbose else None) as con:
+        if args.target == "stock":
+            # write the newest format the running firmware accepts: an older app
+            # rejects a newer blob and would lose its stock sound
+            formats = stockdata.formats_from_reply(con.run("fwstock"))
+            version = max(v for v in formats if v <= stockdata.VERSION)
+            data = stockdata.build(data, version)
+            print(f"stock data version {version} (pedal accepts {formats})")
         res = console.update(con, args.target, data, reset=not args.no_reset, force=args.force)
     print(f"{res.target}: {res.size} bytes crc {res.crc:08x} written in {res.seconds:.1f}s"
           + ("" if args.no_reset else "; reset sent"))

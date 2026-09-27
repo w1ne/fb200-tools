@@ -160,3 +160,9 @@ def test_lz_literals_and_overlapping_match():
 def test_rejects_files_that_are_not_fb200_stock():
     with pytest.raises(FirmwareError):
         sd.build(b"not a firmware file" * 10)
+
+
+def test_formats_from_reply():
+    assert sd.formats_from_reply("fwstock formats: 1 2\n") == [1, 2]
+    # firmware before 0.7 prints only the usage line: it accepts version 1 only
+    assert sd.formats_from_reply("usage: fwbegin|fwrec|fwstock <len> <crc32>\n") == [1]

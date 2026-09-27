@@ -15,6 +15,10 @@
  * Idle for FW_IDLE_MS during the stream aborts back to line mode. */
 #include "crc32.h"
 typedef enum { FW_APP, FW_RECOVERY, FW_STOCK } fw_target_t;
+/* Stock data versions this release's app accepts (dsp/stock_data.h), printed
+ * by `fwstock` with no arguments; host tools write the newest one listed.
+ * Older firmware prints only the usage line: host tools then write version 1. */
+#define FW_STOCK_FORMATS "1 2"
 void fw_begin(fw_target_t target, uint32_t len, uint32_t crc);
 int fw_active(void);
 void fw_rx_task(void);   /* call instead of the line reader while active */
