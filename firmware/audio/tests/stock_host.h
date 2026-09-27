@@ -13,11 +13,12 @@ static void stock_from_env(void)
     if (!path) return;
     FILE *f = fopen(path, "rb");
     if (!f) { perror(path); exit(3); }
-    static stock_data_t blob;
+    static struct { stock_data_t d; stock_factory_t f; } blob;
     size_t n = fread(&blob, 1, sizeof blob, f);
     fclose(f);
     int r = stock_check(&blob, (uint32_t)n);
     if (r) { fprintf(stderr, "%s: stock data %s\n", path, stock_error(r)); exit(3); }
-    g_stock = &blob;
+    g_stock = &blob.d;
+    g_stock_factory = blob.d.version >= 2u ? &blob.f : NULL;
 }
 #endif

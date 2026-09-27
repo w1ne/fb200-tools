@@ -31,6 +31,7 @@
 #include "bt/bt.h"
 #include "audio/bt_audio.h"
 #include "dsp/stock_data.h"
+#include "proto/proto.h"
 #endif
 
 extern int g_bss_writable;
@@ -114,7 +115,7 @@ static void cmd_help(void)
              "          meters on|off | x | cpu\r\n"
              "  led   : led on|off|scan | ledpin <gpio> <pin>\r\n"
              "  ui    : ui | uimon on|off | disp <text> | kled <0-15> on|off | power\r\n"
-             "          preset [0-39] | save | rgb 0xRRGGBB [led] | rgb cfg 0xIIS0S1\r\n"
+             "          preset [0-39] | save | factory [yes] | rgb 0xRRGGBB [led] | rgb cfg 0xIIS0S1\r\n"
              "  bt    : bt | bt send <AT+...> | btaudio\r\n"
              "  music : stock | tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>]\r\n"
              "  tests : crash | hang\r\n"
@@ -525,6 +526,13 @@ static void dispatch(char *cmd)
                    pget(p, P_REV_EN), pget(p, P_REV_TYPE), ui_master());
     }
     else if (streq(argv[0], "save")) ui_save();
+    else if (streq(argv[0], "factory")) {
+        if (argc > 1 && streq(argv[1], "yes"))
+            log_printf("factory reset: %s\r\n", proto_factory_reset() == 0 ? "ok" : "FAILED");
+        else
+            log_printf("factory reset: all 40 presets, the global and drum settings and the IR\r\n"
+                       "list go back to the stock defaults (IR data stays). Type: factory yes\r\n");
+    }
     else if (streq(argv[0], "tuner")) {
         bool on = argc > 1 && streq(argv[1], "on");
         engine_set_tuner(on);
@@ -537,7 +545,8 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "stock")) {
         int r = stock_check((const void *)STOCK_FLASH, STOCK_FLASH_SIZE);
         log_printf("stock data: flash %s, %s\r\n", stock_error(r),
-                   g_stock ? "in use" : "not loaded (amp/cab/tone pass through, drums silent)");
+                   !g_stock ? "not loaded (amp/cab/tone pass through, drums silent)"
+                   : g_stock_factory ? "in use" : "in use (version 1: no factory presets)");
     }
     else if (streq(argv[0], "drums")) {
         drums_t *d = engine_drums();

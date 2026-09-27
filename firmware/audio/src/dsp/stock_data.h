@@ -9,11 +9,13 @@
  * the drums stay silent.
  *
  * The layout is shared with stockdata.py: change both, and bump
- * STOCK_VERSION. */
+ * STOCK_VERSION. Version 2 adds the factory presets as a tail after
+ * stock_data_t; version 1 blobs (no tail) are still accepted, so pedals
+ * keep their sound after an app update. */
 #include <stdint.h>
 
 #define STOCK_MAGIC          0x44534246u   /* "FBSD" */
-#define STOCK_VERSION        1u
+#define STOCK_VERSION        2u
 #define STOCK_FLASH          0x60061000u   /* F:0x61000, below the presets */
 #define STOCK_FLASH_SIZE     0x00010000u
 
@@ -27,6 +29,8 @@
 #define STOCK_DRUM_EVENTS    4712
 #define STOCK_DRUM_PATTERNS  90
 #define STOCK_DRUM_RHYTHMS   40
+#define STOCK_FACTORY_NAMED  20    /* "Fat Bass" ... "Classic Spring" */
+#define STOCK_PRESET_SIZE    0x100
 
 /* SOS rows are CMSIS DF1 {b0, b1, b2, -a1, -a2}: y = b0x+b1x1+b2x2-a1y1-a2y2. */
 typedef struct {
@@ -57,10 +61,20 @@ typedef struct {
     uint8_t drum_beats[STOCK_DRUM_PATTERNS];
 } stock_data_t;
 
+/* Version 2 tail: the stock factory presets (DTCM 0x20004E40): the 20 named
+ * ones, then one "EMPTY" preset. The stock has 20 EMPTY presets that differ
+ * only in the module order field 0xbc (no effect on the sound); the first
+ * one stands for all 20. */
+typedef struct {
+    uint8_t preset[STOCK_FACTORY_NAMED + 1][STOCK_PRESET_SIZE];
+} stock_factory_t;
+
 /* The checked stock data, or NULL. Set by stock_load() (or by a host test). */
 extern const stock_data_t *g_stock;
+/* The factory presets (in flash), or NULL with a version 1 blob. */
+extern const stock_factory_t *g_stock_factory;
 
-/* 0 if p holds a valid blob of this version, else a negative reason code. */
+/* 0 if p holds a valid blob of version 1 or 2, else a negative reason code. */
 int stock_check(const void *p, uint32_t len);
 const char *stock_error(int code);
 /* Check the blob at STOCK_FLASH and copy it to RAM; sets g_stock. Returns

@@ -49,6 +49,9 @@ void proto_port_init(void)
     proto_init();
 }
 
+#include "ui/ui.h"
+int proto_hook_factory_reset(void) { return ui_factory_reset(); }
+
 /* 0xC1/0xC4: our updates go through the USB recovery, not the vendor DFU. */
 void proto_hook_bootloader(void) { recovery_request(); }
 

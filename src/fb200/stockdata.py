@@ -1,7 +1,8 @@
 """Stock sound data blob: built from the user's own stock `.mr`.
 
 The open firmware images contain no vendor data. The stock amp models, cab
-IRs, tone-stack tables and drum rhythms stay in the user's stock firmware file.
+IRs, tone-stack tables, drum rhythms and factory presets stay in the user's
+stock firmware file.
 This module unpacks them (the Arm scatter-load LZ77 of the stock loader, no
 emulator) and packs them in the firmware's layout: `stock_data_t` in
 firmware/audio/src/dsp/stock_data.h. `fb200 update stock` writes the blob once
@@ -22,7 +23,7 @@ from fb200.errors import FirmwareError
 from fb200.firmware import MrFile
 
 MAGIC = 0x44534246            # "FBSD"
-VERSION = 1
+VERSION = 2                   # 2: + factory presets; the firmware still accepts 1
 FLASH_OFFSET = 0x61000
 FLASH_SIZE = 0x10000
 
@@ -30,6 +31,7 @@ AMP_MODELS, AMP_WS, AMP_SOS = 10, 256, 10
 CABS, CAB_TAPS = 10, 512
 TONE_STEPS, TONE_MID_BANKS = 32, 5
 DRUM_EVENTS, DRUM_PATTERNS, DRUM_RHYTHMS = 4712, 90, 40
+FACTORY_NAMED, PRESET_SIZE = 20, 0x100     # + one "EMPTY" preset (stock_factory_t)
 
 # Stock V1.0.1 block 0 (docs/FIRMWARE_FORMAT.md). The loader table entry 0
 # copies payload 0x7d4.. to ITCM 0x400, entry 1 copies 0x1e39c.. to DTCM
@@ -46,6 +48,7 @@ TONE_MID, TONE_MID_STRIDE = 0x2000DD2C, 0x280
 AMP_AA_LITERALS = 0x318C                   # ITCM: 3x-rate anti-alias b0, b1, c1, c2
 DRUM_LENS_ITCM = 0x1C8AC                   # 90 u32 event-list lengths
 DRUM_UNITS, DRUM_TENS, DRUM_BEATS = 0x20007FD8, 0x20007F38, 0x20008078
+FACTORY_PRESETS = 0x20004E40               # 20 named + 20 "EMPTY" presets, 0x100 each
 
 HEADER = struct.Struct("<4I")              # magic, version, size, crc
 
@@ -98,6 +101,9 @@ class StockRam:
     def words(self, addr: int, count: int) -> list[int]:
         return list(struct.unpack_from(f"<{count}I", self.dtcm, addr - DTCM1_BASE))
 
+    def raw(self, addr: int, count: int) -> bytes:
+        return self.dtcm[addr - DTCM1_BASE:addr - DTCM1_BASE + count]
+
 
 def unpack_stock_ram(block0: bytes) -> StockRam:
     try:
@@ -132,6 +138,7 @@ class StockData:
     drum_lens: list[int]
     drum_rhythm: list[int]
     drum_beats: list[int]
+    factory_presets: bytes      # 20 named + 1 "EMPTY" preset, 0x100 each
 
 
 def extract(ram: StockRam) -> StockData:
@@ -157,7 +164,10 @@ def extract(ram: StockRam) -> StockData:
         cab_taps=[c[:CAB_TAPS] for c in cabs], cab_gain=[c[CAB_TAPS] for c in cabs],
         tone=tone, drum_events=events, drum_lens=lens,
         drum_rhythm=[int(u + 10 * t) for u, t in zip(units, tens)],
-        drum_beats=ram.words(DRUM_BEATS, DRUM_PATTERNS))
+        drum_beats=ram.words(DRUM_BEATS, DRUM_PATTERNS),
+        # the stock's 20 EMPTY presets differ only in the module order field
+        # (0xbc, no effect on the sound): the first one stands for all
+        factory_presets=ram.raw(FACTORY_PRESETS, (FACTORY_NAMED + 1) * PRESET_SIZE))
     check(data)
     return data
 
@@ -195,10 +205,17 @@ def check(d: StockData) -> None:
     if not all(0 <= p < DRUM_PATTERNS for p in d.drum_rhythm) or \
             not all(1 <= b <= 9 for b in d.drum_beats):
         bad("rhythm map or beats table out of range")
+    presets = [d.factory_presets[i * PRESET_SIZE:(i + 1) * PRESET_SIZE]
+               for i in range(FACTORY_NAMED + 1)]
+    names = [p[:20].split(b"\0")[0] for p in presets]
+    if len(d.factory_presets) != (FACTORY_NAMED + 1) * PRESET_SIZE or names[-1] != b"EMPTY" or \
+            not all(n and n.isascii() and n.decode().isprintable() for n in names):
+        bad("factory presets not found")
 
 
-def pack(d: StockData) -> bytes:
-    """stock_data_t (firmware/audio/src/dsp/stock_data.h), little endian."""
+def pack(d: StockData, version: int = VERSION) -> bytes:
+    """stock_data_t (firmware/audio/src/dsp/stock_data.h), little endian; version
+    2 adds the factory presets (stock_factory_t) after it."""
     def f(values):
         return struct.pack(f"<{len(values)}f", *values)
 
@@ -211,8 +228,10 @@ def pack(d: StockData) -> bytes:
     body += struct.pack(f"<{DRUM_PATTERNS}H", *d.drum_lens)
     body += bytes(d.drum_rhythm) + bytes(d.drum_beats)
     body += b"\0" * (-(HEADER.size + len(body)) % 4)
+    if version >= 2:
+        body += d.factory_presets
     size = HEADER.size + len(body)
-    return struct.pack("<3I", MAGIC, VERSION, size) + \
+    return struct.pack("<3I", MAGIC, version, size) + \
         struct.pack("<I", zlib.crc32(body) & 0xFFFFFFFF) + body
 
 
@@ -226,11 +245,11 @@ def build(mr: MrFile | bytes) -> bytes:
 
 
 def verify(blob: bytes) -> None:
-    """Header and CRC check, as the firmware's stock_check()."""
+    """Header and CRC check, as the firmware's stock_check() (versions 1 and 2)."""
     if len(blob) < HEADER.size:
         raise FirmwareError("stock data blob too short")
     magic, version, size, crc = HEADER.unpack_from(blob)
-    if magic != MAGIC or version != VERSION or size != len(blob) or size > FLASH_SIZE:
+    if magic != MAGIC or version not in (1, VERSION) or size != len(blob) or size > FLASH_SIZE:
         raise FirmwareError("not a stock data blob of this firmware version")
     if zlib.crc32(blob[HEADER.size:]) & 0xFFFFFFFF != crc:
         raise FirmwareError("stock data blob CRC mismatch")

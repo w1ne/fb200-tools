@@ -33,6 +33,11 @@ int main(void)
            s->tone_mid[4][31][4], s->tone_bass[0][0]);
     printf("%u %u %u %u\n", (unsigned)s->drum_events[4711], (unsigned)s->drum_lens[89],
            (unsigned)s->drum_rhythm[39], (unsigned)s->drum_beats[89]);
+    if (g_stock_factory)
+        printf("factory %u %.20s %.20s %u\n", (unsigned)s->version, g_stock_factory->preset[0],
+               g_stock_factory->preset[20], (unsigned)g_stock_factory->preset[19][255]);
+    else
+        printf("factory none %u\n", (unsigned)s->version);
     return 0;
 }
 """
@@ -53,7 +58,9 @@ def synthetic() -> sd.StockData:
                                         "treble": seq(160, 3),
                                         "mid": [seq(160, 100 * j) for j in range(5)]},
         drum_events=list(range(4712)), drum_lens=lens,
-        drum_rhythm=list(range(40)), drum_beats=[1 + i % 9 for i in range(90)])
+        drum_rhythm=list(range(40)), drum_beats=[1 + i % 9 for i in range(90)],
+        factory_presets=b"".join(f"Factory {i:02}".encode().ljust(255, b"\0") + bytes([i])
+                                 for i in range(20)) + b"EMPTY".ljust(256, b"\0"))
 
 
 @pytest.fixture(scope="module")
@@ -86,13 +93,37 @@ def test_firmware_reads_the_python_layout(reader):
     assert r.returncode == 0, r.stderr
     lines = [ln.split() for ln in r.stdout.splitlines()]
     body = struct.calcsize(f"<{sd.AMP_MODELS * 361 + 5 + 10 * 513 + 8 * 160}f")
-    assert [int(v) for v in lines[0]] == [len(blob), 16 + body, 16 + body + 4712 * 4 + 180 + 40]
+    # sizeof(stock_data_t): the blob minus the v2 factory presets
+    assert [int(v) for v in lines[0]] == [len(blob) - 21 * 256, 16 + body,
+                                          16 + body + 4712 * 4 + 180 + 40]
     assert [float(v) for v in lines[1]] == [d.amps[9]["ws"][255], d.amps[3]["post"][49],
                                             d.amps[2]["gains"][4], d.amp_aa[3],
                                             d.cab_taps[7][511]]
     assert [float(v) for v in lines[2]] == [d.cab_gain[9], d.tone["presence"][159],
                                             d.tone["mid"][4][159], d.tone["bass"][0]]
     assert [int(v) for v in lines[3]] == [4711, d.drum_lens[89], 39, d.drum_beats[89]]
+    assert lines[4] == ["factory", "2", "Factory", "00", "EMPTY", "19"]
+
+
+def test_firmware_accepts_a_version_1_blob_without_factory_presets(reader):
+    """Pedals with a v1 blob keep their sound after an app update."""
+    d = synthetic()
+    v1, v2 = sd.pack(d, version=1), sd.pack(d)
+    assert len(v2) == len(v1) + 21 * 256 and v2[16:len(v1)] == v1[16:]
+    sd.verify(v1)
+    r = read_back(reader, v1)
+    assert r.returncode == 0, r.stderr
+    lines = [ln.split() for ln in r.stdout.splitlines()]
+    assert int(lines[0][0]) == len(v1) and float(lines[2][0]) == d.cab_gain[9]
+    assert lines[4] == ["factory", "none", "1"]
+
+
+@pytest.mark.parametrize("version, cut", [(1, 21 * 256), (2, -21 * 256)])
+def test_firmware_rejects_a_blob_whose_size_does_not_match_its_version(reader, version, cut):
+    blob = bytearray(sd.pack(synthetic(), version=2 if cut > 0 else 1))
+    struct.pack_into("<I", blob, 4, version)      # v2 body labelled 1, or v1 body labelled 2
+    r = read_back(reader, bytes(blob))
+    assert r.returncode == 3, r.stdout + r.stderr
 
 
 @pytest.mark.parametrize("damage", ["magic", "version", "crc", "short"])

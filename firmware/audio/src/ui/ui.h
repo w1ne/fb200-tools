@@ -26,4 +26,7 @@ void ui_settings_changed(void);           /* after writing through ui_settings()
  * bpm u16 LE): read, or apply at once (app BA). */
 void ui_rhythm_block(uint8_t out[RHYTHM_SIZE]);
 void ui_rhythm_set(const uint8_t in[RHYTHM_SIZE]);
+/* Stock factory reset of presets, settings and rhythm (proto_factory_reset
+ * adds the IR list). -1 without factory presets in the stock data. */
+int ui_factory_reset(void);
 #endif

@@ -434,6 +434,17 @@ static void ir_edit(uint8_t src, const uint8_t *p, uint32_t n)
     ir_notify(s);
 }
 
+int proto_factory_reset(void)
+{
+    if (proto_hook_factory_reset() != 0) return -1;
+    memset(ir_names, 0, sizeof ir_names);         /* stock 0x18fe0 erases F:0x87000/0x88000 */
+    memset(ir_used, 0, sizeof ir_used);
+    for (unsigned s = 0; s < IR_SLOTS; s++) memcpy(ir_names + s * IR_NAME_LEN, kEmpty, 5);
+    ir_save_meta();
+    for (unsigned s = 0; s < IR_SLOTS; s++) proto_hook_ir_changed(s);
+    return 0;
+}
+
 /* ---- dispatcher ---------------------------------------------------------- */
 static void dispatch(uint8_t src, uint8_t fn, const uint8_t *p, uint32_t n)
 {
@@ -543,7 +554,7 @@ static void dispatch(uint8_t src, uint8_t fn, const uint8_t *p, uint32_t n)
         break;
     }
     case 0xB2: {                      /* factory reset */
-        uint8_t ok = proto_hook_factory_reset() == 0;
+        uint8_t ok = proto_factory_reset() == 0;
         send((uint8_t)(src | PROTO_USB), 0xB2, &ok, 1);
         break;
     }

@@ -11,6 +11,7 @@
  *   fsw a-d press|release|long   queue a footswitch event, run ui_task
  *   tick <ms>             advance the clock by ms, run ui_task
  *   disp | drums | leds   print the display text / drum state / knob LEDs
+ *   factory 0|1           no / fake factory presets in the stock data
  *
  * Every command's output ends with "." on its own line. */
 #include <stdarg.h>
@@ -23,6 +24,7 @@
 #include "audio/engine.h"
 #include "ui/controls.h"
 #include "ui/display.h"
+#include "dsp/stock_data.h"
 
 #define FLASH_SIZE 0x100000u
 static uint8_t flash[FLASH_SIZE];
@@ -35,6 +37,9 @@ static struct { fsw_event_t ev; int sw; } evq[8];
 static unsigned evq_n;
 static uint32_t clock_ms = 1000;
 void log_printf(const char *fmt, ...) { (void)fmt; }
+void wdog_feed(void) {}
+const stock_factory_t *g_stock_factory;
+static stock_factory_t fake_factory;
 void display_text(const char *s) { snprintf(disp, sizeof disp, "%s", s); }
 void knob_led(int led, bool on) { if (led >= 0 && led < 16) led_on[led] = on; }
 uint16_t knob_value(int k) { (void)k; return 0; }
@@ -93,7 +98,7 @@ void proto_hook_bt_name(const uint8_t name[20])
 }
 void proto_hook_bt_enable(bool on) { printf("HOOK bt_enable %d\n", on); }
 void proto_hook_bootloader(void) { printf("HOOK bootloader\n"); }
-int proto_hook_factory_reset(void) { printf("HOOK factory_reset\n"); return 0; }
+int proto_hook_factory_reset(void) { printf("HOOK factory_reset\n"); return ui_factory_reset(); }
 void proto_hook_ir_changed(unsigned slot) { printf("HOOK ir %u\n", slot); }
 
 static void tx(const char *t, const uint8_t *f, uint32_t n)
@@ -198,6 +203,11 @@ int main(void)
             printf("DISP %s\n", disp);
         } else if (!strcmp(cmd, "drums")) {
             printf("DRUMS %u %u %u %u %u\n", drums.on, drums.rhythm, drums.level, drums.bpm, (unsigned)drums.last_tap_ms);
+        } else if (!strcmp(cmd, "factory")) {
+            for (unsigned i = 0; i < STOCK_FACTORY_NAMED; i++)
+                snprintf((char *)fake_factory.preset[i], 20, "Factory %02u", i);
+            snprintf((char *)fake_factory.preset[STOCK_FACTORY_NAMED], 20, "EMPTY");
+            g_stock_factory = atoi(a) ? &fake_factory : NULL;
         } else if (!strcmp(cmd, "leds")) {
             printf("LEDS ");
             for (int i = 0; i < 16; i++) printf("%d", led_on[i]);

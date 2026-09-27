@@ -5,6 +5,8 @@
 #include "debug/cdc_log.h"
 #include "audio/engine.h"
 #include "proto/proto.h"
+#include "dsp/stock_data.h"
+#include "debug/recovery.h"
 
 enum { SW_A, SW_B, SW_C, SW_D };
 enum { M_GATE, M_COMP, M_AMP, M_CAB, M_MOD, M_REV, M_NONE };
@@ -477,6 +479,51 @@ void ui_flush_settings(void)
         settings_dirty = false;
         settings_dirty_ms = 0;
     }
+}
+
+/* Stock default settings (0x20004E00, written by its factory reset). */
+static const uint8_t kSettingsDefault[SETTINGS_SIZE] = {
+    'B', '1', [S_BT] = 1, [0x19] = 1, [S_IN_GAIN] = 13, 13, 13, 13, 13,
+    [0x28] = 100, 100, 100, 100, [S_TUNER_CAL] = 5, [S_TUNER_MUTE] = 1,
+};
+
+/* The stock factory reset (0x18fe0): the 40 presets (20 factory presets, 20
+ * "EMPTY"), the default settings and the default rhythm block; preset 1A is
+ * loaded. Unlike the stock we keep the master volume (the stock default is
+ * 0: silent until the MASTER knob moves) and the BLE name copy at S+0x02.
+ * The factory presets come from the stock data blob (version 2). */
+int ui_factory_reset(void)
+{
+    if (!g_stock_factory) {
+        log_printf("factory reset refused: the stock data has no factory presets (blob version 1);"
+                   " write it again: fb200 update stock <stock .mr>\r\n");
+        return -1;
+    }
+    for (unsigned i = 0; i < PRESET_COUNT; i++) {
+        preset_t p;
+        memcpy(p.b, g_stock_factory->preset[i < STOCK_FACTORY_NAMED ? i : STOCK_FACTORY_NAMED],
+               PRESET_SIZE);
+        wdog_feed();                              /* 40 sector writes take a few seconds */
+        if (preset_write(i, &p) != 0) return -2;
+    }
+    settings_t def;
+    memcpy(def.b, kSettingsDefault, SETTINGS_SIZE);
+    memcpy(def.b + 2, settings.b + 2, 20);
+    def.b[S_MASTER] = settings.b[S_MASTER];
+    bool bt_off = settings.b[S_BT] == 0;
+    settings = def;
+    static const uint8_t kRhythm[RHYTHM_SIZE] = {0, 0, 0, 100, 110, 0};
+    ui_rhythm_set(kRhythm);
+    stomp = rhythm_mode = false;
+    tuner_mode = false;
+    engine_set_tuner(false);
+    load(0, 0);
+    wdog_feed();
+    if (settings_write(&settings) != 0 || rhythm_settings_write(kRhythm) != 0) return -3;
+    settings_dirty = rhythm_dirty = false;
+    if (bt_off) proto_hook_bt_enable(true);
+    log_printf("factory reset done\r\n");
+    return 0;
 }
 
 const preset_t *ui_edit_preset(void) { return &edit; }

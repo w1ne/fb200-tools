@@ -60,6 +60,9 @@ void proto_notify_rhythm(void);          /* 0xBA rhythm block */
 void proto_notify_rhythm_mode(void);     /* 0xC9 [settings+0x20] */
 void proto_notify_battery(void);         /* 0xBB [percent, charging] */
 void proto_notify_saved(void);           /* 0x97 [index][preset] + 0x98 + 0xB0 (hold save) */
+/* App 0xB2 and the console: proto_hook_factory_reset(), then the IR list is
+ * cleared like the stock (names "Empty", not used; the data stays). */
+int proto_factory_reset(void);
 
 /* ---- platform hooks ---------------------------------------------------
  * Storage (strong, provided by proto_port.c on the target, by the test on
@@ -73,7 +76,7 @@ void proto_battery(uint8_t *percent, uint8_t *charging);
 void proto_hook_bt_name(const uint8_t name[20]);  /* 0xB3; stock: AT+BD<name+5> Audio, AT+BM<name> */
 void proto_hook_bt_enable(bool on);               /* settings+0x17 changed; stock: AT+B501/B500, AT+CZ */
 void proto_hook_bootloader(void);                 /* 0xC1/0xC4: flag F:0x86000 = 0 already written */
-int proto_hook_factory_reset(void);               /* 0xB2: presets + settings to factory, 0 = ok */
+int proto_hook_factory_reset(void);               /* presets + settings to factory, 0 = ok */
 void proto_hook_ir_changed(unsigned slot);        /* 0..8: user IR stored/deleted/renamed */
 
 /* IR store layout (stock): names 9 x 50 at F:0x87000, used flags at

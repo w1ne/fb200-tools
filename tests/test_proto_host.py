@@ -277,10 +277,42 @@ def test_bootloader_and_factory_reset(h):
     # never the vendor bootloader flag: A+D recovery depends on it
     assert "HOOK bootloader" in lines and h.flash(0x86000, 1) != b"\x00"
     assert frames(lines) == [("u", 0xC2, b"\x01")]
+    h.cmd("factory 1")
     lines = h.feed(pack_frame(0xB2), "b")
     assert "HOOK factory_reset" in lines
     assert sorted((t, fn, p) for t, fn, p in frames(lines)) == [("b", 0xB2, b"\x01"),
                                                                  ("u", 0xB2, b"\x01")]
+
+
+def test_factory_reset_refuses_without_factory_presets(h):
+    """A version 1 stock data blob has no factory presets: nothing changes."""
+    h.cmd("factory 0")
+    before = h.flash(PRESET_FLASH, 40 * 0x200)
+    assert frames(h.feed(pack_frame(0xB2), "b"))[0][2] == b"\x00"
+    assert h.flash(PRESET_FLASH, 40 * 0x200) == before
+
+
+def test_factory_reset_as_stock(h):
+    dev = FB200Device(HarnessTransport(h))
+    assert dev.ir_import(2, "User Cab", [0.5] * 1024)
+    h.send(0xBA, bytes([1, 0, 12, 90, 120, 0]))
+    h.send(0xB0, bytes([0, 1, 20, 13, 13, 13, 13, 9, 0, 1, 0, 0, 100]))   # gain, tuner cal, BT off
+    tap(h, "c", "d")
+    tap(h, "b")                                                # preset 5
+    master = h.settings()[0x18]
+    h.cmd("factory 1")
+    lines = h.feed(pack_frame(0xB2), "b")
+    assert "HOOK bt_enable 1" in lines and frames(lines)[0][2] == b"\x01"
+    names = [h.flash(PRESET_FLASH + i * 0x200, 20).rstrip(b"\0") for i in range(40)]
+    assert names == [f"Factory {i:02}".encode() for i in range(20)] + [b"EMPTY"] * 20
+    s = h.settings()
+    assert s[:2] == b"B1" and s[0x17] == 1 and s[0x18] == master and s[0x19] == 1
+    assert s[0x1A:0x1F] == bytes([13] * 5) and s[0x2C:0x2F] == bytes([5, 0, 1])
+    assert s[0x16] == 0 and s[0x1F] == 0 and s[0x20] == 0
+    assert h.flash(SETTINGS_FLASH, 0x31) == s
+    assert h.flash(0x81000, 6) == bytes([0, 0, 0, 100, 110, 0]) and drums(h)[:4] == [0, 0, 100, 110]
+    assert h.cmd("index") == ["IDX 0"] and h.edit()[:10] == b"Factory 00" and disp(h) == "P0A"
+    assert all(s.empty for s in dev.ir_list()) and h.flash(0x87000 + 50, 6) == b"Empty\0"
 
 
 # ---------------------------------------------------------------- front panel
