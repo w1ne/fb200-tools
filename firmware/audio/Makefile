@@ -82,7 +82,7 @@ SRC_C := \
   src/debug/selfupdate.c src/debug/recovery.c src/debug/regs.c \
   src/audio/i2c_probe.c \
   src/audio/usb_audio.c src/audio/engine.c src/audio/frontend.c \
-  src/ui/pads.c src/ui/display.c src/ui/controls.c src/audio/codec.c \
+  src/ui/pads.c src/ui/display.c src/ui/controls.c src/ui/power.c src/audio/codec.c \
   src/audio/sai.c src/audio/drift.c \
   $(TUSB_DIR)/src/tusb.c \
   $(TUSB_DIR)/src/common/tusb_fifo.c \

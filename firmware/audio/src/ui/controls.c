@@ -52,13 +52,18 @@ void controls_init(void)
     (void)ADC_DoAutoCalibration(ADC1);
 }
 
-static uint16_t adc_read(uint32_t ch)
+uint16_t adc1_read(uint32_t ch)
 {
     adc_channel_config_t c = {.channelNumber = ch, .enableInterruptOnConversionCompleted = false};
     ADC_SetChannelConfig(ADC1, 0u, &c);
     for (uint32_t t = 0; t < 100000u && !ADC_GetChannelStatusFlags(ADC1, 0u); t++) {
     }
-    return (uint16_t)(4095u - ADC_GetChannelConversionValue(ADC1, 0u));
+    return (uint16_t)ADC_GetChannelConversionValue(ADC1, 0u);
+}
+
+static uint16_t adc_read(uint32_t ch)
+{
+    return (uint16_t)(4095u - adc1_read(ch));   /* knobs: stock inverts */
 }
 
 void controls_task(uint32_t now_ms)

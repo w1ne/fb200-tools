@@ -25,6 +25,7 @@
 #ifndef FB200_RECOVERY
 #include "ui/display.h"
 #include "ui/controls.h"
+#include "ui/power.h"
 #endif
 
 extern int g_bss_writable;
@@ -106,7 +107,7 @@ static void cmd_help(void)
              "  audio : usb | sai | codec | creg <reg> [val] | gain [db] | mute [on|off]\r\n"
              "          testgen off|sine|white|impulse [freq] | meters on|off | x\r\n"
              "  led   : led on|off|scan | ledpin <gpio> <pin>\r\n"
-             "  ui    : ui | uimon on|off | disp <text> | kled <0-15> on|off\r\n"
+             "  ui    : ui | uimon on|off | disp <text> | kled <0-15> on|off | power\r\n"
              "  tests : crash | hang\r\n"
 #endif
              "  debug : stats | src | hb on|off | clocks | crumbs | crashdump | crashclear\r\n"
@@ -500,6 +501,12 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "crumbs")) crumbs_print();
 #ifndef FB200_RECOVERY
     else if (streq(argv[0], "ui")) cmd_ui();
+    else if (streq(argv[0], "power")) {
+        const power_state_t *p = power_state();
+        log_printf("power: battery=%u (level %u) supply=%u%s charging=%u\r\n",
+                   (unsigned)p->battery_raw, (unsigned)p->level, (unsigned)p->supply_raw,
+                   p->supply_low ? " LOW" : "", (unsigned)p->charging);
+    }
     else if (streq(argv[0], "uimon")) {
         ui_monitor = (argc > 1 && streq(argv[1], "on"));
         log_printf("ui monitor %s\r\n", ui_monitor ? "on" : "off");

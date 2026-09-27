@@ -15,6 +15,7 @@
 #include "audio/frontend.h"
 #include "ui/display.h"
 #include "ui/controls.h"
+#include "ui/power.h"
 
 extern int g_bss_writable;
 extern uint32_t tusb_time_millis_api(void);
@@ -69,6 +70,7 @@ void app_main(void)
     frontend_enable();
     display_init();
     controls_init();
+    power_init();
     {   /* stock global settings (F:0x80000): +0x21 slot, +0x22 bank */
         const volatile uint8_t *st = (const volatile uint8_t *)0x60080000u;
         char txt[4] = {'P', (char)('0' + (st[0x22] % 10u)), "AbCd"[st[0x21] & 3u], 0};
@@ -90,6 +92,7 @@ void app_main(void)
             uint32_t now = tusb_time_millis_api();
             display_task(now);
             controls_task(now);
+            power_task(now);
             ui_monitor_task();
         }
 #endif

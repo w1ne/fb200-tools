@@ -15,4 +15,5 @@ bool fsw_down(int sw);                      /* 0..3 = A..D */
 fsw_event_t fsw_event(int *sw);             /* next queued event, FSW_NONE if none */
 uint16_t knob_value(int k);
 bool knob_changed(int k);                   /* moved since the last call */
+uint16_t adc1_read(uint32_t ch);            /* raw 12-bit ADC1 conversion */
 #endif
