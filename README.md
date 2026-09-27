@@ -7,7 +7,7 @@
 bass multi-effects pedal.** It sounds like the stock firmware, keeps your presets and the
 official app working, and adds what the stock firmware lacks: USB updates without a
 button combo, a debug console, crash reports, better display feedback, and drums in
-your recordings.
+your recordings. + whatwher you wan top add to it. Now the software is yours to modify.
 
 ![The FB200 running the open firmware](images/in-use.jpg)
 
