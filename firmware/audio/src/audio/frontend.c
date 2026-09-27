@@ -19,6 +19,12 @@ void frontend_init(void)
     out_pin(IOMUXC_GPIO_B1_10_GPIO2_IO26, 26u, 0u);
     out_pin(IOMUXC_GPIO_B1_09_GPIO2_IO25, 25u, 1u);
     out_pin(IOMUXC_GPIO_B1_11_GPIO2_IO27, 27u, 1u);
+    /* GPIO1_IO2 (AD_B0_02) high: supply enable of the knob LEDs (verified on
+     * the pedal with the camera: GPIO4 drove them, nothing lit until this). */
+    IOMUXC_SetPinMux(IOMUXC_GPIO_AD_B0_02_GPIO1_IO02, 0U);
+    IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B0_02_GPIO1_IO02, PAD_CFG);
+    gpio_pin_config_t on = {kGPIO_DigitalOutput, 1, kGPIO_NoIntmode};
+    GPIO_PinInit(GPIO1, 2u, &on);
 }
 
 void frontend_enable(void)

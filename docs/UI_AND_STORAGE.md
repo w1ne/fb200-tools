@@ -68,8 +68,14 @@ drop min/max, average, invert (4095 - v); change threshold 48 counts.
 
 ## 3. LEDs
 
-- 16 knob LEDs: GPIO4_IO0..15 (`EMC_00..15`), active low (M). On = knob
-  matches the stored value, blink = mismatch, off = module off / tuner.
+- 16 knob LEDs, inside the knob caps (blue/green/red/blue groups):
+  GPIO4_IO0..15 (`EMC_00..15`), active low, **powered only while
+  `GPIO_AD_B0_02` (GPIO1_IO2) is high** - verified on the pedal with a
+  camera. Stock: on = knob matches the stored value, blink = mismatch, off =
+  module off / tuner. Physical order left to right (verified, camera):
+  LED `8 7 6 3 11 2 1 0 12 5 10 4 9 15 13 14`, i.e. knobs
+  `k2 k7 k0 k1 k4 k6 k5 k3 k8 k11 k15 k14 k9 k10 k12 (?)`; the purple knob
+  is master volume (k13, no LED).
 - 40 RGB LEDs (WS2812-type, G-R-B): `GPIO_B0_02` ALT4 = FLEXIO2_D02, SDK
   FlexIO UART at 6.6 Mbaud + eDMA, 24 UART chars per LED (0xC0 = 0,
   0xFC = 1), 25 % brightness.
