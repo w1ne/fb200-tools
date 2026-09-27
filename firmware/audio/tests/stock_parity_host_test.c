@@ -1,5 +1,5 @@
 /* Stock parity harness for amp/tone/cab, built with the extracted stock data
- * (-DFB200_STOCK_DSP=1 + build/stock_dsp_data.c) by
+ * (the stock data blob in $FB200_STOCK_BLOB, stock_host.h) by
  * tests/test_stock_dsp_parity.py, which compares the output against the
  * emulated stock DSP (firmware/tools/stock_render.py).
  *
@@ -14,6 +14,7 @@
 #include <string.h>
 #include "dsp/amp.h"
 #include "dsp/cab.h"
+#include "stock_host.h"
 
 #define WARMUP 40000
 
@@ -86,6 +87,8 @@ static int irgain(char **av)
 
 int main(int argc, char **argv)
 {
+    stock_from_env();
+    if (!g_stock) { fprintf(stderr, "FB200_STOCK_BLOB not set\n"); return 2; }
     if (argc == 12 && strcmp(argv[1], "render") == 0) return render(argv + 2);
     if (argc == 4 && strcmp(argv[1], "irgain") == 0) return irgain(argv + 2);
     fprintf(stderr, "usage: see the header of stock_parity_host_test.c\n");

@@ -131,6 +131,8 @@ sector through FlexSPI IP commands.
 | F: offset | size | contents |
 | --- | --- | --- |
 | 0x10000 | 0x31000 | app (block 0; ours: recovery + app slot) |
+| 0x41000 | 0x20000 | ours: app const tables |
+| 0x61000 | 0x10000 | ours: stock sound data (`FBSD`, written once from the user's `.mr`) |
 | 0x71000 + i x 0x200 | 0x100 | 40 presets (10 banks x 4) - **verified** ("Fat Bass", "Clean Pick") |
 | 0x80000 | 0x31 | global settings - **verified** ("B1", name, preset, BT, volume) |
 | 0x81000 | 6 | rhythm settings (tempo 110?) |

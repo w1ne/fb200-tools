@@ -1,7 +1,7 @@
 """Parity of our effect ports (firmware/audio/src/dsp/{gate,comp,mod,reverb}.c)
 with the stock FB200 DSP.
 
-The stock per-sample callback runs in emulation (tests/stock_emu.py) with a
+The stock per-sample callback runs in emulation (tests/stock_emu_fx.py) with a
 preset that enables only the module under test; its effect-chain output (before
 master volume and the +-0.95 output clip) is compared with our C module fed the
 same chain input. Error = RMS(ours - stock) / RMS(stock) in dB; target <= -60.
@@ -19,7 +19,7 @@ np = pytest.importorskip("numpy", reason="parity tests need numpy")
 pytest.importorskip("unicorn", reason="parity tests need unicorn (stock DSP emulation)")
 pytest.importorskip("capstone", reason="parity tests need capstone (stock DSP emulation)")
 
-import stock_emu
+import stock_emu_fx as stock_emu
 
 ROOT = Path(__file__).resolve().parents[1]
 FW = ROOT / "firmware" / "audio"

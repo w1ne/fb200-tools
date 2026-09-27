@@ -1,0 +1,76 @@
+name: Release
+# A tag v* builds the vendor-free firmware, attaches it to a GitHub release
+# and deploys the web page + web updater (web/) to GitHub Pages with that
+# firmware. Run it by hand to redeploy the page from any ref.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi make curl
+      - name: Build firmware (recovery + app)
+        working-directory: firmware/audio
+        run: |
+          make deps
+          make build VARIANT=recovery
+          make build VARIANT=app
+      - name: Pack the published images
+        run: |
+          python firmware/tools/pack_images.py firmware/audio/build/fb200-recovery \
+            firmware/audio/build/fb200-app -o out --version "$(git describe --tags --always)"
+          cat out/manifest.json
+      - name: Assemble the site
+        run: |
+          mkdir -p site/firmware site/py/fb200
+          rsync -a --exclude test --exclude dev-serve.sh --exclude .gitignore --exclude py \
+            --exclude firmware web/ site/
+          cp out/fb200-app.slot out/fb200-recovery.bin out/manifest.json site/firmware/
+          # the web updater runs these modules in Pyodide: the same code as the CLI
+          cp src/fb200/__init__.py src/fb200/errors.py src/fb200/firmware.py \
+             src/fb200/images.py src/fb200/stockdata.py site/py/fb200/
+          touch site/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" out/fb200-app.slot out/fb200-recovery.bin \
+            out/manifest.json --title "$GITHUB_REF_NAME" --notes-file <(
+              echo "Flash it from the browser: https://w1ne.github.io/fb200-tools/flash.html"
+              echo
+              echo "These images contain no vendor code or data. See docs/INSTALL.md."
+            ) || gh release upload "$GITHUB_REF_NAME" out/fb200-app.slot \
+            out/fb200-recovery.bin out/manifest.json --clobber
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -11,6 +11,8 @@ your recordings.
 
 ![The FB200 running the open firmware](images/in-use.jpg)
 
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-support-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/3qutj2ucoq)
+
 ## Why
 
 The FB200 is a good little bass pedal built around a 600 MHz Cortex-M7 (i.MX RT1052).
@@ -56,29 +58,35 @@ and the "better" roadmap. The code runs on the stock hardware only.
 > The vendor bootloader and your presets are never overwritten, and holding **A+D at
 > power-on** always gets you back to the vendor updater.
 
-You need the **official FB200 firmware file (`.mr`)**. The build takes the vendor
-bootloader stub and the stock sound data from **your copy**, so this repository ships
-no vendor code or data. **Do not redistribute the images you build.** Full guide
-(toolchain, Linux permissions, recovery, back to stock): **[`docs/INSTALL.md`](docs/INSTALL.md)**.
+**Easiest: flash from the browser.** Open
+**[w1ne.github.io/fb200-tools/flash.html](https://w1ne.github.io/fb200-tools/flash.html)**
+in Chrome or Edge (Windows, macOS, Linux, ChromeOS). Nothing to install. It takes the
+latest release and guides you step by step.
+
+The first install needs your copy of the **official FB200 firmware file (`.mr`)**. It
+supplies the vendor loader and the stock sound data, so this repository and its
+releases contain no vendor code or data. Updates after that need no `.mr` and no
+button combo.
+
+From the command line (macOS, Linux):
 
 ```bash
-# 0. tools
-git clone https://github.com/w1ne/fb200-tools && cd fb200-tools
-python3 -m venv .venv && .venv/bin/pip install -e ".[hid]" unicorn
+python3 -m pip install "fb200-tools[hid] @ git+https://github.com/w1ne/fb200-tools"
 
-# 1. build the images from your stock firmware file (needs an Arm GNU toolchain with newlib)
-PY_UNICORN=.venv/bin/python firmware/tools/build_images.sh ~/Downloads/FB200_V1.0.1.mr
+# first install, once
+fb200 fw twostage ~/Downloads/FB200_V1.0.1.mr -o fb200-twostage.mr
+#   hold A+D while plugging in USB, then:
+fb200 fw flash fb200-twostage.mr --yes --no-jump
+fb200 update app latest
+fb200 update stock ~/Downloads/FB200_V1.0.1.mr
 
-# 2. first install, once: hold A+D while plugging in USB, then
-.venv/bin/fb200 fw flash out/fb200-twostage.mr --yes --no-jump
-.venv/bin/fb200 update app out/fb200-app.slot
-
-# 3. every later update: no button combo
-.venv/bin/fb200 update app out/fb200-app.slot
+# every later update
+fb200 update app latest
 ```
 
 **Back to stock** at any time: hold A+D while plugging in, then run
-`.venv/bin/fb200 fw flash FB200_V1.0.1.mr --yes --no-jump`.
+`fb200 fw flash FB200_V1.0.1.mr --yes --no-jump`. Full guide, building from source and
+Linux permissions: **[`docs/INSTALL.md`](docs/INSTALL.md)**.
 
 ## Using the pedal
 
@@ -113,7 +121,8 @@ fb200 info                          # product, firmware, Bluetooth and hardware 
 fb200 ir list                       # IR slots
 fb200 ir import 3 my-cab.wav        # convert and upload a WAV IR to slot 3
 fb200 console [cmd ...]             # open-firmware USB console (interactive without args)
-fb200 update app|recovery FILE      # open-firmware USB update
+fb200 update app latest             # open-firmware USB update (or a file)
+fb200 update stock FB200.mr         # write the stock sound data (once)
 fb200 crash --elf fb200-app.elf     # read and symbolize the last crash dump
 fb200 fw inspect|flash ...          # .mr container tools and the vendor updater client
 ```
@@ -146,6 +155,11 @@ tests with `.venv/bin/pytest -m "not hardware"`.
   [MCUXpresso SDK](https://github.com/nxp-mcuxpresso/mcuxsdk-core) and
   [CMSIS-DSP](https://github.com/ARM-software/CMSIS-DSP), fetched at pinned, checksummed
   versions.
+
+## Support
+
+The project is free and stays free. If it is useful to you, you can
+[buy me a coffee](https://buymeacoffee.com/3qutj2ucoq).
 
 ## License
 

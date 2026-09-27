@@ -82,28 +82,12 @@ jobs:
           make deps
           make build VARIANT=recovery
           make build VARIANT=app
-      - name: Pack with a synthetic stock-like template
+      - name: Pack the published (vendor-free) images
         run: |
-          python firmware/hello/tools/synthetic_template.py -o firmware/audio/build/synthetic-template.mr
-          python - <<'PY'
-          import struct, sys
-          sys.path.insert(0, "src")
-          from fb200.firmware import MrFile
-          p = "firmware/audio/build/synthetic-template.mr"
-          mr = MrFile.from_path(p)
-          b = bytearray(mr.blocks[0].data)
-          b[0x4D8:0x4DA] = b"\x72\xb6"
-          b[0x434:0x43C] = bytes.fromhex("50030000a0030000")
-          b[0x784:0x794] = bytes.fromhex("d407016000040000c8db0100a0040160")
-          b[0x7C4:0x7D4] = struct.pack("<4I", 0, 0x20018B44, 0x358A4, 0)  # entry 4: .bss memset
-          mr.blocks[0].data = bytes(b)
-          open(p, "wb").write(mr.to_bytes())
-          PY
-          python firmware/tools/pack_images.py firmware/audio/build/synthetic-template.mr \
-            firmware/audio/build/fb200-recovery firmware/audio/build/fb200-app -o out
-      - name: Inspect packed image
-        run: fb200 fw inspect out/fb200-twostage.mr
+          python firmware/tools/pack_images.py firmware/audio/build/fb200-recovery \
+            firmware/audio/build/fb200-app -o out --version "ci-${GITHUB_SHA::7}"
+          cat out/manifest.json
       - uses: actions/upload-artifact@v4
         with:
-          name: fb200-audio-synthetic
+          name: fb200-firmware
           path: out/

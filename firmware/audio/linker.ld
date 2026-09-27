@@ -22,7 +22,7 @@ SECTIONS
     . += 0xd6;
     KEEP(*(.stage2))
     *(.text*)
-    *(EXCLUDE_FILE(*stock_dsp_data.c.o *stock_drums_data.c.o *CommonTables.c.o) .rodata*)
+    *(EXCLUDE_FILE(*CommonTables.c.o) .rodata*)
     *(.data*)
     . = ALIGN(4);
     __blob_end__ = .;
@@ -37,16 +37,14 @@ SECTIONS
     __copier_end__ = .;
   } > ITCM
 
-  /* App only: large const tables (stock DSP data, drum rhythms, CMSIS tables)
-   * live in DTCM at run time and in flash right after the app slot's ITCM
-   * image (F:0x41000, below the presets at 0x71000). stage2_main copies them;
+  /* App only: large const tables (CMSIS tables) live in DTCM at run time
+   * and in flash right after the app slot's ITCM image (F:0x41000, below the
+   * stock data at 0x61000; src/dsp/stock_data.h). stage2_main copies them;
    * the app slot header carries their length and CRC (recovery.h). Reading
    * them from flash at run time would stall the audio during flash writes. */
   .dtcmdata : AT(0x60041000) {
     . = ALIGN(4);
     __dtcmdata_start__ = .;
-    *stock_dsp_data.c.o(.rodata*)
-    *stock_drums_data.c.o(.rodata*)
     *CommonTables.c.o(.rodata*)
     . = ALIGN(4);
     __dtcmdata_end__ = .;

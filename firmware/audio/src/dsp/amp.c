@@ -12,21 +12,16 @@ void amp_init(amp_t *a, float fs)
 
 int amp_set_model(amp_t *a, int model)
 {
-#ifdef FB200_STOCK_DSP
-    if (model < 1 || model > STOCK_AMP_MODELS) return -1;
-    a->m = &stock_amp_models[model - 1];
+    if (!g_stock || model < 1 || model > STOCK_AMP_MODELS) return -1;
+    a->m = &g_stock->amp_models[model - 1];
     memset(a->pre_state, 0, sizeof a->pre_state);
     memset(a->post_state, 0, sizeof a->post_state);
     memset(a->aa_state, 0, sizeof a->aa_state);
     a->prev = 0.0f;
     arm_biquad_cascade_df1_init_f32(&a->pre, STOCK_AMP_SOS, &a->m->pre[0][0], a->pre_state);
     arm_biquad_cascade_df1_init_f32(&a->post, STOCK_AMP_SOS, &a->m->post[0][0], a->post_state);
-    arm_biquad_cascade_df1_init_f32(&a->aa, 1, stock_amp_aa, a->aa_state);
+    arm_biquad_cascade_df1_init_f32(&a->aa, 1, g_stock->amp_aa, a->aa_state);
     return 0;
-#else
-    (void)a; (void)model;
-    return -1;
-#endif
 }
 
 void amp_set_params(amp_t *a, int gain, int bass, int mid, int midfreq, int treble, int volume)

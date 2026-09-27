@@ -337,19 +337,42 @@ def _cmd_crash(args) -> int:
     return 0
 
 
+def _cmd_fw_twostage(args) -> int:
+    from fb200 import images, release
+
+    out = images.twostage_mr(Path(args.stock).read_bytes(),
+                             release.image(args.recovery, "recovery"),
+                             release.image(args.app, "app"))
+    Path(args.output).write_bytes(out)
+    print(f"wrote {args.output} ({len(out)} bytes). It contains vendor data from your .mr: "
+          "do not share it. Flash it in update mode (hold A+D while plugging in):\n"
+          f"  fb200 fw flash {args.output} --yes --no-jump")
+    return 0
+
+
 def _cmd_update(args) -> int:
-    from fb200 import console
+    from fb200 import console, images, release, stockdata
     from fb200.firmware import MrFile
 
     image = Path(args.file)
     if args.target == "block0":
         data = MrFile.from_path(image).blocks[0].data
+    elif args.target == "stock":
+        data = stockdata.build(image.read_bytes())   # FILE is the stock .mr
     else:
-        data = image.read_bytes()
-    stock = MrFile.from_path(args.stock).blocks[0].data
+        data = release.image(args.file, args.target)
+    if args.target == "app":
+        images.check_slot(data)
+    if args.target == "recovery" and data[images.BOOT_OFF:images.BLOB_OFF] == \
+            b"\xff" * (images.BLOB_OFF - images.BOOT_OFF):
+        if not args.stock:
+            print("error: this recovery image has no vendor loader; add --stock FB200.mr",
+                  file=sys.stderr)
+            return 2
+        data = images.splice_vendor_loader(data, images.stock_image(
+            Path(args.stock).read_bytes()).blocks[0].data)
     with console.Console(args.port, echo=(lambda line: print("  <", line)) if args.verbose else None) as con:
-        res = console.update(con, args.target, data, stock, reset=not args.no_reset,
-                             force=args.force)
+        res = console.update(con, args.target, data, reset=not args.no_reset, force=args.force)
     print(f"{res.target}: {res.size} bytes crc {res.crc:08x} written in {res.seconds:.1f}s"
           + ("" if args.no_reset else "; reset sent"))
     return 0
@@ -420,6 +443,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_pack.add_argument("-o", "--output")
     p_pack.set_defaults(func=_cmd_fw_pack)
 
+    p_two = fw_sub.add_parser("twostage", help="make the first-install .mr of the open "
+                                               "firmware from your stock .mr")
+    p_two.add_argument("stock", help="your official FB200 firmware .mr")
+    p_two.add_argument("--recovery", default="latest", help="recovery image, or `latest`")
+    p_two.add_argument("--app", default="latest", help="app slot image, or `latest`")
+    p_two.add_argument("-o", "--output", default="fb200-twostage.mr")
+    p_two.set_defaults(func=_cmd_fw_twostage)
+
     p_flash = fw_sub.add_parser("flash", help="flash a .mr image (dry-run unless --yes)")
     p_flash.add_argument("file")
     p_flash.add_argument("--yes", action="store_true",
@@ -441,12 +472,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_crash.set_defaults(func=_cmd_crash)
 
     p_up = sub.add_parser("update", help="flash the open firmware over its USB console (no A+D)")
-    p_up.add_argument("target", choices=["app", "recovery", "block0"],
-                      help="app = .slot, recovery = recovery .bin, block0 = migration from a .mr")
-    p_up.add_argument("file")
+    p_up.add_argument("target", choices=["app", "recovery", "stock", "block0"],
+                      help="app = .slot, recovery = recovery .bin, stock = the sound data from "
+                           "your stock .mr (once), block0 = migration from a .mr")
+    p_up.add_argument("file", help="image file, `latest` (download the latest release; app "
+                                   "and recovery), or the stock .mr (stock)")
     p_up.add_argument("--port")
-    p_up.add_argument("--stock", default="fb200-stock.mr",
-                      help="stock .mr (supplies the vendor loader bytes for the mapping check)")
+    p_up.add_argument("--stock", help="stock .mr: supplies the vendor loader for a recovery "
+                                      "image that has none")
     p_up.add_argument("--no-reset", action="store_true")
     p_up.add_argument("--force", action="store_true", help="skip the mapping check")
     p_up.add_argument("-v", "--verbose", action="store_true", help="show the console dialogue")

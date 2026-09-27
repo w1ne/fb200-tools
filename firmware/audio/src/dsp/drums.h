@@ -10,8 +10,8 @@
  * ignores the header and walks the entries back to back from the bank base,
  * which is off by the header and the page padding; we do not copy that.)
  *
- * Rhythms: 90 event lists from the stock image, generated at build time
- * (firmware/tools/gen_stock_drums.py, FB200_STOCK_DRUMS). Without them the
+ * Rhythms: 90 event lists from the stock image, in the stock data blob
+ * (dsp/stock_data.h, drums_data_from_stock). Without them the
  * module stays silent and drums_init() returns -1.
  *
  * Timing is the stock one at any caller block size: the tick counter runs
@@ -19,6 +19,7 @@
  * (the stock SAI3 interrupt size), 120 ticks per beat, 40..260 BPM. */
 #include <stddef.h>
 #include <stdint.h>
+#include "stock_data.h"
 
 #define DRUMS_VOICES       11
 #define DRUMS_MAX_SAMPLES  32
@@ -30,7 +31,7 @@
 #define DRUMS_LEVEL_DEFAULT 100
 #define DRUMS_BANK_ADDR    0x600D0000u  /* memory-mapped flash, block 1 */
 
-typedef struct {                /* generated from the stock .mr */
+typedef struct {                /* from the stock data blob */
     const uint32_t *events;     /* all event lists back to back */
     uint32_t n_events;
     const uint16_t *lens;       /* words per event list */
@@ -74,8 +75,8 @@ typedef struct {
     uint32_t last_tap_ms;
 } drums_t;
 
-/* bank: the block-1 image (0x600D0000 on the pedal); data: generated rhythm
- * data or NULL for the built-in one (if compiled in). Returns 0, or -1 if the
+/* bank: the block-1 image (0x600D0000 on the pedal); data: the rhythm
+ * tables (drums_data_from_stock) or NULL. Returns 0, or -1 if the
  * bank header or the rhythm data is missing (the module then stays silent). */
 int drums_init(drums_t *d, const void *bank, const drums_data_t *data);
 void drums_start(drums_t *d);
@@ -93,5 +94,6 @@ void drums_render(drums_t *d, float *out, size_t n);
 void drums_process(drums_t *d, float *mix, size_t n);
 void drums_process_stereo(drums_t *d, float *l, float *r, size_t n);
 
-extern const drums_data_t stock_drums_data;   /* only with FB200_STOCK_DRUMS */
+/* The rhythm tables inside the stock data blob (dsp/stock_data.h). */
+void drums_data_from_stock(drums_data_t *out, const stock_data_t *s);
 #endif

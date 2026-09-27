@@ -4,13 +4,14 @@
  *   drums_tuner_host_test drums <bank.bin> <rhythm> <bpm> <n_samples> <out.f32> [block]
  *   drums_tuner_host_test tuner <in.f32> <a4_hz> [block]
  *
- * `drums` needs the generated stock rhythm data (FB200_STOCK_DRUMS); tests/
+ * `drums` needs the stock data blob ($FB200_STOCK_BLOB, stock_host.h); tests/
  * test_drums_tuner.py compares both modes against the emulated stock code. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "dsp/drums.h"
 #include "dsp/tuner.h"
+#include "stock_host.h"
 
 static int fails;
 #define CHECK(c, ...) do { if (!(c)) { printf("FAIL %s:%d: ", __FILE__, __LINE__); \
@@ -89,11 +90,14 @@ static int selftest(void)
 
 int main(int argc, char **argv)
 {
+    stock_from_env();
     if (argc >= 2 && !strcmp(argv[1], "selftest")) return selftest();
     if (argc >= 7 && !strcmp(argv[1], "drums")) {
         long sz;
         void *bank = load(argv[2], &sz);
-        if (drums_init(&dr, bank, NULL)) { fprintf(stderr, "drums_init failed\n"); return 2; }
+        drums_data_t rhythms;
+        if (g_stock) drums_data_from_stock(&rhythms, g_stock);
+        if (drums_init(&dr, bank, g_stock ? &rhythms : NULL)) { fprintf(stderr, "drums_init failed\n"); return 2; }
         drums_set_rhythm(&dr, (unsigned)atoi(argv[3]));
         drums_set_tempo(&dr, (unsigned)atoi(argv[4]));
         drums_start(&dr);

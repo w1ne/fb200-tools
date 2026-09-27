@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install and update: fb200-tools</title>
+<meta name="description" content="Install or update the open FB200 firmware from Chrome or Edge. No software to install; nothing is uploaded.">
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='6' width='28' height='20' rx='4' fill='%23b3470f'/%3E%3Ccircle cx='9' cy='20' r='3' fill='%23fff'/%3E%3Ccircle cx='23' cy='20' r='3' fill='%23fff'/%3E%3C/svg%3E">
+<script type="module" src="js/app.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site">
+  <nav aria-label="Main">
+    <a class="brand" href="./">fb200-tools</a>
+    <a href="./">Home</a>
+    <a href="flash.html" aria-current="page">Install and update</a>
+    <a href="https://github.com/w1ne/fb200-tools">GitHub</a>
+  </nav>
+</header>
+
+<main id="main">
+  <h1>Install and update</h1>
+  <p class="lead">Put the open firmware on your FB200, or update it, from this page. Everything runs
+    in your browser. Nothing is uploaded.</p>
+  <div class="note">
+    <p><strong>At your own risk.</strong> Tested on one pedal with stock firmware V1.0.1. The
+      pedal's own update mode (hold <strong>A+D</strong> while you plug in USB) is never
+      overwritten, so you can always go back to the stock firmware.
+      <a href="https://github.com/w1ne/fb200-tools/blob/main/DISCLAIMER.md">Disclaimer</a>.</p>
+  </div>
+  <p class="warn-live" id="dont-unplug" role="alert" hidden>Writing to the pedal. Do not unplug it and do not close this tab.</p>
+
+  <ol class="steps">
+    <li class="step" id="s-browser">
+      <h2>Check the browser</h2>
+      <p class="status" id="browser-status" role="status"></p>
+      <details class="box" id="linux-help" hidden>
+        <summary>Linux: allow USB access</summary>
+        <p>Add this udev rule, then unplug and plug in the pedal:</p>
+        <pre><code># /etc/udev/rules.d/70-fb200.rules
+SUBSYSTEM=="usb", ATTR{idVendor}=="34db", ATTR{idProduct}=="800f", MODE="0666"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="34db", MODE="0666"
+SUBSYSTEM=="usb", ATTR{idVendor}=="0483", ATTR{idProduct}=="5703", MODE="0666"
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0483", MODE="0666"</code></pre>
+        <p>Then run <code>sudo udevadm control --reload &amp;&amp; sudo udevadm trigger</code>.
+          The USB console also needs your user in the <code>dialout</code> (or <code>uucp</code>)
+          group: <code>sudo usermod -aG dialout $USER</code>, then log out and in.</p>
+      </details>
+    </li>
+
+    <li class="step" id="s-firmware" hidden>
+      <h2>Load the firmware</h2>
+      <p class="status" id="firmware-status" role="status">Loading…</p>
+      <div class="actions" id="firmware-retry-row" hidden><button class="btn" id="firmware-retry" type="button">Try again</button></div>
+    </li>
+
+    <li class="step" id="s-path" hidden>
+      <h2>Choose what to do</h2>
+      <div class="choice" role="group" aria-label="What to do">
+        <button type="button" id="path-install" aria-pressed="false">
+          <strong>First install</strong>
+          <span>The pedal runs the stock firmware.</span>
+        </button>
+        <button type="button" id="path-update" aria-pressed="false">
+          <strong>Update</strong>
+          <span>The pedal already runs the open firmware.</span>
+        </button>
+        <button type="button" id="path-stock" aria-pressed="false">
+          <strong>Back to the stock firmware</strong>
+          <span>Flash the official FLAMMA file again. Presets stay.</span>
+        </button>
+      </div>
+    </li>
+
+    <!-- First install -->
+    <li class="step" id="s-install" hidden>
+      <h2>First install</h2>
+
+      <div class="sub" id="fi-mr">
+        <h3>a. Choose the official firmware file</h3>
+        <p>Choose the official FB200 firmware file from FLAMMA, for example
+          <code>FB200_V1.0.1.mr</code>. It supplies the pedal's loader and the stock sound data
+          (amp models, cab IRs, tone stack, drum rhythms). This site does not include them.
+          The file stays on your computer: this page reads it in the browser and never uploads it.</p>
+        <div class="file">
+          <label for="mr-file"><strong>Official firmware file (.mr):</strong></label>
+          <input type="file" id="mr-file" accept=".mr">
+        </div>
+        <p class="status" id="mr-status" role="status"></p>
+      </div>
+
+      <div class="sub" id="fi-hid" hidden>
+        <h3>b. Start the pedal in update mode</h3>
+        <div class="guide">
+          <div class="svg-slot" data-pedal="hold"></div>
+          <ol>
+            <li>Unplug the USB cable from the pedal.</li>
+            <li>Press and hold footswitches <strong>A</strong> and <strong>D</strong>.</li>
+            <li>Plug in the USB cable while you hold them. Then release them.</li>
+            <li>Press <strong>Connect</strong>. Choose the device in the list and press
+              <em>Connect</em> there.</li>
+          </ol>
+        </div>
+        <div class="actions"><button class="btn primary" id="hid-connect" type="button">Connect</button></div>
+        <div class="progress" id="hid-progress" hidden>
+          <label for="hid-bar"><span>Writing the first-install image</span><span id="hid-pct">0%</span></label>
+          <progress id="hid-bar" max="1" value="0"></progress>
+        </div>
+        <p class="status" id="hid-status" role="status"></p>
+      </div>
+
+      <div class="sub" id="fi-app" hidden>
+        <h3>c. Write the firmware over USB</h3>
+        <div class="guide">
+          <div class="svg-slot" data-pedal="usb"></div>
+          <ol>
+            <li>The pedal restarts by itself into the recovery stage. Do not unplug it.</li>
+            <li>Wait about 5 seconds.</li>
+            <li>Press <strong>Connect</strong>. Choose the FB200 port in the list.</li>
+            <li>The page writes the sound data, then the firmware. Then the pedal restarts.</li>
+          </ol>
+        </div>
+        <div class="actions"><button class="btn primary" id="app-connect" type="button">Connect</button></div>
+        <div class="progress" id="app-progress" hidden>
+          <label for="app-bar"><span id="app-label">Writing</span><span id="app-pct">0%</span></label>
+          <progress id="app-bar" max="1" value="0"></progress>
+        </div>
+        <p class="status" id="app-status" role="status"></p>
+      </div>
+    </li>
+
+    <!-- Update -->
+    <li class="step" id="s-update" hidden>
+      <h2>Update</h2>
+      <div class="guide">
+        <div class="svg-slot" data-pedal="usb"></div>
+        <ol>
+          <li>Plug the pedal into this computer and switch it on. No button combo is needed.</li>
+          <li>Press <strong>Connect</strong>. Choose the FB200 port in the list.</li>
+          <li>The page writes the firmware. The pedal restarts.</li>
+        </ol>
+      </div>
+      <div class="actions"><button class="btn primary" id="up-connect" type="button">Connect</button></div>
+      <div class="progress" id="up-progress" hidden>
+        <label for="up-bar"><span id="up-label">Writing the firmware</span><span id="up-pct">0%</span></label>
+        <progress id="up-bar" max="1" value="0"></progress>
+      </div>
+      <p class="status" id="up-status" role="status"></p>
+
+      <div class="sub" id="up-stock" hidden>
+        <h3>Sound data missing?</h3>
+        <p>The amp models, cab IRs and drums come from the stock firmware file. If the pedal has no
+          sound data, choose the official FB200 firmware file (for example
+          <code>FB200_V1.0.1.mr</code>). It stays on your computer.</p>
+        <div class="file">
+          <label for="up-mr-file"><strong>Official firmware file (.mr):</strong></label>
+          <input type="file" id="up-mr-file" accept=".mr">
+        </div>
+        <div class="actions">
+          <button class="btn" id="up-stock-check" type="button">Check the sound data</button>
+          <button class="btn primary" id="up-stock-write" type="button" disabled>Write the sound data</button>
+        </div>
+        <p class="status" id="up-stock-status" role="status"></p>
+      </div>
+    </li>
+
+    <!-- Back to stock -->
+    <li class="step" id="s-stock" hidden>
+      <h2>Back to the stock firmware</h2>
+      <p>This puts the official FLAMMA firmware back on the pedal, unchanged. Your presets, settings
+        and user IRs are in a separate flash area: they survive. You can come back to the open
+        firmware later with <strong>First install</strong>.</p>
+      <div class="sub" id="st-mr">
+        <h3>a. Choose the official firmware file</h3>
+        <div class="file">
+          <label for="st-file"><strong>Official firmware file (.mr):</strong></label>
+          <input type="file" id="st-file" accept=".mr">
+        </div>
+        <p class="status" id="st-file-status" role="status"></p>
+      </div>
+      <div class="sub" id="st-hid" hidden>
+        <h3>b. Start the pedal in update mode</h3>
+        <div class="guide">
+          <div class="svg-slot" data-pedal="hold"></div>
+          <ol>
+            <li>Unplug the USB cable from the pedal.</li>
+            <li>Press and hold footswitches <strong>A</strong> and <strong>D</strong>.</li>
+            <li>Plug in the USB cable while you hold them. Then release them.</li>
+            <li>Press <strong>Connect</strong>. Choose the device in the list and press
+              <em>Connect</em> there.</li>
+          </ol>
+        </div>
+        <div class="actions"><button class="btn primary" id="st-connect" type="button">Connect</button></div>
+        <div class="progress" id="st-progress" hidden>
+          <label for="st-bar"><span>Writing the stock firmware</span><span id="st-pct">0%</span></label>
+          <progress id="st-bar" max="1" value="0"></progress>
+        </div>
+        <p class="status" id="st-status" role="status"></p>
+      </div>
+    </li>
+
+    <li class="step" id="s-done" hidden>
+      <h2>Done</h2>
+      <div class="guide">
+        <div class="svg-slot" data-pedal="done"></div>
+        <div>
+          <p>The pedal runs the open firmware. The display shows your current preset, for
+            example <code>P0C</code>.</p>
+          <p>To update later, open this page again and choose <strong>Update</strong>. No button
+            combo is needed.</p>
+          <div class="actions"><a class="btn coffee" href="https://buymeacoffee.com/3qutj2ucoq">Buy me a coffee</a></div>
+        </div>
+      </div>
+    </li>
+  </ol>
+
+  <details id="log">
+    <summary>Log</summary>
+    <pre id="log-text" aria-live="off"></pre>
+  </details>
+
+</main>
+
+<footer class="site"><div>
+  fb200-tools is an independent project, not affiliated with FLAMMA Innovation or MOOER Audio.
+  <a href="https://github.com/w1ne/fb200-tools">Source on GitHub</a>.
+</div></footer>
+</body>
+</html>

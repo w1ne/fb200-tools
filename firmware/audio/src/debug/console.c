@@ -1,7 +1,7 @@
 /* fb200-audio console. Commands (see `help`):
  *   help | stats | hb on|off | scan | dump [bus addr] | peek <addr> [len]
  *   poke <addr> <val> | crc <addr> <len> | fwinfo | fwtest | crumbs
- *   fwbegin|fwrec <len> <crc32> (USB self-update, see selfupdate.h)
+ *   fwbegin|fwrec|fwstock <len> <crc32> (USB self-update, see selfupdate.h)
  *   recovery | boot (two-stage boot, see recovery.h) | crash | hang (app only)
  *   reset | reboot
  * Addresses accept 0x.. hex or decimal. peek/poke are limited to RAM/flash
@@ -30,6 +30,7 @@
 #include "ui/rgb.h"
 #include "bt/bt.h"
 #include "audio/bt_audio.h"
+#include "dsp/stock_data.h"
 #endif
 
 extern int g_bss_writable;
@@ -115,14 +116,14 @@ static void cmd_help(void)
              "  ui    : ui | uimon on|off | disp <text> | kled <0-15> on|off | power\r\n"
              "          preset [0-39] | save | rgb 0xRRGGBB [led] | rgb cfg 0xIIS0S1\r\n"
              "  bt    : bt | bt send <AT+...> | btaudio\r\n"
-             "  music : tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>]\r\n"
+             "  music : stock | tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>]\r\n"
              "  tests : crash | hang\r\n"
 #endif
              "  debug : stats | src | hb on|off | clocks | crumbs | crashdump | crashclear\r\n"
              "          peek <addr> [len] | dumpmem <addr> <len> | poke <addr> <u8>\r\n"
              "          peek32 <addr> [n] | poke32 <addr> <u32> | crc <addr> <len>\r\n"
              "  i2c   : scan | dump [bus addr]\r\n"
-             "  flash : fwinfo | fwtest | fwbegin|fwrec <len> <crc32>\r\n"
+             "  flash : fwinfo | fwtest | fwbegin|fwrec|fwstock <len> <crc32>\r\n"
              "  boot  : recovery | boot | reset\r\n");
 }
 
@@ -187,16 +188,16 @@ static void cmd_crc(const char *a1, const char *a2)
         return;
     }
     log_printf("crc %08x %u = %08x\r\n", (unsigned)addr, (unsigned)len,
-               (unsigned)fw_crc32((const uint8_t *)addr, len));
+               (unsigned)crc32_ieee((const uint8_t *)addr, len));
 }
 
-static void cmd_fwbegin(int recovery, const char *a1, const char *a2)
+static void cmd_fwbegin(fw_target_t target, const char *a1, const char *a2)
 {
     int ok1, ok2;
     uint32_t len = parse_num(a1, &ok1);
     uint32_t crc = parse_num(a2, &ok2);
-    if (!ok1 || !ok2) { log_printf("usage: fwbegin <len> <crc32>\r\n"); return; }
-    fw_begin(recovery, len, crc);
+    if (!ok1 || !ok2) { log_printf("usage: fwbegin|fwrec|fwstock <len> <crc32>\r\n"); return; }
+    fw_begin(target, len, crc);
 }
 
 static void cmd_stats(void)
@@ -533,6 +534,11 @@ static void dispatch(char *cmd)
                        on ? "on" : "off", r.valid, r.silent, r.note, r.octave, (int)r.cents,
                        (int)r.freq, (int)((r.freq - (int)r.freq) * 100.0f));
     }
+    else if (streq(argv[0], "stock")) {
+        int r = stock_check((const void *)STOCK_FLASH, STOCK_FLASH_SIZE);
+        log_printf("stock data: flash %s, %s\r\n", stock_error(r),
+                   g_stock ? "in use" : "not loaded (amp/cab/tone pass through, drums silent)");
+    }
     else if (streq(argv[0], "drums")) {
         drums_t *d = engine_drums();
         int ok;
@@ -599,8 +605,9 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "clocks")) clocks_print();
     else if (streq(argv[0], "peek32")) cmd_peek32(argv[1], argv[2]);
     else if (streq(argv[0], "poke32")) cmd_poke32(argv[1], argv[2]);
-    else if (streq(argv[0], "fwbegin")) cmd_fwbegin(0, argv[1], argv[2]);
-    else if (streq(argv[0], "fwrec")) cmd_fwbegin(1, argv[1], argv[2]);
+    else if (streq(argv[0], "fwbegin")) cmd_fwbegin(FW_APP, argv[1], argv[2]);
+    else if (streq(argv[0], "fwrec")) cmd_fwbegin(FW_RECOVERY, argv[1], argv[2]);
+    else if (streq(argv[0], "fwstock")) cmd_fwbegin(FW_STOCK, argv[1], argv[2]);
     else if (streq(argv[0], "recovery")) {
 #ifdef FB200_RECOVERY
         log_printf("already in recovery (`boot` starts the app)\r\n");

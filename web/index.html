@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fb200-tools: open firmware for the FLAMMA FB200</title>
+<meta name="description" content="Open-source replacement firmware for the FLAMMA FB200 bass multi-effects pedal. Install and update it from Chrome or Edge, no software to install.">
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='6' width='28' height='20' rx='4' fill='%23b3470f'/%3E%3Ccircle cx='9' cy='20' r='3' fill='%23fff'/%3E%3Ccircle cx='23' cy='20' r='3' fill='%23fff'/%3E%3C/svg%3E">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site">
+  <nav aria-label="Main">
+    <a class="brand" href="./">fb200-tools</a>
+    <a href="./" aria-current="page">Home</a>
+    <a href="flash.html">Install and update</a>
+    <a href="https://github.com/w1ne/fb200-tools">GitHub</a>
+  </nav>
+</header>
+
+<main id="main">
+  <section class="hero">
+    <div>
+      <h1>Open firmware for the FLAMMA&nbsp;FB200</h1>
+      <p class="lead">A replacement firmware for the FB200 bass multi-effects pedal. It sounds like
+        the stock firmware, keeps your presets and the official app working, and adds what the
+        stock firmware does not have.</p>
+      <div class="actions">
+        <a class="btn primary" href="flash.html">Install from the browser</a>
+        <a class="btn" href="https://github.com/w1ne/fb200-tools">Source on GitHub</a>
+        <a class="btn coffee" href="https://buymeacoffee.com/3qutj2ucoq">Buy me a coffee</a>
+      </div>
+      <p class="muted">Chrome or Edge on Windows, macOS, Linux or ChromeOS. Nothing to install.</p>
+    </div>
+    <img src="images/in-use.jpg" width="1200" height="900"
+         alt="The FB200 pedal on a table, running the open firmware, with a bass plugged in.">
+  </section>
+
+  <h2 id="what">What it does</h2>
+  <div class="cards">
+    <div class="card"><h3>Same sound</h3>
+      <p>Every stock effect is ported and checked against the stock DSP: noise gate, compressor,
+        10 amp models, tone stack, 10 cab IRs, 9 user IR slots, 12 modulations, 5 reverbs.</p></div>
+    <div class="card"><h3>Your presets stay</h3>
+      <p>Presets, settings and user IRs load and save in the stock format. They survive a switch
+        to this firmware and back.</p></div>
+    <div class="card"><h3>USB updates</h3>
+      <p>After the first install, updates go over USB with no button combo. A recovery stage keeps
+        USB working after a crash or a hang.</p></div>
+    <div class="card"><h3>Better feedback</h3>
+      <p>The display names the knob you turn (<code>GAn</code>, <code>CAb</code>) and marks knobs
+        that have not picked up the preset value yet.</p></div>
+    <div class="card"><h3>Drums</h3>
+      <p>The stock drum machine, on time, and included in the USB recording. Hold A and turn
+        LEVEL, RATE or MOD for drum level, tempo or rhythm.</p></div>
+    <div class="card"><h3>USB audio and console</h3>
+      <p>A class-compliant audio interface (44.1 kHz), plus a USB console for diagnostics and
+        crash reports.</p></div>
+  </div>
+
+  <h2 id="controls">Controls</h2>
+  <p>The controls work as on the stock firmware.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th scope="col">Action</th><th scope="col">What it does</th></tr></thead>
+    <tbody>
+      <tr><td><strong>A / B / C / D</strong></td><td>Select slot A to D of the current bank (display <code>P&lt;bank&gt;&lt;slot&gt;</code>)</td></tr>
+      <tr><td><strong>C + D</strong> / <strong>A + B</strong></td><td>Bank up / bank down</td></tr>
+      <tr><td><strong>B + C</strong></td><td>Stomp mode (<code>L…</code>): A = reverb, B = mod, C = amp and cab, D = comp on/off</td></tr>
+      <tr><td><strong>Hold A (1 s)</strong></td><td>Save the current preset</td></tr>
+      <tr><td><strong>Hold B, then A long</strong></td><td>Tuner (display: flat arrow, note, sharp arrow). Any switch exits.</td></tr>
+      <tr><td><strong>Hold C, then B long</strong></td><td>Rhythm mode: A play/stop, B/C previous/next rhythm, D tap tempo</td></tr>
+      <tr><td><strong>Hold A + turn LEVEL / RATE / MOD</strong></td><td>Drum level / tempo / rhythm, live</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>Knobs</strong>, left to right: MASTER, LEVEL (reverb), REVERB, MIX, RATE, MOD, CAB,
+    VOL, BASS, MID, TREBLE, GAIN, AMP, LEVEL (comp), THRESH, GATE.</p>
+  <p>After a preset loads, a knob takes over when it passes the preset's value. Until then its LED
+    blinks and the display shows the value with a dot.</p>
+
+  <h2 id="install">Install</h2>
+  <p>You need the pedal, a USB cable, Chrome or Edge on a computer, and the official FB200
+    firmware file from FLAMMA (<code>FB200_V1.0.1.mr</code>). The updater takes the sound data and
+    the loader from your copy of that file, in your browser. It never uploads it.</p>
+  <div class="actions">
+    <a class="btn primary" href="flash.html">Open the updater</a>
+    <a class="btn" href="https://github.com/w1ne/fb200-tools/blob/main/docs/INSTALL.md">Command-line guide</a>
+  </div>
+  <p class="muted">Holding <strong>A+D</strong> while you plug in USB always starts the pedal's own
+    update mode. From there you can go back to the stock firmware at any time.</p>
+
+  <h2 id="docs">Documentation</h2>
+  <ul>
+    <li><a href="https://github.com/w1ne/fb200-tools/blob/main/docs/INSTALL.md">Install, update, recovery, back to stock</a></li>
+    <li><a href="https://github.com/w1ne/fb200-tools/blob/main/docs/PARITY.md">Stock feature list and status</a></li>
+    <li><a href="https://github.com/w1ne/fb200-tools/blob/main/docs/BOOTLOADER.md">Boot chain and flash layout</a></li>
+    <li><a href="https://github.com/w1ne/fb200-tools/blob/main/docs/PROTOCOL.md">USB and Bluetooth protocol</a></li>
+    <li><a href="https://github.com/w1ne/fb200-tools/blob/main/README.md">Project README</a></li>
+  </ul>
+
+  <h2 id="support">Support</h2>
+  <p>The project is free and stays free. If it is useful to you, you can buy me a coffee.</p>
+  <div class="actions"><a class="btn coffee" href="https://buymeacoffee.com/3qutj2ucoq">Buy me a coffee</a></div>
+
+  <h2 id="disclaimer">Disclaimer</h2>
+  <div class="note">
+    <p>This is an independent community project. It is not affiliated with, endorsed by, or
+      supported by FLAMMA Innovation or MOOER Audio. All product names and trademarks belong to
+      their owners.</p>
+    <p>Flashing custom firmware is <strong>at your own risk</strong>. The procedure is tested on
+      one pedal (stock firmware V1.0.1). Read the
+      <a href="https://github.com/w1ne/fb200-tools/blob/main/DISCLAIMER.md">full disclaimer</a>.</p>
+  </div>
+</main>
+
+<footer class="site"><div>
+  fb200-tools, MIT licence. <a href="https://github.com/w1ne/fb200-tools">github.com/w1ne/fb200-tools</a>
+</div></footer>
+</body>
+</html>

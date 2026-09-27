@@ -1,5 +1,4 @@
-/* Phase 0 RE tool: scan the LPI2C buses and dump a codec's register file.
- * See docs/superpowers/plans/2026-09-27-fb200-audio-engine.md (Task 4). */
+/* Phase 0 RE tool: scan the LPI2C buses and dump a codec's register file. */
 #include "fsl_clock.h"
 #include "fsl_iomuxc.h"
 #include "fsl_lpi2c.h"

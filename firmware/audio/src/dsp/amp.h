@@ -16,11 +16,11 @@
  * Drive and volume start at 0 and ramp in (time constants 1000 / 2000 samples)
  * and stall a few ulps below target, both like the stock.
  * Coefficients are the stock 44.1 kHz designs; at another fs the filter
- * frequencies scale by fs / 44100. Without stock data (FB200_STOCK_DSP unset)
+ * frequencies scale by fs / 44100. Without stock data (g_stock NULL)
  * or before amp_set_model, amp_process passes audio through. */
 #include "arm_math.h"
 #include "dsp.h"
-#include "stock_dsp_data.h"
+#include "stock_data.h"
 #include "tone.h"
 
 typedef struct {

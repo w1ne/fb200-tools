@@ -1,11 +1,6 @@
 #include "drums.h"
 #include <string.h>
 
-#ifdef FB200_STOCK_DRUMS
-#define BUILTIN_DATA (&stock_drums_data)
-#else
-#define BUILTIN_DATA ((const drums_data_t *)0)
-#endif
 
 #define TICKS_PER_BEAT 120u
 #define SAMPLES_PER_MIN_X_BEAT 2646000u   /* 60 * 44100 */
@@ -165,10 +160,18 @@ static void render_sub(drums_t *d, float *out)
     mixer(d, out, DRUMS_SUBBLOCK);
 }
 
+void drums_data_from_stock(drums_data_t *out, const stock_data_t *s)
+{
+    *out = (drums_data_t){
+        s->drum_events, STOCK_DRUM_EVENTS, s->drum_lens, STOCK_DRUM_PATTERNS,
+        s->drum_rhythm, STOCK_DRUM_RHYTHMS, s->drum_beats,
+    };
+}
+
 int drums_init(drums_t *d, const void *bank, const drums_data_t *data)
 {
     memset(d, 0, sizeof *d);
-    d->data = data ? data : BUILTIN_DATA;
+    d->data = data;
     d->bpm = DRUMS_BPM_DEFAULT;
     d->level = DRUMS_LEVEL_DEFAULT;
     d->cur_pattern = -1;

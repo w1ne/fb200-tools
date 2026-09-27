@@ -140,11 +140,9 @@ void engine_init(void)
     comp_init(&s_comp, (float)AUDIO_FS);
     mod_init(&s_mod, (float)AUDIO_FS);
     reverb_init(&s_rev, (float)AUDIO_FS);
-#ifdef FB200_STOCK_DRUMS
-    drums_init(&s_drums, (const void *)DRUMS_BANK_ADDR, &stock_drums_data);
-#else
-    drums_init(&s_drums, (const void *)DRUMS_BANK_ADDR, NULL);   /* no patterns: silent */
-#endif
+    static drums_data_t rhythms;
+    if (g_stock) drums_data_from_stock(&rhythms, g_stock);
+    drums_init(&s_drums, (const void *)DRUMS_BANK_ADDR, g_stock ? &rhythms : NULL);  /* NULL: silent */
 }
 
 void engine_set_tuner(bool on) { s_tuner_on = on; }

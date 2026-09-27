@@ -23,7 +23,7 @@ LOADER_CRC = zlib.crc32(STOCK[console.LOADER_OFF:console.LOADER_END]) & 0xFFFFFF
 class FakePedal(threading.Thread):
     """Answers the console protocol like firmware/audio/src/debug/console.c."""
 
-    def __init__(self, fd: int, corrupt: bool = False, known=("fwbegin", "fwrec")) -> None:
+    def __init__(self, fd: int, corrupt: bool = False, known=("fwbegin", "fwrec", "fwstock")) -> None:
         super().__init__(daemon=True)
         self.fd, self.corrupt, self.known = fd, corrupt, known
         self.written = b""
@@ -56,7 +56,7 @@ class FakePedal(threading.Thread):
                     self.say(f"crc {argv[1]} {argv[2]} = {LOADER_CRC:08x}\n")
                 elif argv[0] == "fwtest":
                     self.say("fw test ok (sr=02)\n")
-                elif argv[0] in ("fwbegin", "fwrec"):
+                elif argv[0] in ("fwbegin", "fwrec", "fwstock"):
                     if argv[0] not in self.known:
                         self.say("unknown command (try help)\n")
                         continue
@@ -94,7 +94,7 @@ def test_run_strips_echo(pedal):
 def test_update_app_streams_and_resets(pedal):
     con, fake = pedal
     data = os.urandom(47_000)
-    res = console.update(con, "app", data, STOCK)
+    res = console.update(con, "app", data, loader_crc=LOADER_CRC)
     assert fake.written == data
     assert res.crc == zlib.crc32(data) & 0xFFFFFFFF
     assert "fwtest" in fake.log and f"fwbegin {len(data)} {res.crc:#x}" in fake.log
@@ -104,7 +104,7 @@ def test_update_recovery_uses_fwrec(pedal):
     con, fake = pedal
     data = bytearray(os.urandom(4096))
     data[console.LOADER_OFF:console.LOADER_END] = STOCK[console.LOADER_OFF:console.LOADER_END]
-    console.update(con, "recovery", bytes(data), STOCK, reset=False)
+    console.update(con, "recovery", bytes(data), reset=False, loader_crc=LOADER_CRC)
     assert any(c.startswith("fwrec ") for c in fake.log)
     assert fake.written == bytes(data)
 
@@ -112,7 +112,7 @@ def test_update_recovery_uses_fwrec(pedal):
 def test_update_recovery_refuses_foreign_loader(pedal):
     con, fake = pedal
     with pytest.raises(CommunicationError, match="vendor loader"):
-        console.update(con, "recovery", os.urandom(4096), STOCK)
+        console.update(con, "recovery", os.urandom(4096), loader_crc=LOADER_CRC)
     assert not any(c.startswith("fwrec") for c in fake.log)
 
 
@@ -120,7 +120,7 @@ def test_update_recovery_refuses_foreign_loader(pedal):
 def test_update_fails_fast_on_unknown_command(pedal):
     con, fake = pedal
     with pytest.raises(CommunicationError, match="refused"):
-        console.update(con, "app", b"x" * 100, STOCK)
+        console.update(con, "app", b"x" * 100, loader_crc=LOADER_CRC)
     assert fake.written == b""
 
 
@@ -128,4 +128,25 @@ def test_update_fails_fast_on_unknown_command(pedal):
 def test_update_reports_crc_mismatch(pedal):
     con, _ = pedal
     with pytest.raises(CommunicationError, match="app slot invalid"):
-        console.update(con, "app", b"y" * 1000, STOCK)
+        console.update(con, "app", b"y" * 1000, loader_crc=LOADER_CRC)
+
+
+def test_update_stock_uses_fwstock(pedal):
+    con, fake = pedal
+    data = os.urandom(59_276)
+    console.update(con, "stock", data, reset=False, loader_crc=LOADER_CRC)
+    assert any(c.startswith("fwstock ") for c in fake.log)
+    assert fake.written == data
+
+
+def test_stock_loader_crc_matches_the_stock_image():
+    """The built-in constant must match a real stock image (skips without one)."""
+    from pathlib import Path
+
+    mr = Path(os.environ.get("FB200_STOCK_MR", Path(__file__).parents[1] / "fb200-stock.mr"))
+    if not mr.is_file():
+        pytest.skip("fb200-stock.mr not found (vendor file; set FB200_STOCK_MR)")
+    from fb200.firmware import MrFile
+
+    b0 = MrFile.from_path(mr).blocks[0].data
+    assert zlib.crc32(b0[console.LOADER_OFF:console.LOADER_END]) == console.STOCK_LOADER_CRC

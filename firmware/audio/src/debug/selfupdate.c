@@ -19,12 +19,14 @@
 #include "recovery.h"
 
 #define FLASH_AHB    0x60000000u
-/* Regions (flash offsets, docs/BOOTLOADER.md §4): the app slot, and the
- * recovery image (block 0 start, which also holds the vendor loader). */
-#define APP_OFFSET   0x00020000u
-#define APP_LIMIT    0x00071000u   /* app slot + its data, up to the presets */
-#define REC_OFFSET   0x00010000u
-#define REC_LIMIT    0x00020000u
+/* Regions (flash offsets, docs/BOOTLOADER.md §4): the app slot, the
+ * recovery image (block 0 start, which also holds the vendor loader) and the
+ * stock data (dsp/stock_data.h). */
+static const struct { uint32_t base, limit; } regions[] = {
+    [FW_APP]      = {0x00020000u, 0x00061000u},   /* app slot + its tables */
+    [FW_RECOVERY] = {0x00010000u, 0x00020000u},
+    [FW_STOCK]    = {0x00061000u, 0x00071000u},   /* up to the presets */
+};
 #define FCB_TAG      0x42464346u   /* "FCFB" */
 #define FCB_LUT      0x80u         /* FCB offset of the lookup table */
 #define SECTOR       4096u
@@ -42,16 +44,6 @@ static uint32_t page_buf[PAGE / 4];
 static uint32_t fw_off, fw_len, fw_crc, fw_rx, page_fill, last_rx_ms;
 static int active;
 static int lut_ready;
-
-uint32_t fw_crc32(const uint8_t *p, uint32_t len)
-{
-    uint32_t c = 0xFFFFFFFFu;
-    while (len--) {
-        c ^= *p++;
-        for (int k = 0; k < 8; k++) c = (c >> 1) ^ (0xEDB88320u & (0u - (c & 1u)));
-    }
-    return ~c;
-}
 
 /* Read-command word 0 of FCB sequence 0: opcode0 = command, opcode1 = RADDR
  * with the address width in operand1. */
@@ -140,9 +132,11 @@ void fw_info(void)
     uint32_t pads = 0, bits = 0, sr = 0;
     int fcb = fcb_read_seq(&pads, &bits);
     int st = lut_init() && read_status(&sr);
-    log_printf("fw: fcb=%s cmd-pads=%u addr=%u status=%s sr=%02x app 0x%08x rec 0x%08x\r\n",
+    log_printf("fw: fcb=%s cmd-pads=%u addr=%u status=%s sr=%02x app 0x%08x rec 0x%08x stock 0x%08x\r\n",
                fcb ? "ok" : "BAD", (unsigned)pads, (unsigned)bits, st ? "ok" : "FAILED",
-               (unsigned)sr, (unsigned)(FLASH_AHB + APP_OFFSET), (unsigned)(FLASH_AHB + REC_OFFSET));
+               (unsigned)sr, (unsigned)(FLASH_AHB + regions[FW_APP].base),
+               (unsigned)(FLASH_AHB + regions[FW_RECOVERY].base),
+               (unsigned)(FLASH_AHB + regions[FW_STOCK].base));
 }
 
 /* Non-destructive probe: write-enable must set WEL, then write-disable. */
@@ -155,10 +149,10 @@ void fw_test(void)
     /* WEL stays set until the next erase/program; harmless. */
 }
 
-void fw_begin(int recovery, uint32_t len, uint32_t crc)
+void fw_begin(fw_target_t target, uint32_t len, uint32_t crc)
 {
-    uint32_t base = recovery ? REC_OFFSET : APP_OFFSET;
-    uint32_t limit = recovery ? REC_LIMIT : APP_LIMIT;
+    uint32_t base = regions[target].base;
+    uint32_t limit = regions[target].limit;
     if (len == 0u || len > limit - base) {
         log_printf("fw: bad length %u (max %u)\r\n", (unsigned)len, (unsigned)(limit - base));
         return;
@@ -215,7 +209,7 @@ static void finish(void)
 {
     active = 0;
     refresh_ahb(fw_off, fw_len);
-    uint32_t got = fw_crc32((const uint8_t *)(FLASH_AHB + fw_off), fw_len);
+    uint32_t got = crc32_ieee((const uint8_t *)(FLASH_AHB + fw_off), fw_len);
     log_printf("fw done crc=%08x %s\r\n", (unsigned)got, got == fw_crc ? "ok" : "BAD");
 }
 
@@ -237,7 +231,7 @@ void fw_rx_task(void)
     }
     if (active && now - last_rx_ms > FW_IDLE_MS) {
         active = 0;
-        log_printf("fw aborted at %u/%u bytes (app region is now invalid)\r\n",
+        log_printf("fw aborted at %u/%u bytes (the region is now invalid)\r\n",
                    (unsigned)fw_rx, (unsigned)fw_len);
     }
 }

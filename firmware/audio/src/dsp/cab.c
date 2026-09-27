@@ -1,7 +1,7 @@
 #include <string.h>
 #include "cab.h"
 #include "arm_const_structs.h"
-#include "stock_dsp_data.h"
+#include "stock_data.h"
 
 void cab_init(cab_t *c)
 {
@@ -20,14 +20,9 @@ void cab_set_ir(cab_t *c, const float *ir, float gain)
 
 int cab_set_model(cab_t *c, int cab)
 {
-#ifdef FB200_STOCK_DSP
-    if (cab < 1 || cab > STOCK_CABS) return -1;
-    cab_set_ir(c, stock_cab_taps[cab - 1], stock_cab_gain[cab - 1]);
+    if (!g_stock || cab < 1 || cab > STOCK_CABS) return -1;
+    cab_set_ir(c, g_stock->cab_taps[cab - 1], g_stock->cab_gain[cab - 1]);
     return 0;
-#else
-    (void)c; (void)cab;
-    return -1;
-#endif
 }
 
 /* cos/sin(2 pi / 1025) and of twice that angle */

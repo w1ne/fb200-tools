@@ -5,6 +5,38 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-09-27
+
+### Added
+
+- **Web updater** (GitHub Pages, Chrome/Edge on Windows, macOS, Linux, ChromeOS):
+  first install and updates from the browser, with a step-by-step visual guide.
+  Nothing to install.
+- `fb200 update app latest` downloads the latest release and flashes it.
+  `fb200 fw twostage FB200.mr` makes the first-install image.
+- Releases publish the firmware images (built in CI) and deploy the web page.
+- Buy me a coffee link.
+
+### Changed
+
+- **The firmware images contain no vendor data.** The stock sound data (amp models,
+  cab IRs, tone stack, drum rhythms) is built from your stock `.mr` once
+  (`fb200 update stock FB200.mr`, console `fwstock`) into its own flash area
+  (F:0x61000). App updates never touch it and need no `.mr`. Console `stock` shows
+  its state.
+- The stock data is unpacked in pure Python (the stock loader's LZ77): building no
+  longer needs `unicorn`.
+- `fb200 update` checks the flash mapping with a built-in CRC, so it needs no `.mr`.
+
+### Removed
+
+- `extract_stock_dsp.py`, `gen_stock_drums.py` (replaced by `src/fb200/stockdata.py`).
+- Finished implementation plans (`docs/superpowers/plans`).
+
+### Fixed
+
+- CI: Windows, Python 3.10 and Linux host builds of the DSP tests.
+
 ## [0.5.0] - 2026-09-27
 
 First release of the open FB200 firmware (`firmware/audio`), with host tools.

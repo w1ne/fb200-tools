@@ -3,7 +3,7 @@
 
 The stock per-sample callback (ITCM 0x17d8c) and the cab FIR block job
 (0x26c4) run on the RAM image that the vendor loader unpacks from the .mr
-(extract_stock_dsp.load_stock_ram). Unicorn's Cortex-M7 model has no
+(load_stock_ram). Unicorn's Cortex-M7 model has no
 double-precision FPU, so the few f64 instructions the stock uses are
 emulated in software (capstone decodes them). This is the reference for the
 parity tests of src/dsp/amp.c, tone.c and cab.c (tests/test_stock_dsp_parity.py).
@@ -32,10 +32,35 @@ import sys
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 import numpy as np
-from extract_stock_dsp import DTCM, ITCM, MAP, OCRAM, load_stock_ram
+
+from fb200.firmware import MrFile
+
+ITCM, DTCM, OCRAM = 0x0, 0x20000000, 0x20200000
+LOADER_STUB, LOADER_DONE = 0x600104D9, 0x4D6    # flash stub -> ITCM entry
+RAM_SIZES = {ITCM: 0x20000, DTCM: 0x58000, OCRAM: 0x10000}
+MAP = [(0, 0x200000), (DTCM, 0x100000), (OCRAM, 0x100000), (0x40000000, 0x10000000),
+       (0x60000000, 0x800000), (0xE0000000, 0x100000)]
+
+
+def load_stock_ram(mr_path: str | Path) -> dict[int, bytes]:
+    """Run the vendor self-loader of block 0 until the ITCM entry; return the
+    ITCM, DTCM and OCRAM images keyed by base address."""
+    from unicorn import UC_ARCH_ARM, UC_HOOK_CODE, UC_MODE_MCLASS, UC_MODE_THUMB, Uc
+    from unicorn.arm_const import UC_ARM_REG_SP
+
+    mr = MrFile.from_path(mr_path)
+    uc = Uc(UC_ARCH_ARM, UC_MODE_THUMB | UC_MODE_MCLASS)
+    for base, size in MAP:
+        uc.mem_map(base, size)
+    uc.mem_write(0x60010000, mr.blocks[0].data)
+    uc.mem_write(0x60041000, mr.blocks[1].data)
+    uc.hook_add(UC_HOOK_CODE, lambda u, a, s, d: u.emu_stop() if a == LOADER_DONE else None)
+    uc.reg_write(UC_ARM_REG_SP, 0x20008000)
+    uc.emu_start(LOADER_STUB, 0, count=20_000_000)
+    return {base: bytes(uc.mem_read(base, size)) for base, size in RAM_SIZES.items()}
 
 FS = 44100
 RET = 0x1FFE0                        # magic return address (ITCM)

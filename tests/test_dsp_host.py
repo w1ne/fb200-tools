@@ -22,6 +22,8 @@ DSP_GROUPS = ["BasicMathFunctions", "ComplexMathFunctions", "FastMathFunctions",
               # arm_mfcc_* call the matrix functions; MinGW's linker keeps them
               "MatrixFunctions"]
 OUT_BLOCKS = FW / "build" / "dsp_blocks_host_test"
+# g_stock and stock_check(): amp, tone, cab and drums read the stock data through them
+STOCK_SRC = [FW / "src" / "dsp" / "stock_data.c", FW / "src" / "crc32.c"]
 
 
 def cmsis_dsp_args() -> list[str]:
@@ -38,7 +40,7 @@ def cmsis_dsp_args() -> list[str]:
 
 def test_dsp_host_suite():
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    sources = [str(p) for p in sorted((FW / "src" / "dsp").glob("*.c"))]
+    sources = [str(p) for p in sorted((FW / "src" / "dsp").glob("*.c"))] + [str(FW / "src" / "crc32.c")]
     subprocess.run(
         ["cc", "-O2", "-Wall", "-Wextra", "-I", str(FW / "src"),
          str(FW / "tests" / "dsp_host_test.c"), *sources, *cmsis_dsp_args(), "-lm",
@@ -72,7 +74,7 @@ def test_amp_cab_suite():
     test_stock_dsp_parity.py (needs the vendor .mr)."""
     out = FW / "build" / "amp_cab_host_test"
     out.parent.mkdir(parents=True, exist_ok=True)
-    mods = [FW / "src" / "dsp" / f for f in ("amp.c", "tone.c", "cab.c")]
+    mods = [FW / "src" / "dsp" / f for f in ("amp.c", "tone.c", "cab.c")] + STOCK_SRC
     subprocess.run(
         ["cc", "-O2", "-Wall", "-Wextra", "-I", str(FW / "src"),
          str(FW / "tests" / "amp_cab_host_test.c"), *map(str, mods), *cmsis_dsp_args(),

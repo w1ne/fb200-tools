@@ -23,6 +23,10 @@ if TYPE_CHECKING:
 
 LOADER_OFF, LOADER_END = 0x400, 0x784   # vendor stub + loader code in block 0
 FLASH_BLOCK0 = 0x60010000
+# CRC-32 of the stock V1.0.1 loader bytes [LOADER_OFF, LOADER_END): the flash
+# must hold them, or the region map is not what this tool expects.
+STOCK_LOADER_CRC = 0x80CBBAC5
+COMMANDS = {"app": "fwbegin", "block0": "fwbegin", "recovery": "fwrec", "stock": "fwstock"}
 
 
 def find_port() -> str:
@@ -129,25 +133,26 @@ class UpdateResult:
     seconds: float
 
 
-def update(con: Console, target: str, data: bytes, stock_block0: bytes,
-           reset: bool = True, force: bool = False) -> UpdateResult:
-    """Write the app slot (`fwbegin`), recovery (`fwrec`) or, for the one-time
-    migration from single-stage firmware, all of block 0 (`fwbegin`)."""
-    if target not in ("app", "recovery", "block0"):
+def update(con: Console, target: str, data: bytes, reset: bool = True, force: bool = False,
+           loader_crc: int = STOCK_LOADER_CRC) -> UpdateResult:
+    """Write the app slot (`fwbegin`), recovery (`fwrec`), the stock data
+    (`fwstock`) or, for the one-time migration from single-stage firmware,
+    all of block 0 (`fwbegin`)."""
+    if target not in COMMANDS:
         raise ValueError(target)
     crc = zlib.crc32(data) & 0xFFFFFFFF
-    command = "fwrec" if target == "recovery" else "fwbegin"
+    command = COMMANDS[target]
     con.command("hb off", [b"heartbeat"])
     con.command("fwinfo", [b"fw:"])
 
     # Mapping check: flash at 0x60010400 must hold the stock vendor loader.
-    want = zlib.crc32(stock_block0[LOADER_OFF:LOADER_END]) & 0xFFFFFFFF
-    if target != "app" and data[LOADER_OFF:LOADER_END] != stock_block0[LOADER_OFF:LOADER_END]:
+    if target in ("recovery", "block0") and \
+            zlib.crc32(data[LOADER_OFF:LOADER_END]) & 0xFFFFFFFF != loader_crc:
         raise CommunicationError("image does not carry the stock vendor loader; refusing")
     line = con.command(f"crc {FLASH_BLOCK0 + LOADER_OFF:#x} {LOADER_END - LOADER_OFF}", [b" = "])
     have = int(line.rsplit(b"=", 1)[1].strip(), 16)
-    if have != want and not force:
-        raise CommunicationError(f"mapping check failed: flash {have:08x} != stock {want:08x}")
+    if have != loader_crc and not force:
+        raise CommunicationError(f"mapping check failed: flash {have:08x} != stock {loader_crc:08x}")
 
     if b"ok" not in con.command("fwtest", [b"fw test"]):
         raise CommunicationError("flash write-enable probe failed; nothing erased")
@@ -165,6 +170,9 @@ def update(con: Console, target: str, data: bytes, stock_block0: bytes,
     if not result.endswith(b"ok"):
         if target == "app":
             raise CommunicationError("flash FAILED: app slot invalid; recovery keeps the console, retry")
+        if target == "stock":
+            raise CommunicationError("flash FAILED: stock data invalid (the sound passes through); "
+                                     "retry")
         raise CommunicationError("flash FAILED: recovery/block 0 invalid; recover with A+D")
     if reset:
         con.write(b"reset\r")

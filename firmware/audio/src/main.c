@@ -20,6 +20,7 @@
 #include "ui/rgb.h"
 #include "bt/bt.h"
 #include "proto/proto.h"
+#include "dsp/stock_data.h"
 void usb_hid_init(void);   /* proto/usb_hid.c */
 void usb_hid_task(void);
 
@@ -64,6 +65,7 @@ void app_main(void)
 #ifndef FB200_RECOVERY
     i2c_probe_init();
     frontend_init();
+    log_printf("stock data: %s\r\n", stock_error(stock_load()));   /* before engine_init */
     engine_init();
     led_init();
     bool codec_ok = codec_init();

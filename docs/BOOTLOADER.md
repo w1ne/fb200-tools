@@ -74,6 +74,16 @@ and every app failure, stays on USB.
 | `0x600107D4` | `0x007D4` | recovery blob (loader entry 0 -> ITCM `0x400`, entry `0x4D6`) |
 | `0x6001F000` | `0x0F000` | copier (staged by recovery to ITCM `0x1F000`) |
 | `0x60020000` | `0x10000` | app slot: header `FBAP`/len/CRC32 (0x100), vectors (0x400), blob |
+| `0x60041000` | - | app const tables (CMSIS), copied to DTCM at boot (slot header v2) |
+| `0x60061000` | - | stock sound data `FBSD` (`src/dsp/stock_data.h`), written once by `fwstock` |
+
+- The published images contain no vendor bytes. The recovery image leaves
+  `0x400..0x7D4` erased; the first-install `.mr` gets the vendor stub and
+  loader from the user's stock `.mr` (`src/fb200/images.py`). The stock
+  sound data (amp models, cab IRs, tone stack, drum rhythms) is built from
+  the same `.mr` (`src/fb200/stockdata.py`) and has its own flash area, so
+  app updates never need the `.mr` again. Without it the app runs, but the
+  amp, cab and tone pass audio through and the drums are silent.
 
 - Load-table entries 1-3 decompressed stock data from `0x6002E39C..` (now
   the app slot) into DTCM/OCRAM; the packer turns them into copies of entry
@@ -86,7 +96,8 @@ and every app failure, stays on USB.
   alive marker `0xA11FE000`. A leftover alive marker means the app died
   without a clean reset (WDOG1, 8 s, fed by the app main loop).
 - Console: `crumbs`, `recovery`, `boot` (recovery), `crash`/`hang` (app
-  tests), `fwinfo`, `fwtest`, `fwbegin` (app slot), `fwrec` (recovery).
+  tests), `fwinfo`, `fwtest`, `fwbegin` (app slot), `fwrec` (recovery),
+  `fwstock` (stock data), `stock` (app: stock data status).
 - Flash writes use plain SPI-NOR commands in FlexSPI LUT slots 12-15 as IP
   commands; the boot configuration is left alone, so memory-mapped reads keep
   working.

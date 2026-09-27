@@ -15,10 +15,13 @@ import shutil
 import subprocess
 import sys
 from array import array
+from functools import partial
 from pathlib import Path
 
 import pytest
-from test_dsp_host import FW, cmsis_dsp_args
+from test_dsp_host import FW, STOCK_SRC, cmsis_dsp_args
+
+from fb200 import stockdata
 
 ROOT = Path(__file__).resolve().parents[1]
 MR = Path(os.environ.get("FB200_STOCK_MR", ROOT / "fb200-stock.mr"))
@@ -46,21 +49,21 @@ def stock(tmp_path_factory):
         pytest.skip(f"{PY} lacks unicorn/capstone/numpy (set PY_UNICORN to a Python with them)")
     work = tmp_path_factory.mktemp("stock_dsp")
     tools = ROOT / "firmware" / "tools"
-    data_c = work / "stock_dsp_data.c"
-    subprocess.run([PY, str(tools / "extract_stock_dsp.py"), str(MR), "-o", str(data_c)],
-                   check=True)
+    blob = work / "stock.blob"
+    blob.write_bytes(stockdata.build(MR.read_bytes()))
     subprocess.run([PY, str(tools / "stock_render.py"), str(MR), str(work),
                     "--presets", ",".join(map(str, PRESETS)), "--ir-gains", "8"], check=True)
     exe = work / "stock_parity_host_test"
-    mods = [FW / "src" / "dsp" / f for f in ("amp.c", "tone.c", "cab.c")]
+    mods = [FW / "src" / "dsp" / f for f in ("amp.c", "tone.c", "cab.c")] + STOCK_SRC
     # -ffp-contract=off: the stock uses separate multiply and add (vmla), no FMA
     subprocess.run(
-        ["cc", "-O2", "-Wall", "-Wextra", "-ffp-contract=off", "-DFB200_STOCK_DSP=1",
+        ["cc", "-O2", "-Wall", "-Wextra", "-ffp-contract=off",
          "-I", str(FW / "src"), str(FW / "tests" / "stock_parity_host_test.c"),
-         *map(str, mods), str(data_c), *cmsis_dsp_args(), "-lm", "-o", str(exe)],
+         *map(str, mods), *cmsis_dsp_args(), "-lm", "-o", str(exe)],
         check=True,
     )
-    return work, exe, json.loads((work / "manifest.json").read_text())
+    run = partial(subprocess.run, env={**os.environ, "FB200_STOCK_BLOB": str(blob)}, check=True)
+    return work, run, exe, json.loads((work / "manifest.json").read_text())
 
 
 def f32(path: Path) -> array:
@@ -85,13 +88,13 @@ def err_db(ours, ref) -> tuple[float, float]:
 def test_amp_tone_cab_matches_stock(stock, preset):
     """amp + tone stack against the stock amp's own output tap, and amp + tone
     + cab against the stock output (which runs the cab 16 samples later)."""
-    work, exe, manifest = stock
+    work, run, exe, manifest = stock
     p = next(r for r in manifest["presets"] if r["preset"] == preset)
     assert p["amp_on"] == 1 and p["cab_on"] == 1, p
     out = work / f"p{preset}.ours"
-    subprocess.run([str(exe), "render", str(work / f"p{preset}.in.f32"), str(out),
-                    *(str(p[k]) for k in ("model", "gain", "bass", "mid", "midfreq",
-                                          "treble", "volume", "cab"))], check=True)
+    run([str(exe), "render", str(work / f"p{preset}.in.f32"), str(out),
+         *(str(p[k]) for k in ("model", "gain", "bass", "mid", "midfreq", "treble", "volume",
+                               "cab"))])
     n = p["samples"]
     amp_ref, amp_ours = f32(work / f"p{preset}.amp.f32"), f32(Path(f"{out}.amp.f32"))
     ref = f32(work / f"p{preset}.stock.f32")[CAB_LATENCY:]
@@ -108,9 +111,8 @@ def test_amp_tone_cab_matches_stock(stock, preset):
 
 
 def test_user_ir_gain_matches_stock(stock):
-    work, exe, manifest = stock
-    subprocess.run([str(exe), "irgain", str(work / "irs.f32"), str(work / "irs.txt")],
-                   check=True)
+    work, run, exe, manifest = stock
+    run([str(exe), "irgain", str(work / "irs.f32"), str(work / "irs.txt")])
     ours = [float(v) for v in (work / "irs.txt").read_text().split()]
     ref = manifest["ir_gains"]
     assert len(ours) == len(ref) == 9
