@@ -79,6 +79,7 @@ SRC_C := \
   src/system_clock.c src/usb_descriptors.c src/compat/stubs.c src/led.c \
   src/dsp/dsp.c src/dsp/math.c src/dsp/gain.c src/dsp/testgen.c \
   src/dsp/conv.c src/dsp/biquad.c src/dsp/gate.c \
+  src/dsp/drums.c src/dsp/tuner.c \
   src/debug/log_fmt.c src/debug/cdc_log.c src/debug/console.c \
   src/debug/selfupdate.c src/debug/recovery.c src/debug/regs.c \
   src/audio/i2c_probe.c \
@@ -125,6 +126,24 @@ endif
 
 ifneq ($(VARIANT),recovery)
 SRC_C += $(foreach g,$(DSP_GROUPS),$(DSP_SRC)/$(g)/$(g).c)
+endif
+
+# Optional stock drum rhythms. Vendor data: generated from the user's own
+# stock image into the (gitignored) build directory, never committed.
+#   make build STOCK_MR=../../fb200-stock.mr        (FB200_STOCK_DRUMS=1 implied)
+# Without it the drum machine builds and stays silent (drums_init() == -1).
+STOCK_MR          ?=
+FB200_STOCK_DRUMS ?= $(if $(STOCK_MR),1,)
+STOCK_DRUMS_C     := build/stock_drums_data.c
+ifeq ($(FB200_STOCK_DRUMS)$(filter recovery,$(VARIANT)),1)
+ifeq ($(STOCK_MR),)
+$(error FB200_STOCK_DRUMS=1 needs STOCK_MR=<path to the stock .mr>)
+endif
+SRC_C  += $(STOCK_DRUMS_C)
+CFLAGS += -DFB200_STOCK_DRUMS
+$(STOCK_DRUMS_C): $(STOCK_MR) ../tools/gen_stock_drums.py
+	@mkdir -p $(dir $@)
+	python3 ../tools/gen_stock_drums.py $(STOCK_MR) $@
 endif
 SRC_S := src/stage2.S
 OBJS  := $(patsubst %,$(TARGET)/%.o,$(SRC_C) $(SRC_S))
