@@ -413,6 +413,7 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "fwinfo")) fw_info();
     else if (streq(argv[0], "fwtest")) fw_test();
     else if (streq(argv[0], "crumbs")) crumbs_print();
+    else if (streq(argv[0], "fwbegin")) cmd_fwbegin(0, argv[1], argv[2]);
     else if (streq(argv[0], "fwrec")) cmd_fwbegin(1, argv[1], argv[2]);
     else if (streq(argv[0], "recovery")) {
 #ifdef FB200_RECOVERY

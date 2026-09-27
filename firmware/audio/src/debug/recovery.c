@@ -12,12 +12,16 @@
 #define CRUMB             ((volatile uint32_t *)0x400F8028u)
 #define CRUMB_FAULT       0xFA000000u
 #define CRUMB_REQUEST     0x5EC0FEEDu
+/* Written by the app once it runs; every clean exit (reset, recovery
+ * request, fault) overwrites it. Still present at boot = the app died without
+ * a word: watchdog after a hang. (WDOG1 WRSR was tried: its timeout flag
+ * survives later software resets and gave false positives.) */
+#define CRUMB_ALIVE       0xA11FE000u
 
 #define SRC_SRSR          (*(volatile uint32_t *)0x400F8008u)
 #define SRSR_WDOG         (1u << 4)
 #define WDOG1_WCR         (*(volatile uint16_t *)0x400B8000u)
 #define WDOG1_WSR         (*(volatile uint16_t *)0x400B8002u)
-#define WDOG1_WRSR        (*(volatile uint16_t *)0x400B8004u)
 #define WDOG1_WMCR        (*(volatile uint16_t *)0x400B8008u)
 #define WDOG_TIMEOUT_HALF_S 15u       /* (15 + 1) * 0.5 s = 8 s */
 
@@ -27,7 +31,10 @@
 
 extern uint8_t __copier_start__[], __copier_end__[];
 
-static uint32_t snap[4];
+static uint32_t snap[4], boot_srsr;
+
+void crumb_alive(void) { CRUMB[0] = CRUMB_ALIVE; }
+void crumb_clear(void) { CRUMB[0] = 0; }
 
 void wdog_feed(void)
 {
@@ -44,8 +51,8 @@ static void wdog_start(void)
 
 void crumbs_print(void)
 {
-    log_printf("crumbs %08x %08x %08x %08x\r\n", (unsigned)snap[0], (unsigned)snap[1],
-               (unsigned)snap[2], (unsigned)snap[3]);
+    log_printf("crumbs %08x %08x %08x %08x srsr %08x\r\n", (unsigned)snap[0],
+               (unsigned)snap[1], (unsigned)snap[2], (unsigned)snap[3], (unsigned)boot_srsr);
     if ((snap[0] & 0xFF000000u) == CRUMB_FAULT)
         log_printf("  fault: IPSR=%u CFSR=%08x HFSR=%08x PC=%08x\r\n",
                    (unsigned)(snap[0] & 0x1FFu), (unsigned)snap[1], (unsigned)snap[2],
@@ -174,10 +181,11 @@ const char *recovery_boot(void)
     const char *why = 0;
     snapshot_crumbs();
     uint32_t srsr = SRC_SRSR;
+    boot_srsr = srsr;
     SRC_SRSR = srsr;   /* W1C: make the next reset's cause readable */
     if ((snap[0] & 0xFF000000u) == CRUMB_FAULT) return "the app faulted (see crumbs)";
     if (snap[0] == CRUMB_REQUEST) return "requested by the app";
-    if ((srsr & SRSR_WDOG) || (WDOG1_WRSR & 0x2u)) return "watchdog reset (app hung)";
+    if (snap[0] == CRUMB_ALIVE || (srsr & SRSR_WDOG)) return "the app stopped without a clean reset (hang/watchdog)";
     if (!slot_valid(&why)) return why;
     recovery_launch_app(0);
 }
