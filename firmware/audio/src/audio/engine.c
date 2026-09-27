@@ -24,6 +24,10 @@
 #include "dsp/tuner.h"
 #include "dsp/amp.h"
 #include "dsp/cab.h"
+#include "dsp/gate.h"
+#include "dsp/comp.h"
+#include "dsp/mod.h"
+#include "dsp/reverb.h"
 #include "preset/preset.h"
 #include "fsl_sai.h"
 #include "tusb.h"
@@ -99,7 +103,11 @@ static bool s_tuner_on;
 /* the stock chain (docs/PARITY.md M2): amp (+ tone stack) -> cab, mono */
 static amp_t s_amp;
 static cab_t s_cab;
-static bool s_amp_en, s_cab_en;
+static gate_t s_gate;
+static comp_t s_comp;
+static mod_t s_mod;
+static reverb_t s_rev;
+static bool s_amp_en, s_cab_en, s_gate_en, s_comp_en, s_mod_en, s_rev_en;
 static int s_amp_model = -1, s_cab_type = -1;
 static float s_master = 1.0f, s_master_target = 1.0f;
 static float s_ir[CAB_TAPS];
@@ -126,6 +134,10 @@ void engine_init(void)
     DWT->CYCCNT = 0;
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
     cab_init(&s_cab);
+    gate_init(&s_gate, (float)AUDIO_FS);
+    comp_init(&s_comp, (float)AUDIO_FS);
+    mod_init(&s_mod, (float)AUDIO_FS);
+    reverb_init(&s_rev, (float)AUDIO_FS);
 #ifdef FB200_STOCK_DRUMS
     drums_init(&s_drums, (const void *)DRUMS_BANK_ADDR, &stock_drums_data);
 #else
@@ -160,6 +172,17 @@ void engine_apply_preset(const preset_t *p, unsigned master)
         else if (cab >= 11 && cab <= 19) load_user_ir((unsigned)(cab - 11));
         s_cab_type = cab;
     }
+    s_gate_en = pget(p, P_GATE_EN) != 0;
+    gate_set_params(&s_gate, pget(p, P_GATE_THRESH));
+    s_comp_en = pget(p, P_COMP_EN) != 0;
+    comp_set_params(&s_comp, pget(p, P_COMP_TYPE), pget(p, P_COMP_ATTACK), pget(p, P_COMP_THRESH),
+                    pget(p, P_COMP_RATIO), pget(p, P_COMP_LEVEL));
+    s_mod_en = pget(p, P_MOD_EN) != 0;
+    mod_set_params(&s_mod, pget(p, P_MOD_TYPE), pget(p, P_MOD_P1), pget(p, P_MOD_P2),
+                   pget(p, P_MOD_P3), pget(p, P_MOD_P4));
+    s_rev_en = pget(p, P_REV_EN) != 0;
+    reverb_set_params(&s_rev, pget(p, P_REV_TYPE), pget(p, P_REV_LEVEL), pget(p, P_REV_DECAY),
+                      pget(p, P_REV_AE), pget(p, P_REV_A8));
     s_master_target = (float)(master > 100u ? 100u : master) * 0.01f;
 }
 bool engine_tuner_poll(tuner_result_t *out) { return tuner_poll(&s_tuner, out) != 0; }
@@ -291,13 +314,20 @@ void engine_task(void)
     for (size_t i = 0; i < n; i++) x[i] = s_block.data[0][i] + s_block.data[1][i];
     tuner_feed(&s_tuner, x, n);
     for (size_t i = 0; i < n; i++) x[i] *= 0.9999702f;
+    /* stock chain (ITCM 0x7b60): gate -> comp -> amp -> cab -> mod -> reverb */
+    if (s_gate_en) gate_process(&s_gate, x, (unsigned)n);
+    if (s_comp_en) comp_process(&s_comp, x, (unsigned)n);
     if (s_amp_en) amp_process(&s_amp, x, (unsigned)n);
     if (s_cab_en) cab_process(&s_cab, x, (unsigned)n);
+    if (s_mod_en) mod_process(&s_mod, x, (unsigned)n);
+    float xl[ENGINE_FRAMES], xr[ENGINE_FRAMES];
+    if (s_rev_en) reverb_process(&s_rev, x, xl, xr, (unsigned)n);   /* mono in, L/R out */
+    else { memcpy(xl, x, n * sizeof x[0]); memcpy(xr, x, n * sizeof x[0]); }
     for (size_t i = 0; i < n; i++) {
         s_master += 0.001f * (s_master_target - s_master);   /* stock: smoothed master */
-        float y = s_tuner_on ? 0.0f : x[i] * s_master;        /* stock: tuning is silent */
-        s_block.data[0][i] = y;
-        s_block.data[1][i] = y;
+        float g = s_tuner_on ? 0.0f : s_master;               /* stock: tuning is silent */
+        s_block.data[0][i] = xl[i] * g;
+        s_block.data[1][i] = xr[i] * g;
     }
     gain_process(&s_gain, &s_block, n);                         /* console `gain` */
     if (s_testgen.mode != TESTGEN_OFF && !s_testgen_in) {
