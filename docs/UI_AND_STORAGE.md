@@ -97,7 +97,14 @@ wrong, its knob-LED pairing right):
   is master volume (k13, no LED).
 - 40 RGB LEDs (WS2812-type, G-R-B): `GPIO_B0_02` ALT4 = FLEXIO2_D02, SDK
   FlexIO UART at 6.6 Mbaud + eDMA, 24 UART chars per LED (0xC0 = 0,
-  0xFC = 1), 25 % brightness.
+  0xFC = 1), 25 % brightness (the stock sends every byte >> 2).
+  **They are rings inside the 4 footswitch domes, 10 per dome** (camera,
+  2026-09-28): LEDs 0-9 = footswitch D (rightmost), 10-19 = C, 20-29 = B,
+  30-39 = A (leftmost). The order inside a ring is not mapped: each ring is
+  driven as one colour. The white light bars on the panel are separate and
+  not driven by these LEDs. The stock code addresses switch A as LEDs 0-9
+  (the opposite order): see `docs/PARITY.md`. Behaviour (stock LED task
+  0x67e0, ours `ui/lightbar.c`): `docs/STOCK_FEATURES.md` "Light rings".
 - Status RGB LED: GPIO2_IO0/1/3 (`B0_00/01/03`), active low; battery on
   ADC channel 9 (`AD_B1_04`), charger sense GPIO1_IO19 (`AD_B1_03`).
 - GPIO2_IO30 (`B1_14`) toggles every 500 ms: heartbeat LED or external
@@ -155,7 +162,8 @@ Preset record (u16 LE fields): name[20] @0x00; module 0x80 enable/type
 
 Global settings: +0x00 "B1", +0x02 BLE name, +0x16 current preset, +0x17 BT
 on, +0x18 master volume, +0x1f stomp mode, +0x20 rhythm mode, +0x21 slot,
-+0x22 bank, +0x2d tuner.
++0x22 bank, +0x24 + slot light-ring colour, +0x28 + slot light-ring level,
++0x2d tuner.
 
 Factory reset writes defaults + 40 factory presets (20 named, 20 "EMPTY")
 when a magic is missing.
@@ -168,5 +176,5 @@ enter updater, 0xC9 rhythm mode, 0xFA ping (0xFB). See `PROTOCOL.md`.
 ## Open (needs the pedal and a person)
 
 Physical knob/LED positions, which footswitch is which, segment geometry and
-digit order, status LED colours, RGB LED count, roles of `B1_09/B1_11/
+digit order, status LED colours, the LED order inside a light ring, roles of `B1_09/B1_11/
 AD_B0_02/B1_14`, the BT module part and AT semantics.

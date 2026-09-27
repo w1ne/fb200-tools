@@ -45,7 +45,7 @@ No vendor bytes are copied here, only addresses, field offsets and behaviour.
 | Presets | 40 = 10 banks x 4 (A-D), 256 B each at F:0x71000 | [M] p.4, [D] §5 |
 | Factory presets | 20 named (Fat Bass ... Classic Spring) + 20 "EMPTY": all 40 are in the image (RAM `0x20004E40`, 40 x 0x100); the 20 EMPTY ones differ only in the module order field `0xbc` | [C], [D] |
 | Factory reset | app command `B2`; also at boot when a flash magic is missing (0x4a44). Routine 0x18fe0: writes the 40 presets, loads preset 0, default settings (`0x20004E00`, master volume 0), rhythm block `0,0,0,100,110`, erases the IR names/flags (F:0x87000, 0x88000) and writes "Empty" names, then applies `S+0x17` to the BT module. No front-panel reset | [D] PROTOCOL §5.1, [C], [M] (none documented) |
-| Save | hold **any** footswitch 1 s: saves the edit buffer to that switch's slot of the shown bank (in preset and live mode, not in tuner or rhythm mode); that slot becomes the current preset, the edit buffer is not reloaded. The 40-LED light bar blinks for 1 s (off 0-200, on 200-400, off, on 600-800, off), then the preset is written and `97`, `98`, `B0` go to BLE | [M] p.13, [C] save flag set with slot 0/1/2/3 at 0x9f12, 0xa17c, 0xa3e6, 0xa62c (tuner and rhythm checked first); save routine 0x67e0 |
+| Save | hold **any** footswitch 1 s: saves the edit buffer to that switch's slot of the shown bank (in preset and live mode, not in tuner or rhythm mode); that slot becomes the current preset, the edit buffer is not reloaded. That slot's light ring blinks for 1 s (all off 0-200, the normal ring 0x19414 200-400, off, on 600-800, off), then the preset is written and `97`, `98`, `B0` go to BLE | [M] p.13, [C] save flag set with slot 0/1/2/3 at 0x9f12, 0xa17c, 0xa3e6, 0xa62c (tuner and rhythm checked first); save routine 0x67e0 |
 | Save to another bank | BANK +/- (A+B, C+D) only moves the shown bank `S+0x22` and sets a browse flag; the edit buffer is kept. In preset mode the display flashes (133 ms on/off) and after 1666 ticks of the 1 kHz display tick (~1.7 s) the bank goes back to `S+0x16 / 4`; in live mode no flash, no timeout. A-D then load from the shown bank; a hold saves to it | [M] p.13, [C] 0x9f9c/0xa1f8 (request flags 0x20007640), 0x1bc0c (bank step, no load), 0x19af4 (flash, timeout) |
 
 ## 3. Front panel
@@ -58,8 +58,8 @@ No vendor bytes are copied here, only addresses, field offsets and behaviour.
 | Tuner | hold A+B in any mode; same again to exit | [M] p.15, [D] |
 | Rhythm (drum) mode | hold B+C until `d`. **A and B change the rhythm, C tapped twice or more sets the BPM (the light flashes the tempo), D starts/stops**; hold B+C again to leave. Every button sends `BA` | [M] p.14, [C] 0x9fec (A: pattern - 1, wraps to 39), 0xa2d6 (B: + 1, wraps to 0), 0xa54e (C: BPM = 60000 / ms since the last tap, 40..260; a gap over 3 s only restarts), 0xa714 (D: on/off) |
 | Knobs | 16, pickup: a knob acts once it reaches the stored value; its LED blinks until then; LED off when the module is off or in tuner mode | [M] p.13, [D] §2-3 |
-| Light bar | 40 RGB LEDs: footswitch status, colour set in the app, blinks on save, flashes the drum tempo | [M] p.6, p.13-14, [C] 0x67e0 (save blink over LEDs 0..39) |
-| Light-bar colours | probably `S+0x1b..0x1e` (4 values, one per footswitch, `B7`, > 72 -> 9); **no effect** on the sound | hypothesis; [E] |
+| Light rings | 40 RGB LEDs, a ring of 10 in each footswitch dome (the white bars on the panel are separate). LED task 0x67e0, in this order: save blink (above); tuner (`S+0x2d`): all off; rhythm mode (`S+0x20`): ring A red while switch A is held (GPIO2_IO24, 0x178e4), ring B red while B is held (GPIO3_IO13), ring C off for the first half of each beat and red for the second (1 kHz counter vs 30000 / BPM and 60000 / BPM, reset at the end of the beat), ring D red while the drums play; preset mode: all off except the current slot's ring (`S+0x21`) in its colour (0x19414); live mode: ring A purple `800080` while the reverb is on, B orange `FF6400` (mod), C red `FF0000` (amp or cab on), D green `00FF00` (comp) (0x6a94, colours at DTCM 0x20004a2c). Every byte is sent >> 2 (0x17d54: 25 % at most); the frame goes out only when it changed (0x6b08). Ring s = LEDs 10s..10s+9 in the stock code (A = 0-9) | [M] p.6, p.13-14, [C] |
+| Light-ring colours | per slot: colour index `S+0x24+slot`, level `S+0x28+slot` (default 0 and 100), set by `B0` bytes 11, 12 for the current slot. Colour 0x17908: palette at DTCM 0x2000766c `FF0000` red, `FF3300` orange, `FFFF00` yellow, `00FF00` green, `00FFFF` cyan, `0000FF` blue, `FF00FF` magenta, `FF0330` pink, `FFFFFF` white; index > 9 -> 8; index 9 reads the word after the table (dim red `420000`). Level: byte * (u8)(30 + level * 0.7) / 100 (level > 100 -> 100). `S+0x1b..0x1e` (`B7`) are not read by the LED code | [C] |
 | Status LED | green/yellow/red = battery level, red flashing = charge now, solid red = charging, solid green = full. The code turns the LED **off** while the charger sense (GPIO1_IO19) is high, so the charging colours must come from the charger chip | [M] p.6, [C] 0x1897c |
 | Test mode | boot with D held (L) | [D] §2 |
 
@@ -82,7 +82,7 @@ No vendor bytes are copied here, only addresses, field offsets and behaviour.
 | BLE app | "Flamma Manager": live edit, presets, drums, settings, cloud tones, light-bar colours | [M] p.4, p.17, [D] PROTOCOL §5 |
 | BT name | app `B3`, `AT+BD<name> Audio` / `AT+BM<name>`; re-sent at every boot | [D] §4 |
 | USB | USB-C: charge or OTG recording to a phone/PC; stock UAC1, 44.1 kHz, 2 in / 2 out; vendor HID for the PC editor (IR import, update) | [M] p.7, [D] |
-| OTG recording volume | "adjust via the app"; field not identified (candidates `S+0x24+slot`, `S+0x28+slot`, both **no effect** in the DSP callback) | [M] p.7, [E] |
+| OTG recording volume | "adjust via the app"; field not identified (`S+0x24+slot`, `S+0x28+slot` are the light-ring colour and level) | [M] p.7, [E] |
 | Firmware update | PC software: `C1` -> vendor DFU `0483:5703`; A+D at power-on | [D] PROTOCOL §8, BOOTLOADER |
 | Battery | 2000 mAh, ~6 h, charge ~2.5 h at 5 V/2 A; 4 levels (ADC9 thresholds at 0x188dc), level 4 while charging; a new level needs 100 equal readings; `BB` to the app when the level or the charger state changes (0x18a5e) | [M] p.22, [C], [D] |
 | Power-fail save | settings saved from the hold-up capacitors when ADC7 drops | [D] §3 |
@@ -100,13 +100,13 @@ No vendor bytes are copied here, only addresses, field offsets and behaviour.
 | 0x18 | master volume | | [D] |
 | 0x19 | global cab switch (0 forces the cab off) | 1 | [D] PROTOCOL §5.5 |
 | 0x1a | input gain index | 13 (0 dB) | [E] |
-| 0x1b-0x1e | unknown, probably light-bar colours; `0x1d` also indexes the input-gain table (0x18020) | 13 | [D], [C], hypothesis |
+| 0x1b-0x1e | unknown (not the light rings: the LED code does not read them); `0x1d` also indexes the input-gain table (0x18020) | 13 | [D], [C] |
 | 0x1f | live (stomp) mode | 0 | [D] |
 | 0x20 | rhythm mode | 0 | [D] |
 | 0x21, 0x22 | slot, bank | | [D] |
 | 0x23 | unknown (UI state, written in rhythm/live paths) | 0 | [C] |
-| 0x24-0x27 | per-slot byte, unknown | 0 | [D] |
-| 0x28-0x2b | per-slot level, unknown use | 100 | [D], [E] no effect |
+| 0x24-0x27 | light-ring colour per slot (palette index 0..9) | 0 (red) | [D], [C] 0x19414 |
+| 0x28-0x2b | light-ring level per slot (0..100 -> 30..100 %) | 100 | [D], [C] 0x17908 |
 | 0x2c | tuner calibration, A4 = 435 + v | 5 | [C] |
 | 0x2d | tuner on | 0 | [D], [E] |
 | 0x2e | tuner mute | 1 | [E] |
