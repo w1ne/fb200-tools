@@ -11,6 +11,7 @@
 #include "audio/usb_audio.h"
 #include "audio/codec.h"
 #include "led.h"
+#include "debug/recovery.h"
 
 extern int g_bss_writable;
 
@@ -26,14 +27,28 @@ __attribute__((noreturn)) void console_reboot(void)
     __builtin_unreachable();
 }
 
+#ifdef FB200_RECOVERY
+#define VARIANT "recovery"
+#else
+#define VARIANT "app"
+#endif
+
 void app_main(void)
 {
     cdc_log_init();
     console_init();
-    log_printf("fb200-audio 0.5.0-dev\r\n");
+#ifdef FB200_RECOVERY
+    /* Launches the app (never returns) unless something says stay. */
+    const char *stay = recovery_boot();
+#endif
+    log_printf("fb200-audio 0.6.0-dev " VARIANT "\r\n");
+#ifdef FB200_RECOVERY
+    log_printf("recovery: staying because %s\r\n", stay);
+#endif
     log_printf("bss_writable=%d - type 'help'\r\n", g_bss_writable);
     board_init();
     tusb_init();
+#ifndef FB200_RECOVERY
     i2c_probe_init();
     engine_init();
     led_init();
@@ -42,13 +57,16 @@ void app_main(void)
     if (!codec_ok) {
         engine_set_mute(true); /* start muted when the codec did not answer */
     }
+#endif
     log_printf("ready\r\n");
 
     uint32_t loops = 0;
     while (1) {
+        wdog_feed();
         tud_task();
         cdc_log_task();
         console_task();
+#ifndef FB200_RECOVERY
         usb_audio_task();
         engine_task();
         {
@@ -58,6 +76,7 @@ void app_main(void)
             led_set_streaming(spk_alt != 0 || mic_alt != 0);
         }
         led_task();
+#endif
         if (console_heartbeat_on() && ++loops >= 2000000u) {
             loops = 0;
             log_printf("hb\r\n");

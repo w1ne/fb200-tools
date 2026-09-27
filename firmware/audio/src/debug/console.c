@@ -1,11 +1,14 @@
 /* fb200-audio console. Commands (see `help`):
  *   help | stats | hb on|off | scan | dump [bus addr] | peek <addr> [len]
- *   poke <addr> <val> | crc <addr> <len> | fwinfo | fwbegin <len> <crc32>
- *   reset | reboot   (fwbegin: USB self-update, see selfupdate.h)
+ *   poke <addr> <val> | crc <addr> <len> | fwinfo | fwtest | crumbs
+ *   fwbegin|fwrec <len> <crc32> (USB self-update, see selfupdate.h)
+ *   recovery | boot (two-stage boot, see recovery.h) | crash | hang (app only)
+ *   reset | reboot
  * Addresses accept 0x.. hex or decimal. peek/poke are limited to RAM/flash
  * (peripheral access can stall a clock-gated block). */
 #include <stdint.h>
 #include <string.h>
+#include "fsl_device_registers.h"
 #include "tusb.h"
 #include "cdc_log.h"
 #include "console.h"
@@ -17,6 +20,7 @@
 #include "audio/engine.h"
 #include "led.h"
 #include "selfupdate.h"
+#include "recovery.h"
 
 extern int g_bss_writable;
 
@@ -56,6 +60,7 @@ static int mem_ok(uint32_t addr)
     return (addr < 0x400000u) ||                       /* ITCM/DTCM */
            (addr >= 0x20000000u && addr < 0x20300000u) ||   /* DTCM/OCRAM */
            (addr >= 0x400F8000u && addr < 0x400F9000u) ||   /* SRC (always on) */
+           (addr >= 0x401F4000u && addr < 0x401F4A00u) ||   /* OCOTP fuse shadows */
            (addr >= 0x401B8000u && addr < 0x401C8000u) ||   /* GPIO1-4 */
            (addr >= 0x60000000u && addr < 0x60800000u);     /* flash */
 }
@@ -94,10 +99,10 @@ static void cmd_help(void)
     log_printf("commands: help | stats | usb | sai | codec | creg <reg> [val] |\r\n"
                "          gain [db] | testgen off|sine|white|impulse [freq] | mute [on|off] |\r\n"
                "          meters on|off | x (TX underrun check) | led on|off|scan |\r\n"
-               "          ledpin <gpio> <pin> | src |\r\n"
-               "          hb on|off | scan | dump [bus addr] | peek <addr> [len] |\r\n"
-               "          dumpmem <addr> <len> | poke <addr> <val> | crc <addr> <len> |\r\n"
-               "          fwinfo | fwbegin <len> <crc32> | reset\r\n");
+               "          ledpin <gpio> <pin> | fwinfo | fwtest |\r\n"
+               "          fwbegin|fwrec <len> <crc32> | crumbs | recovery | boot |\r\n"
+               "          src | hb on|off | scan | dump [bus addr] | peek <addr> [len] |\r\n"
+               "          dumpmem <addr> <len> | poke <addr> <val> | crc <addr> <len> | reset\r\n");
 }
 
 static void cmd_crc(const char *a1, const char *a2)
@@ -113,21 +118,22 @@ static void cmd_crc(const char *a1, const char *a2)
                (unsigned)fw_crc32((const uint8_t *)addr, len));
 }
 
-static void cmd_fwbegin(const char *a1, const char *a2)
+static void cmd_fwbegin(int recovery, const char *a1, const char *a2)
 {
     int ok1, ok2;
     uint32_t len = parse_num(a1, &ok1);
     uint32_t crc = parse_num(a2, &ok2);
     if (!ok1 || !ok2) { log_printf("usage: fwbegin <len> <crc32>\r\n"); return; }
-    fw_begin(len, crc);
+    fw_begin(recovery, len, crc);
 }
 
 static void cmd_stats(void)
 {
-    engine_stats_t es;
-    engine_get_stats(&es);
     log_printf("bss_writable=%d heartbeat=%d line_len=%u\r\n",
                g_bss_writable, heartbeat_on, (unsigned)line_len);
+#ifndef FB200_RECOVERY
+    engine_stats_t es;
+    engine_get_stats(&es);
     log_printf("engine: gain=%d dB mute=%d drops=%lu inserts=%lu dma_errs=%lu\r\n",
                (int)engine_get_gain_db(), engine_get_mute() ? 1 : 0,
                (unsigned long)es.fifo_drops, (unsigned long)es.fifo_inserts,
@@ -135,8 +141,10 @@ static void cmd_stats(void)
     log_printf("meters: peak L=%d R=%d (x1000)\r\n",
                (int)(g_meter_peak[0] * 1000.0f),
                (int)(g_meter_peak[1] * 1000.0f));
+#endif
 }
 
+#ifndef FB200_RECOVERY
 static void cmd_usb(void)
 {
     uint32_t pf, cf, ovf, unf;
@@ -146,8 +154,10 @@ static void cmd_usb(void)
                (unsigned)spk_alt, (unsigned)mic_alt, (unsigned long)pf,
                (unsigned long)cf, (unsigned long)ovf, (unsigned long)unf);
 }
+#endif
 
 /* NAU88L21 register access: `creg <reg> [val]` (16-bit register, 16-bit data). */
+#ifndef FB200_RECOVERY
 static void cmd_creg(const char *a1, const char *a2)
 {
     int ok;
@@ -174,7 +184,9 @@ static void cmd_creg(const char *a1, const char *a2)
         }
     }
 }
+#endif
 
+#ifndef FB200_RECOVERY
 static void cmd_led(const char *a1, const char *a2)
 {
     (void)a2;
@@ -192,7 +204,9 @@ static void cmd_led(const char *a1, const char *a2)
                    led_scan_active() ? 1 : 0);
     }
 }
+#endif
 
+#ifndef FB200_RECOVERY
 static void cmd_ledpin(const char *a1, const char *a2)
 {
     int ok1, ok2;
@@ -205,7 +219,9 @@ static void cmd_ledpin(const char *a1, const char *a2)
     led_select((int)g, (int)pin);
     log_printf("led pin GPIO%ld_IO%ld selected\r\n", g, pin);
 }
+#endif
 
+#ifndef FB200_RECOVERY
 static void cmd_gain(const char *a1)
 {
     if (a1) {
@@ -222,7 +238,9 @@ static void cmd_gain(const char *a1)
     }
     log_printf("gain %d dB\r\n", (int)engine_get_gain_db());
 }
+#endif
 
+#ifndef FB200_RECOVERY
 static void cmd_testgen(const char *a1, const char *a2)
 {
     if (!a1) { log_printf("usage: testgen off|sine|white|impulse [freq]\r\n"); return; }
@@ -236,7 +254,9 @@ static void cmd_testgen(const char *a1, const char *a2)
     engine_set_testgen(mode, 0.5f, freq);
     log_printf("testgen %s %d Hz\r\n", a1, (int)freq);
 }
+#endif
 
+#ifndef FB200_RECOVERY
 static void cmd_mute(const char *a1)
 {
     bool on = !engine_get_mute();
@@ -247,19 +267,25 @@ static void cmd_mute(const char *a1)
     engine_set_mute(on);
     log_printf("mute %s\r\n", on ? "on" : "off");
 }
+#endif
 
+#ifndef FB200_RECOVERY
 static void cmd_meters(const char *a1)
 {
     engine_set_meters(!a1 || streq(a1, "on"));
     log_printf("meters %s\r\n", (!a1 || streq(a1, "on")) ? "on" : "off");
 }
+#endif
 
+#ifndef FB200_RECOVERY
 static void cmd_x(void)
 {
     engine_drop_tx(1500); /* ~2 s of TX blocks: underrun check */
     log_printf("x: TX refill paused for ~2 s\r\n");
 }
+#endif
 
+#ifndef FB200_RECOVERY
 static void cmd_sai(void)
 {
     uint32_t rxf, txf, rxb, txb, over, under;
@@ -268,7 +294,9 @@ static void cmd_sai(void)
                (unsigned long)rxf, (unsigned long)txf, (unsigned long)rxb,
                (unsigned long)txb, (unsigned long)over, (unsigned long)under);
 }
+#endif
 
+#ifndef FB200_RECOVERY
 static void cmd_codec(void)
 {
     uint16_t id = 0;
@@ -293,6 +321,7 @@ static void cmd_codec(void)
     }
     log_printf("\r\ncodec init: %s\r\n", codec_init() ? "ok" : "FAILED");
 }
+#endif
 
 static void cmd_peek(const char *a1, const char *a2)
 {
@@ -357,6 +386,7 @@ static void dispatch(char *cmd)
 
     if (streq(argv[0], "help")) cmd_help();
     else if (streq(argv[0], "stats")) cmd_stats();
+#ifndef FB200_RECOVERY
     else if (streq(argv[0], "usb")) cmd_usb();
     else if (streq(argv[0], "codec")) cmd_codec();
     else if (streq(argv[0], "sai")) cmd_sai();
@@ -368,6 +398,7 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "led")) cmd_led(argv[1], argv[2]);
     else if (streq(argv[0], "ledpin")) cmd_ledpin(argv[1], argv[2]);
     else if (streq(argv[0], "creg")) cmd_creg(argv[1], argv[2]);
+#endif
     else if (streq(argv[0], "hb")) {
         heartbeat_on = (argc > 1 && streq(argv[1], "on"));
         log_printf("heartbeat %s\r\n", heartbeat_on ? "on" : "off");
@@ -380,7 +411,42 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "poke")) cmd_poke(argv[1], argv[2]);
     else if (streq(argv[0], "crc")) cmd_crc(argv[1], argv[2]);
     else if (streq(argv[0], "fwinfo")) fw_info();
-    else if (streq(argv[0], "fwbegin")) cmd_fwbegin(argv[1], argv[2]);
+    else if (streq(argv[0], "fwtest")) fw_test();
+    else if (streq(argv[0], "crumbs")) crumbs_print();
+    else if (streq(argv[0], "fwrec")) cmd_fwbegin(1, argv[1], argv[2]);
+    else if (streq(argv[0], "recovery")) {
+#ifdef FB200_RECOVERY
+        log_printf("already in recovery (`boot` starts the app)\r\n");
+#else
+        log_printf("rebooting into recovery\r\n");
+        cdc_log_task();
+        recovery_request();
+#endif
+    }
+#ifndef FB200_RECOVERY
+    /* Recovery tests: a fault and a hang must both end in recovery. */
+    else if (streq(argv[0], "crash")) { log_printf("crash: udf\r\n"); cdc_log_task(); __builtin_trap(); }
+    else if (streq(argv[0], "hang")) {
+        log_printf("hang: irqs off, no watchdog feed\r\n");
+        cdc_log_task();
+        __disable_irq();
+        for (;;) {
+        }
+    }
+#endif
+#ifdef FB200_RECOVERY
+    else if (streq(argv[0], "boot")) {
+        const char *why;
+        if (!slot_valid(&why)) log_printf("boot refused: %s\r\n", why);
+        else {
+            log_printf("starting the app\r\n");
+            extern uint32_t tusb_time_millis_api(void);
+            uint32_t t0 = tusb_time_millis_api();
+            while (tusb_time_millis_api() - t0 < 300u) { tud_task(); cdc_log_task(); }
+            recovery_launch_app(1);
+        }
+    }
+#endif
     else if (streq(argv[0], "reset") || streq(argv[0], "reboot")) {
         log_printf("rebooting\r\n");
         cdc_log_task();

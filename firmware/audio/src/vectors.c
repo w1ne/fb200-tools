@@ -4,16 +4,23 @@
  * loader reaches stage2 at ITCM 0x4d6, not through this vector.
  * SysTick and the USB OTG IRQs resolve to the BSP handlers
  * (hw/bsp/imxrt/family.c) when those are linked; weak aliases keep the table
- * valid if they are ever dropped. Every other entry spins in a known handler
- * instead of faulting on an unexpected IRQ. */
+ * valid if they are ever dropped. Every other entry records a crumb and
+ * resets into recovery (src/debug/recovery.c). */
 #include <stdint.h>
 #include "fsl_device_registers.h"
 
 extern uint32_t _estack;
-void Default_Handler(void)
+/* Faults and unexpected IRQs record what happened in SRC_GPR (console
+ * `crumbs`) and reset; recovery then stays on the USB console instead of
+ * relaunching the app (src/debug/recovery.c). */
+__attribute__((naked)) void Default_Handler(void)
 {
-    for (;;) {
-    }
+    __asm volatile(
+        "tst lr, #4\n"
+        "ite eq\n"
+        "mrseq r0, msp\n"
+        "mrsne r0, psp\n"
+        "b fault_record\n");
 }
 
 void SysTick_Handler(void) __attribute__((weak, alias("Default_Handler")));

@@ -10,7 +10,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 FW = ROOT / "firmware" / "audio"
-ELF = FW / "build" / "fb200-audio.elf"
+ELF = FW / "build" / "fb200-app.elf"
 
 pytestmark = pytest.mark.skipif(
     any(shutil.which(t) is None for t in ("arm-none-eabi-gcc", "make")),

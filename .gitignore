@@ -11,3 +11,5 @@ build/
 
 # fetched firmware dependencies
 **/.deps/
+.deps
+**/.deps
