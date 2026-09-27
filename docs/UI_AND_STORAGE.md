@@ -77,7 +77,7 @@ wrong, its knob-LED pairing right):
 | AMP | k2 | amp model 1-10 (+0x2e) | 3 |
 | LEVEL | k1 | comp level (+0x1e) | 6 |
 | THRESH | k0 | comp threshold (+0x1a) | 7 |
-| (gate) | k3 | gate threshold (+0x60) | 8 |
+| GATE | k3 | gate threshold (+0x60) | 8 |
 
 ## 3. LEDs
 

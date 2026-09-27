@@ -39,7 +39,7 @@ static const knob_map_t kKnob[KNOB_COUNT] = {
     [2] = {3, M_AMP, P_AMP_MODEL, 10, 1},     /* AMP model 1..10 */
     [1] = {6, M_COMP, P_COMP_LEVEL, 0},       /* LEVEL (compressor) */
     [0] = {7, M_COMP, P_COMP_THRESH, 0},      /* THRESH */
-    [3] = {8, M_GATE, P_GATE_THRESH, 0},      /* GATE */
+    [3] = {8, M_GATE, P_GATE_THRESH, 0},      /* GATE (label confirmed) */
 };
 static const uint8_t kModuleEnable[M_NONE] = {P_GATE_EN, P_COMP_EN, P_AMP_EN, P_CAB_EN,
                                               P_MOD_EN, P_REV_EN};
