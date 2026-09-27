@@ -77,7 +77,8 @@ SRC_C := \
   src/startup.c src/vectors.c src/main.c src/memfuncs.c \
   src/system_clock.c src/usb_descriptors.c src/compat/stubs.c src/led.c \
   src/dsp/dsp.c src/dsp/math.c src/dsp/gain.c src/dsp/testgen.c \
-  src/dsp/conv.c src/dsp/biquad.c src/dsp/gate.c \
+  src/dsp/conv.c src/dsp/biquad.c src/dsp/detector.c src/dsp/gate.c src/dsp/comp.c \
+  src/dsp/mod.c src/dsp/reverb.c \
   src/debug/log_fmt.c src/debug/cdc_log.c src/debug/console.c \
   src/debug/selfupdate.c src/debug/recovery.c src/debug/regs.c \
   src/audio/i2c_probe.c \

@@ -40,4 +40,31 @@ static inline float dsp_smooth_next(dsp_smooth_t *s)
     s->current += s->coeff * (s->target - s->current);
     return s->current;
 }
+
+/* The stock knob smoother (FB200 callback 0x17d8c): every 3rd sample
+ * y = t * a + y * b in float, (a, b) = (0.01, 0.99) or (0.001, 0.999).
+ * Same arithmetic as the stock, so it settles on the same float (which is not
+ * exactly t). The first set after init snaps. */
+typedef struct { float y, t, a, b; unsigned n; int fresh; } dsp_knob_t;
+
+static inline void dsp_knob_init(dsp_knob_t *k, float a, float b)
+{
+    *k = (dsp_knob_t){ .a = a, .b = b, .fresh = 1 };
+}
+
+static inline void dsp_knob_set(dsp_knob_t *k, float t)
+{
+    k->t = t;
+    if (k->fresh) k->y = t;
+    k->fresh = 0;
+}
+
+static inline float dsp_knob_next(dsp_knob_t *k)
+{
+    if (++k->n >= 3) {
+        k->n = 0;
+        k->y = k->t * k->a + k->y * k->b;
+    }
+    return k->y;
+}
 #endif

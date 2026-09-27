@@ -48,9 +48,9 @@ def test_dsp_host_suite():
 
 
 def test_dsp_blocks_suite():
-    """Convolver vs brute-force FIR, RBJ biquads vs analytic response, gate."""
+    """Convolver vs brute-force FIR, RBJ biquads vs analytic response."""
     OUT_BLOCKS.parent.mkdir(parents=True, exist_ok=True)
-    blocks = [FW / "src" / "dsp" / f for f in ("conv.c", "biquad.c", "gate.c", "math.c")]
+    blocks = [FW / "src" / "dsp" / f for f in ("conv.c", "biquad.c", "math.c")]
     subprocess.run(
         ["cc", "-O2", "-Wall", "-Wextra", "-I", str(FW / "src"),
          str(FW / "tests" / "dsp_blocks_host_test.c"), *map(str, blocks), *cmsis_dsp_args(),
@@ -61,6 +61,24 @@ def test_dsp_blocks_suite():
     assert result.returncode == 0, result.stdout + result.stderr
     assert "dsp blocks host tests OK" in result.stdout
     assert "conv 2048 taps" in result.stdout
+
+
+OUT_FX = FW / "build" / "fx_host_test"
+
+
+def test_fx_suite():
+    """Stock-effect ports: behaviour at 44.1 and 48 kHz (parity: test_fx_parity.py)."""
+    OUT_FX.parent.mkdir(parents=True, exist_ok=True)
+    fx = [FW / "src" / "dsp" / f for f in ("detector.c", "gate.c", "comp.c", "mod.c", "reverb.c", "math.c")]
+    subprocess.run(
+        ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-I", str(FW / "src"),
+         str(FW / "tests" / "fx_host_test.c"), *map(str, fx), *cmsis_dsp_args(),
+         "-lm", "-o", str(OUT_FX)],
+        check=True,
+    )
+    result = subprocess.run([str(OUT_FX)], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "fx host tests OK" in result.stdout
 
 
 def test_engine_drift_suite():
