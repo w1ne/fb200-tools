@@ -25,13 +25,12 @@ import argparse
 import struct
 import sys
 import zlib
-from dataclasses import replace
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from fb200.firmware import MrBlock, MrFile  # noqa: E402
+from fb200.firmware import MrBlock, MrFile
 
 BLOCK0_SIZE = 0x31000
 REC_SIZE = 0x10000

@@ -21,6 +21,7 @@ extern int g_bss_writable;
 __attribute__((noreturn)) void console_reboot(void)
 {
     crumb_clear();   /* a deliberate reset is not a hang */
+    log_flush_ms(300);
     tud_disconnect();
     for (volatile uint32_t i = 0; i < 4000000u; i++) {
     }

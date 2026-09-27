@@ -297,6 +297,64 @@ def _cmd_fw_flash(args) -> int:
     return 0
 
 
+def _cmd_console(args) -> int:
+    from fb200 import console
+
+    with console.Console(args.port) as con:
+        if not args.commands:
+            return console.interactive(con)
+        for cmd in args.commands:
+            out = con.run(cmd, max_s=args.timeout)
+            if out:
+                print(out)
+    return 0
+
+
+def _cmd_crash(args) -> int:
+    import re
+    import subprocess
+
+    from fb200 import console
+
+    with console.Console(args.port) as con:
+        dump = con.run("crashdump")
+    print(dump)
+    if not args.elf or dump.startswith("no crash dump"):
+        return 0
+    regs = dict(re.findall(r"\b(PC|LR)=([0-9a-f]{8})", dump))
+    stack = [int(w, 16) for line in dump.splitlines() if line.strip().startswith("[sp+")
+             for w in line.split("]")[1].split()]
+    # ITCM code lives below 0x20000; a return address has the Thumb bit set.
+    cands = [("PC", int(regs.get("PC", "0"), 16)), ("LR", int(regs.get("LR", "0"), 16))]
+    cands += [(f"stack[{i}]", w) for i, w in enumerate(stack) if w & 1 and 0x400 <= w < 0x20000]
+    print("\nsymbolized (stack entries are return-address candidates):")
+    for label, addr in cands:
+        if not 0x400 <= addr < 0x20000:
+            continue
+        out = subprocess.run(["arm-none-eabi-addr2line", "-fpC", "-e", args.elf, hex(addr & ~1)],
+                             capture_output=True, text=True, check=False).stdout.strip()
+        print(f"  {label:>10} {addr:08x}  {out}")
+    return 0
+
+
+def _cmd_update(args) -> int:
+    from fb200 import console
+    from fb200.firmware import MrFile
+
+    image = Path(args.file)
+    if args.target == "block0":
+        data = MrFile.from_path(image).blocks[0].data
+    else:
+        data = image.read_bytes()
+    stock = MrFile.from_path(args.stock).blocks[0].data
+    with console.Console(args.port, echo=(lambda line: print("  <", line)) if args.verbose else None) as con:
+        res = console.update(con, args.target, data, stock, reset=not args.no_reset,
+                             force=args.force)
+    print(f"{res.target}: {res.size} bytes crc {res.crc:08x} written in {res.seconds:.1f}s"
+          + ("" if args.no_reset else "; reset sent"))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fb200", description="Tools for the FLAMMA FB200 pedal")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -370,6 +428,30 @@ def build_parser() -> argparse.ArgumentParser:
                          help="assume the pedal is already in update mode")
     p_flash.set_defaults(func=_cmd_fw_flash)
 
+    p_con = sub.add_parser("console", help="open-firmware USB console (interactive, or run commands)")
+    p_con.add_argument("commands", nargs="*", help="commands to run; none = interactive")
+    p_con.add_argument("--port", help="CDC device (default: /dev/cu.usbmodemAUDIO*)")
+    p_con.add_argument("--timeout", type=float, default=5.0,
+                       help="max seconds to collect each command's output")
+    p_con.set_defaults(func=_cmd_console)
+
+    p_crash = sub.add_parser("crash", help="read the last crash dump (survives reset); symbolize with --elf")
+    p_crash.add_argument("--elf", help="the ELF that crashed, e.g. firmware/audio/build/fb200-app.elf")
+    p_crash.add_argument("--port")
+    p_crash.set_defaults(func=_cmd_crash)
+
+    p_up = sub.add_parser("update", help="flash the open firmware over its USB console (no A+D)")
+    p_up.add_argument("target", choices=["app", "recovery", "block0"],
+                      help="app = .slot, recovery = recovery .bin, block0 = migration from a .mr")
+    p_up.add_argument("file")
+    p_up.add_argument("--port")
+    p_up.add_argument("--stock", default="fb200-stock.mr",
+                      help="stock .mr (supplies the vendor loader bytes for the mapping check)")
+    p_up.add_argument("--no-reset", action="store_true")
+    p_up.add_argument("--force", action="store_true", help="skip the mapping check")
+    p_up.add_argument("-v", "--verbose", action="store_true", help="show the console dialogue")
+    p_up.set_defaults(func=_cmd_update)
+
     return parser
 
 
@@ -378,6 +460,9 @@ def main(argv=None) -> int:
     try:
         return args.func(args)
     except Fb200Error as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except OSError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

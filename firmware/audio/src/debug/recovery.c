@@ -1,5 +1,6 @@
 /* Two-stage boot, crumbs and the watchdog. See recovery.h. */
 #include <stdint.h>
+#include <stddef.h>
 #include "fsl_device_registers.h"
 #include "tusb.h"
 #include "cdc_log.h"
@@ -42,12 +43,14 @@ void wdog_feed(void)
     WDOG1_WSR = 0xAAAAu;
 }
 
+#ifdef FB200_RECOVERY
 static void wdog_start(void)
 {
     WDOG1_WMCR = 0;   /* power-down counter off */
     WDOG1_WCR = (uint16_t)((WDOG_TIMEOUT_HALF_S << 8) | (1u << 5) | (1u << 4) | (1u << 2));
     wdog_feed();
 }
+#endif
 
 void crumbs_print(void)
 {
@@ -64,9 +67,48 @@ static void snapshot_crumbs(void)
     for (int i = 0; i < 4; i++) { snap[i] = CRUMB[i]; CRUMB[i] = 0; }
 }
 
-/* Called from Default_Handler with the stacked exception frame. */
-__attribute__((noreturn, used)) void fault_record(const uint32_t *frame)
+/* Full crash dump in DTCM below our .bss (0x20018B44). Measured on the
+ * pedal: 0x20000100..0x2000C000 and 0x20017000.. survive a warm reset;
+ * OCRAM and 0x20012000 (next to the vendor bootloader's 0x2001xxxx
+ * handshake slots) do not, and neither does anything from 0x20050000. */
+#define DUMP_ADDR    0x20008000u
+#define DUMP_MAGIC   0xC0A5D00Du
+#define DUMP_STACK   32u
+#define STACK_TOP    0x20058000u
+
+typedef struct {
+    uint32_t magic, ipsr, exc_return, sp;
+    uint32_t r0, r1, r2, r3, r12, lr, pc, xpsr;
+    uint32_t cfsr, hfsr, mmfar, bfar, afsr, count;
+    uint32_t stack[DUMP_STACK];
+    uint32_t crc;
+} crash_dump_t;
+
+#define DUMP ((volatile crash_dump_t *)DUMP_ADDR)
+
+static uint32_t dump_crc(void)
 {
+    return fw_crc32((const uint8_t *)DUMP_ADDR, offsetof(crash_dump_t, crc));
+}
+
+/* Called from Default_Handler with the stacked frame and EXC_RETURN. */
+__attribute__((noreturn, used)) void fault_record(const uint32_t *frame, uint32_t exc_return)
+{
+    uint32_t count = (DUMP->magic == DUMP_MAGIC && DUMP->crc == dump_crc()) ? DUMP->count + 1u : 1u;
+    DUMP->magic = DUMP_MAGIC;
+    DUMP->ipsr = __get_IPSR();
+    DUMP->exc_return = exc_return;
+    DUMP->sp = (uint32_t)frame;
+    DUMP->r0 = frame[0]; DUMP->r1 = frame[1]; DUMP->r2 = frame[2]; DUMP->r3 = frame[3];
+    DUMP->r12 = frame[4]; DUMP->lr = frame[5]; DUMP->pc = frame[6]; DUMP->xpsr = frame[7];
+    DUMP->cfsr = SCB->CFSR; DUMP->hfsr = SCB->HFSR;
+    DUMP->mmfar = SCB->MMFAR; DUMP->bfar = SCB->BFAR; DUMP->afsr = SCB->AFSR;
+    DUMP->count = count;
+    const uint32_t *st = frame + 8;   /* the caller's stack above the frame */
+    for (uint32_t i = 0; i < DUMP_STACK; i++)
+        DUMP->stack[i] = ((uint32_t)(st + i) < STACK_TOP) ? st[i] : 0xDEADBEEFu;
+    DUMP->crc = dump_crc();
+    SCB_CleanDCache();
     CRUMB[0] = CRUMB_FAULT | __get_IPSR();
     CRUMB[1] = SCB->CFSR;
     CRUMB[2] = SCB->HFSR;
@@ -74,9 +116,34 @@ __attribute__((noreturn, used)) void fault_record(const uint32_t *frame)
     NVIC_SystemReset();
 }
 
+void crashdump_print(void)
+{
+    if (DUMP->magic != DUMP_MAGIC || DUMP->crc != dump_crc()) {
+        log_printf("no crash dump\r\n");
+        return;
+    }
+    log_printf("crash #%u: IPSR=%u EXC_RETURN=%08x SP=%08x\r\n", (unsigned)DUMP->count,
+               (unsigned)DUMP->ipsr, (unsigned)DUMP->exc_return, (unsigned)DUMP->sp);
+    log_printf("  PC=%08x LR=%08x xPSR=%08x\r\n", (unsigned)DUMP->pc, (unsigned)DUMP->lr,
+               (unsigned)DUMP->xpsr);
+    log_printf("  R0=%08x R1=%08x R2=%08x R3=%08x R12=%08x\r\n", (unsigned)DUMP->r0,
+               (unsigned)DUMP->r1, (unsigned)DUMP->r2, (unsigned)DUMP->r3, (unsigned)DUMP->r12);
+    log_printf("  CFSR=%08x HFSR=%08x MMFAR=%08x BFAR=%08x AFSR=%08x\r\n",
+               (unsigned)DUMP->cfsr, (unsigned)DUMP->hfsr, (unsigned)DUMP->mmfar,
+               (unsigned)DUMP->bfar, (unsigned)DUMP->afsr);
+    for (uint32_t i = 0; i < DUMP_STACK; i += 8) {
+        log_printf("  [sp+%02x]", (unsigned)(0x20u + i * 4u));
+        for (uint32_t j = 0; j < 8; j++) log_printf(" %08x", (unsigned)DUMP->stack[i + j]);
+        log_printf("\r\n");
+    }
+}
+
+void crashdump_clear(void) { DUMP->magic = 0; }
+
 void recovery_request(void)
 {
     CRUMB[0] = CRUMB_REQUEST;
+    log_flush_ms(300);
     tud_disconnect();
     for (volatile uint32_t i = 0; i < 4000000u; i++) {
     }

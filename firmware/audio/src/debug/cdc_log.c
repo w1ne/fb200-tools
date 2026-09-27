@@ -4,6 +4,8 @@
 #include "cdc_log.h"
 #include "log_fmt.h"
 
+extern uint32_t tusb_time_millis_api(void);
+
 static char ring[16384];
 static volatile size_t head, tail;
 
@@ -28,6 +30,23 @@ void log_printf(const char *fmt, ...)
     va_end(ap);
     if (n > sizeof buf - 1) n = sizeof buf - 1;
     cdc_log_write(buf, n);
+}
+
+void log_puts(const char *s)
+{
+    size_t n = 0;
+    while (s[n]) n++;
+    cdc_log_write(s, n);
+}
+
+/* Push queued output to the host before a deliberate reset or detach. */
+void log_flush_ms(uint32_t ms)
+{
+    uint32_t t0 = tusb_time_millis_api();
+    while (tusb_time_millis_api() - t0 < ms) {
+        tud_task();
+        cdc_log_task();
+    }
 }
 
 void cdc_log_task(void)

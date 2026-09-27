@@ -21,6 +21,7 @@
 #include "led.h"
 #include "selfupdate.h"
 #include "recovery.h"
+#include "regs.h"
 
 extern int g_bss_writable;
 
@@ -96,13 +97,58 @@ static void cmd_src(void)
 
 static void cmd_help(void)
 {
-    log_printf("commands: help | stats | usb | sai | codec | creg <reg> [val] |\r\n"
-               "          gain [db] | testgen off|sine|white|impulse [freq] | mute [on|off] |\r\n"
-               "          meters on|off | x (TX underrun check) | led on|off|scan |\r\n"
-               "          ledpin <gpio> <pin> | fwinfo | fwtest |\r\n"
-               "          fwbegin|fwrec <len> <crc32> | crumbs | recovery | boot |\r\n"
-               "          src | hb on|off | scan | dump [bus addr] | peek <addr> [len] |\r\n"
-               "          dumpmem <addr> <len> | poke <addr> <val> | crc <addr> <len> | reset\r\n");
+    log_puts("commands:\r\n"
+#ifndef FB200_RECOVERY
+             "  audio : usb | sai | codec | creg <reg> [val] | gain [db] | mute [on|off]\r\n"
+             "          testgen off|sine|white|impulse [freq] | meters on|off | x\r\n"
+             "  led   : led on|off|scan | ledpin <gpio> <pin>\r\n"
+             "  tests : crash | hang\r\n"
+#endif
+             "  debug : stats | src | hb on|off | clocks | crumbs | crashdump | crashclear\r\n"
+             "          peek <addr> [len] | dumpmem <addr> <len> | poke <addr> <u8>\r\n"
+             "          peek32 <addr> [n] | poke32 <addr> <u32> | crc <addr> <len>\r\n"
+             "  i2c   : scan | dump [bus addr]\r\n"
+             "  flash : fwinfo | fwtest | fwbegin|fwrec <len> <crc32>\r\n"
+             "  boot  : recovery | boot | reset\r\n");
+}
+
+static void cmd_peek32(const char *a1, const char *a2)
+{
+    int ok;
+    const char *name;
+    uint32_t addr = parse_num(a1, &ok);
+    if (!ok) { log_printf("usage: peek32 <addr> [n]\r\n"); return; }
+    uint32_t n = 1;
+    if (a2) { n = parse_num(a2, &ok); if (!ok || n == 0u) { log_printf("bad n\r\n"); return; } }
+    if (n > 64u) n = 64u;
+    for (uint32_t i = 0; i < n; i++) {
+        uint32_t a = addr + 4u * i;
+        if (!reg_access_ok(a, &name)) return;
+        if ((a < 0x40000000u || (a >= 0x60000000u && a < 0xE0000000u)) && !mem_ok(a)) {
+            log_printf("%08x: address not allowed\r\n", (unsigned)a);
+            return;
+        }
+        if ((i & 3u) == 0u) log_printf("%s%08x:", i ? "\r\n" : "", (unsigned)a);
+        log_printf(" %08x", (unsigned)*(volatile uint32_t *)a);
+    }
+    log_printf("  %s\r\n", name);
+}
+
+static void cmd_poke32(const char *a1, const char *a2)
+{
+    int ok1, ok2;
+    const char *name;
+    uint32_t addr = parse_num(a1, &ok1);
+    uint32_t val = parse_num(a2, &ok2);
+    if (!ok1 || !ok2) { log_printf("usage: poke32 <addr> <u32>\r\n"); return; }
+    if (!reg_access_ok(addr, &name)) return;
+    if (addr >= 0x60000000u && addr < 0xE0000000u) { log_printf("flash: use fwbegin\r\n"); return; }
+    if (addr < 0x40000000u && !mem_ok(addr)) { log_printf("address not allowed\r\n"); return; }
+    volatile uint32_t *r = (volatile uint32_t *)addr;
+    uint32_t before = *r;
+    *r = val;
+    log_printf("%08x: %08x -> %08x (reads %08x)  %s\r\n", (unsigned)addr, (unsigned)before,
+               (unsigned)val, (unsigned)*r, name);
 }
 
 static void cmd_crc(const char *a1, const char *a2)
@@ -413,6 +459,11 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "fwinfo")) fw_info();
     else if (streq(argv[0], "fwtest")) fw_test();
     else if (streq(argv[0], "crumbs")) crumbs_print();
+    else if (streq(argv[0], "crashdump")) crashdump_print();
+    else if (streq(argv[0], "crashclear")) { crashdump_clear(); log_printf("cleared\r\n"); }
+    else if (streq(argv[0], "clocks")) clocks_print();
+    else if (streq(argv[0], "peek32")) cmd_peek32(argv[1], argv[2]);
+    else if (streq(argv[0], "poke32")) cmd_poke32(argv[1], argv[2]);
     else if (streq(argv[0], "fwbegin")) cmd_fwbegin(0, argv[1], argv[2]);
     else if (streq(argv[0], "fwrec")) cmd_fwbegin(1, argv[1], argv[2]);
     else if (streq(argv[0], "recovery")) {
@@ -420,7 +471,6 @@ static void dispatch(char *cmd)
         log_printf("already in recovery (`boot` starts the app)\r\n");
 #else
         log_printf("rebooting into recovery\r\n");
-        cdc_log_task();
         recovery_request();
 #endif
     }
@@ -441,9 +491,7 @@ static void dispatch(char *cmd)
         if (!slot_valid(&why)) log_printf("boot refused: %s\r\n", why);
         else {
             log_printf("starting the app\r\n");
-            extern uint32_t tusb_time_millis_api(void);
-            uint32_t t0 = tusb_time_millis_api();
-            while (tusb_time_millis_api() - t0 < 300u) { tud_task(); cdc_log_task(); }
+            log_flush_ms(300);
             recovery_launch_app(1);
         }
     }

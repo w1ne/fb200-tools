@@ -62,7 +62,7 @@ SRC_C := \
   src/system_clock.c src/usb_descriptors.c src/compat/stubs.c src/led.c \
   src/dsp/dsp.c src/dsp/math.c src/dsp/gain.c src/dsp/testgen.c \
   src/debug/log_fmt.c src/debug/cdc_log.c src/debug/console.c \
-  src/debug/selfupdate.c src/debug/recovery.c \
+  src/debug/selfupdate.c src/debug/recovery.c src/debug/regs.c \
   src/audio/i2c_probe.c \
   src/audio/usb_audio.c src/audio/engine.c src/audio/codec.c \
   src/audio/sai.c src/audio/drift.c \

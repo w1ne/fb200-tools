@@ -27,6 +27,8 @@ typedef struct {
 
 void wdog_feed(void);
 void crumbs_print(void);
+void crashdump_print(void);   /* full dump of the last fault (survives reset) */
+void crashdump_clear(void);
 void crumb_alive(void);   /* app: mark running (see recovery.c) */
 void crumb_clear(void);   /* before a deliberate reset */
 void recovery_request(void) __attribute__((noreturn));   /* app -> recovery */

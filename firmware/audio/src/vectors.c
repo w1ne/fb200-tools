@@ -20,6 +20,7 @@ __attribute__((naked)) void Default_Handler(void)
         "ite eq\n"
         "mrseq r0, msp\n"
         "mrsne r0, psp\n"
+        "mov r1, lr\n"
         "b fault_record\n");
 }
 
