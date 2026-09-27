@@ -36,6 +36,9 @@ TUSB_INC  := \
   -I $(MCUX_CORE)/drivers/lpuart \
   -I $(MCUX_CORE)/drivers/ocotp \
   -I $(MCUX_CORE)/drivers/lpi2c \
+  -I $(MCUX_CORE)/drivers/sai \
+  -I $(MCUX_CORE)/drivers/edma \
+  -I $(MCUX_CORE)/drivers/dmamux \
   -I $(MCU_DIR)/drivers/romapi
 TUSB_DEFS := \
   -DCFG_TUSB_MCU=OPT_MCU_MIMXRT10XX \
@@ -57,11 +60,16 @@ SRC_C := \
   src/debug/selfupdate.c \
   src/audio/i2c_probe.c \
   src/audio/usb_audio.c src/audio/engine.c src/audio/codec.c \
+  src/audio/sai.c \
   $(TUSB_DIR)/src/tusb.c \
   $(TUSB_DIR)/src/common/tusb_fifo.c \
   $(TUSB_DIR)/src/device/usbd.c \
   $(TUSB_DIR)/src/class/cdc/cdc_device.c \
   $(TUSB_DIR)/src/class/audio/audio_device.c \
+  $(MCUX_CORE)/drivers/sai/fsl_sai.c \
+  $(MCUX_CORE)/drivers/sai/fsl_sai_edma.c \
+  $(MCUX_CORE)/drivers/dmamux/fsl_dmamux.c \
+  $(MCUX_CORE)/drivers/edma/fsl_edma.c \
   $(TUSB_DIR)/src/portable/chipidea/ci_hs/dcd_ci_hs.c \
   $(TUSB_DIR)/hw/bsp/board.c \
   $(TUSB_DIR)/hw/bsp/imxrt/family.c \
