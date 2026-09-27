@@ -61,30 +61,65 @@ Four attempts failed on hardware (2026-09-27):
 
 These commands are removed from the console.
 
-## 4. USB self-update (replaces the handover)
+## 4. Two-stage boot: resident recovery + app slot (verified 2026-09-27)
 
-The open firmware rewrites its own application region, so the vendor DFU is
-not needed for development. `firmware/audio/src/debug/selfupdate.c` uses the
-RT1062 ROM FlexSPI NOR driver (ROM API tree at `0x0020001C`) with the FCB
-copied from `0x60000000`. All firmware code runs from ITCM, so it can erase
-and program flash while it runs.
+A+D is needed only if the recovery image itself breaks. Every other update,
+and every app failure, stays on USB.
 
-- Region: `0x60010000..0x60041000` (block 0) only. The bootloader and the
-  model library are never touched, so A+D stays the recovery path.
-- Console: `fwinfo`, `crc <addr> <len>`, `fwbegin <len> <crc32>` + raw
-  stream, then `reset`.
-- Host: `firmware/tools/usb_update.py IMAGE.mr`. It first checks that flash
-  at `0x60010400` holds the vendor boot region of the image (proves the
-  mapping), then erases, streams, verifies the CRC32 read back from flash,
-  and resets.
-- Every image flashed this way must contain `selfupdate.c`, or the next
-  update needs A+D again.
+| Flash | Block 0 offset | Contents |
+|-------|----------------|----------|
+| `0x60010000` | `0x00000` | recovery vectors |
+| `0x60010400` | `0x00400` | vendor stub + loader (verbatim); load table at `0x784` |
+| `0x600107D4` | `0x007D4` | recovery blob (loader entry 0 -> ITCM `0x400`, entry `0x4D6`) |
+| `0x6001F000` | `0x0F000` | copier (staged by recovery to ITCM `0x1F000`) |
+| `0x60020000` | `0x10000` | app slot: header `FBAP`/len/CRC32 (0x100), vectors (0x400), blob |
+
+- Load-table entries 1-3 decompressed stock data from `0x6002E39C..` (now
+  the app slot) into DTCM/OCRAM; the packer turns them into copies of entry
+  4 (the `.bss` memset). Our firmware uses none of that data.
+- Recovery (`make VARIANT=recovery`) checks the slot and launches the app
+  through the copier, unless it has to stay: slot invalid, the app faulted,
+  the app hung, or the app ran `recovery`. It then keeps the USB console.
+- Reasons live in `SRC_GPR3..6` (survive a warm reset, cleared at power-on):
+  fault = `0xFA0000xx` + CFSR/HFSR/PC, request = `0x5EC0FEED`, and the app's
+  alive marker `0xA11FE000`. A leftover alive marker means the app died
+  without a clean reset (WDOG1, 8 s, fed by the app main loop).
+- Console: `crumbs`, `recovery`, `boot` (recovery), `crash`/`hang` (app
+  tests), `fwinfo`, `fwtest`, `fwbegin` (app slot), `fwrec` (recovery).
+- Flash writes use plain SPI-NOR commands in FlexSPI LUT slots 12-15 as IP
+  commands; the boot configuration is left alone, so memory-mapped reads keep
+  working.
+- Host: `firmware/tools/pack_images.py` -> `fb200-recovery.bin`,
+  `fb200-app.slot`, `fb200-twostage.mr` (DFU); `usb_update.py
+  app|recovery|block0`; `boot_dry_run.py --app-elf` emulates vendor loader ->
+  recovery -> copier -> app and fails on any peripheral access before
+  `board_init` outside CCM/SRC/IOMUXC_GPR/WDOG.
+
+Verified on the pedal: app and recovery rewritten over USB; `reset` -> app;
+`hang` -> recovery (SRSR wdog bit); `crash` -> recovery with the faulting
+PC; `recovery` -> recovery; `boot` -> app.
+
+### Dead ends (do not retry)
+
+- **ROM FlexSPI driver** (`init`/`erase`/`program`): after its `init`, any
+  AHB read of flash, speculative ones included, hangs the core.
+- **ROM serial downloader**: this chip's ROM API tree (`*0x0020001C` =
+  `0x002012E8`) has the RT1050 layout; `runBootloader` (entry 0,
+  `0x00201287`) is a 10-instruction `SYSRESETREQ` stub that ignores its
+  argument. The RT1062 SDK header put it at entry 2 (the copyright string).
+- **SNVS LPGPR** ignores writes on this board; SRC_GPR is used instead.
+- **Touching USB before `board_init`**: a read of a clock-gated peripheral
+  stalls the bus. The first two-stage image hung this way before arming the
+  watchdog (A+D needed).
+- **WDOG1 WRSR** as the hang signal: its timeout flag survives later
+  software resets and kept recovery from launching a good app.
 
 ## 5. Practical notes
 
 - After flashing, the updater's exit jumps straight into the image; no power
   cycle is needed.
-- A+D at power-on still works as the recovery path (same decision block).
+- A+D at power-on still works as the last-resort path (same decision block);
+  flash `fb200-twostage.mr` with `fb200 fw flash --yes --no-jump`.
 - The bootloader region is read-only from the application's point of view;
   the flag byte at `0x60086000` is in flash and was already `0xFF`.
 - `src` (console) reads `SRC_SRSR`/`SBMR1`/`SBMR2` for reset-cause debugging.
