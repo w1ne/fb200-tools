@@ -113,6 +113,7 @@ static void cmd_help(void)
              "  ui    : ui | uimon on|off | disp <text> | kled <0-15> on|off | power\r\n"
              "          preset [0-39] | save | rgb 0xRRGGBB [led] | rgb cfg 0xIIS0S1\r\n"
              "  bt    : bt | bt send <AT+...>\r\n"
+             "  music : tuner on|off | drums [on|off|<1-40>|bpm <n>]\r\n"
              "  tests : crash | hang\r\n"
 #endif
              "  debug : stats | src | hb on|off | clocks | crumbs | crashdump | crashclear\r\n"
@@ -501,6 +502,26 @@ static void dispatch(char *cmd)
                    pget(p, P_REV_EN), pget(p, P_REV_TYPE), ui_master());
     }
     else if (streq(argv[0], "save")) ui_save();
+    else if (streq(argv[0], "tuner")) {
+        bool on = argc > 1 && streq(argv[1], "on");
+        engine_set_tuner(on);
+        tuner_result_t r;
+        if (engine_tuner_poll(&r) || 1)
+            log_printf("tuner %s: valid=%d silent=%d note=%d oct=%d cents=%d freq=%d.%02d Hz\r\n",
+                       on ? "on" : "off", r.valid, r.silent, r.note, r.octave, (int)r.cents,
+                       (int)r.freq, (int)((r.freq - (int)r.freq) * 100.0f));
+    }
+    else if (streq(argv[0], "drums")) {
+        drums_t *d = engine_drums();
+        int ok;
+        if (argc > 1 && streq(argv[1], "on")) drums_start(d);
+        else if (argc > 1 && streq(argv[1], "off")) drums_stop(d);
+        else if (argc > 2 && streq(argv[1], "bpm")) drums_set_tempo(d, parse_num(argv[2], &ok));
+        else if (argc > 1) { uint32_t r = parse_num(argv[1], &ok); if (ok && r >= 1 && r <= 40) drums_set_rhythm(d, r - 1u); }
+        log_printf("drums %s rhythm %u bpm %u level %u samples %lu patterns %s\r\n", d->on ? "on" : "off",
+                   (unsigned)d->rhythm + 1u, (unsigned)d->bpm, (unsigned)d->level,
+                   (unsigned long)d->n_samples, d->data ? "yes" : "NO (build with STOCK_MR)");
+    }
     else if (streq(argv[0], "bt")) {
         if (argc > 2 && streq(argv[1], "send")) log_printf("bt send %s\r\n", bt_at(argv[2]) == 0 ? "ok" : "busy");
         else bt_status();

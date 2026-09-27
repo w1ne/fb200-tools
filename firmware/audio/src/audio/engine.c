@@ -20,6 +20,8 @@
 #include "dsp/gain.h"
 #include "dsp/math.h"
 #include "dsp/testgen.h"
+#include "dsp/drums.h"
+#include "dsp/tuner.h"
 #include "fsl_sai.h"
 #include "tusb.h"
 #endif
@@ -88,6 +90,9 @@ static bool s_mute;          /* user mute (console / later: UI) */
 static bool s_fault_mute;    /* SAI FIFO fault: short mute, then release */
 static uint32_t s_fault_ms;
 static bool s_meters;
+static tuner_t s_tuner;
+static drums_t s_drums;
+static bool s_tuner_on;
 static uint32_t s_drop_tx_blocks;
 static uint32_t s_meter_last_ms;
 
@@ -103,7 +108,17 @@ void engine_init(void)
     s_mute = false;
     s_fault_mute = false;
     s_meters = false;
+    tuner_init(&s_tuner, 440);
+#ifdef FB200_STOCK_DRUMS
+    drums_init(&s_drums, (const void *)DRUMS_BANK_ADDR, &stock_drums_data);
+#else
+    drums_init(&s_drums, (const void *)DRUMS_BANK_ADDR, NULL);   /* no patterns: silent */
+#endif
 }
+
+void engine_set_tuner(bool on) { s_tuner_on = on; }
+bool engine_tuner_poll(tuner_result_t *out) { return tuner_poll(&s_tuner, out) != 0; }
+drums_t *engine_drums(void) { return &s_drums; }
 
 void engine_get_stats(engine_stats_t *out)
 {
@@ -208,12 +223,21 @@ void engine_task(void)
         s_block.data[0][i] = (float)in[i * 2 + 0] * (1.0f / 32768.0f);
         s_block.data[1][i] = (float)in[i * 2 + 1] * (1.0f / 32768.0f);
     }
+    {   /* tuner input: L + R of the instrument ADC, as the stock */
+        float mono[ENGINE_FRAMES];
+        for (size_t i = 0; i < n; i++) mono[i] = s_block.data[0][i] + s_block.data[1][i];
+        tuner_feed(&s_tuner, mono, n);
+    }
     gain_process(&s_gain, &s_block, n);
     if (s_testgen.mode != TESTGEN_OFF) {
         testgen_process(&s_testgen, &s_block, n);
     }
     if (s_meters) {
         update_meters(&s_block, n);
+    }
+    if (s_tuner_on) {
+        /* stock default (settings +0x2e = 1): tuning is silent */
+        memset(s_block.data, 0, sizeof s_block.data);
     }
 
     /* USB capture carries the processed signal only. */
@@ -225,6 +249,9 @@ void engine_task(void)
         }
         usb_audio_push(fb, n);
     }
+
+    /* Drums go to the output only, after the capture tap (stock mix). */
+    if (!s_tuner_on) drums_process_stereo(&s_drums, s_block.data[0], s_block.data[1], n);
 
     /* Host playback, drift-compensated, only while the host streams. */
     if (usb_audio_playing()) {

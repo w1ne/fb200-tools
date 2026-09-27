@@ -3,6 +3,7 @@
 #include "ui/controls.h"
 #include "ui/display.h"
 #include "debug/cdc_log.h"
+#include "audio/engine.h"
 
 enum { SW_A, SW_B, SW_C, SW_D };
 enum { M_GATE, M_COMP, M_AMP, M_CAB, M_MOD, M_REV, M_NONE };
@@ -38,6 +39,8 @@ static bool long_used;
 static uint32_t overlay_until, revision, settings_dirty_ms;
 static bool settings_dirty;
 static bool ui_log;
+static bool tuner_mode, rhythm_mode;
+static uint32_t s_now;
 
 void ui_set_log(bool on) { ui_log = on; }
 
@@ -53,8 +56,17 @@ static uint16_t stored(int k)
     return kKnob[k].field == 0xFF ? settings.b[S_MASTER] : pget(&edit, kKnob[k].field);
 }
 
+static void show_rhythm(void)
+{
+    drums_t *d = engine_drums();
+    unsigned r = d->rhythm + 1u;                     /* 1..40 */
+    char t[4] = {'d', (char)('0' + r / 10u), (char)('0' + r % 10u), 0};
+    display_text(t);
+}
+
 static void show_preset(void)
 {
+    if (rhythm_mode) { show_rhythm(); return; }
     char t[4] = {stomp ? 'L' : 'P', (char)('0' + bank), "AbCd"[slot], 0};
     display_text(t);
 }
@@ -77,8 +89,20 @@ static void load(unsigned b, unsigned s)
     log_printf("preset %u%c \"%s\"\r\n", bank, "AbCd"[slot], name);
 }
 
+/* Stock rhythm settings at F:0x81000: on, -, rhythm, level, bpm (u16 LE). */
+static void rhythm_settings_load(void)
+{
+    const volatile uint8_t *r = (const volatile uint8_t *)(0x60000000u + 0x81000u);
+    drums_t *d = engine_drums();
+    if (r[2] < DRUMS_RHYTHMS) drums_set_rhythm(d, r[2]);
+    if (r[3] <= 100u) drums_set_level(d, r[3]);
+    uint16_t bpm = (uint16_t)(r[4] | (r[5] << 8));
+    drums_set_tempo(d, (bpm >= DRUMS_BPM_MIN && bpm <= DRUMS_BPM_MAX) ? bpm : DRUMS_BPM_DEFAULT);
+}
+
 void ui_init(void)
 {
+    rhythm_settings_load();
     settings_read(&settings);
     stomp = settings.b[S_STOMP] == 1;
     load(settings.b[S_BANK], settings.b[S_SLOT]);
@@ -104,8 +128,22 @@ static void toggle_module(int m)
     revision++;
 }
 
+/* Rhythm mode buttons (our mapping; the stock in-mode roles are not known):
+ * A play/stop, B previous rhythm, C next rhythm, D tap tempo. */
+static void rhythm_single(int sw)
+{
+    drums_t *d = engine_drums();
+    if (sw == SW_A) { if (d->on) drums_stop(d); else drums_start(d); }
+    else if (sw == SW_B) drums_set_rhythm(d, (d->rhythm + DRUMS_RHYTHMS - 1u) % DRUMS_RHYTHMS);
+    else if (sw == SW_C) drums_set_rhythm(d, (d->rhythm + 1u) % DRUMS_RHYTHMS);
+    else drums_tap(d, s_now);
+    show_rhythm();
+}
+
 static void action_single(int sw)
 {
+    if (tuner_mode) { tuner_mode = false; engine_set_tuner(false); show_preset(); return; }
+    if (rhythm_mode) { rhythm_single(sw); return; }
     if (!stomp) { load(bank, (unsigned)sw); return; }
     static const int kStomp[4] = {M_REV, M_MOD, M_AMP, M_COMP};   /* A B C D */
     toggle_module(kStomp[sw]);
@@ -135,7 +173,21 @@ static void footswitches(uint32_t now)
             down_mask |= (uint8_t)(1u << sw);
             peak_mask |= (uint8_t)(1u << sw);
         } else if (ev == FSW_LONG) {
-            if (peak_mask == (1u << SW_A) && !stomp) { long_used = true; ui_save(); overlay_until = now + 1000u; }
+            if (sw == SW_A && (down_mask & (1u << SW_B))) {          /* stock: B held + A long */
+                long_used = true;
+                tuner_mode = !tuner_mode;
+                engine_set_tuner(tuner_mode);
+                if (tuner_mode) display_text(" - ");
+                else show_preset();
+            } else if (sw == SW_B && (down_mask & (1u << SW_C))) {   /* C held + B long */
+                long_used = true;
+                rhythm_mode = !rhythm_mode;
+                show_preset();
+            } else if (peak_mask == (1u << SW_A) && !stomp && !rhythm_mode && !tuner_mode) {
+                long_used = true;
+                ui_save();
+                overlay_until = now + 1000u;
+            }
         } else if (ev == FSW_RELEASE) {
             down_mask &= (uint8_t)~(1u << sw);
             if (down_mask == 0) {
@@ -189,8 +241,27 @@ static void leds(uint32_t now)
     }
 }
 
+/* note index 1..12 = A#, B, C, C#, D, D#, E, F, F#, G, G#, A (stock) */
+static void show_tuner(void)
+{
+    tuner_result_t r;
+    if (!engine_tuner_poll(&r)) return;
+    if (!r.valid || r.silent || r.note < 1 || r.note > 12) { display_text(" - "); return; }
+    static const char letter[] = " AbCCddEFFGGA";
+    static const uint8_t sharp[13] = {0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0};
+    char t[6], *p = t;
+    *p++ = r.cents < -3.0f ? '-' : ' ';            /* flat: left arrow */
+    *p++ = letter[r.note];
+    if (sharp[r.note]) *p++ = '.';
+    *p++ = r.cents > 3.0f ? '-' : ' ';             /* sharp: right arrow */
+    *p = 0;
+    display_text(t);
+}
+
 void ui_task(uint32_t now_ms)
 {
+    s_now = now_ms;
+    if (tuner_mode) show_tuner();
     footswitches(now_ms);
     knobs(now_ms);
     leds(now_ms);

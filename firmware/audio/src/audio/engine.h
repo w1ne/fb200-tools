@@ -27,4 +27,11 @@ void engine_drop_tx(uint32_t blocks); /* `x`: stop refilling TX (underrun check)
 /* Meter peaks (updated at ~1 Hz when meters are enabled). */
 extern volatile float g_meter_peak[2];
 
+/* Tuner (muted output while on) and drum machine, see dsp/tuner.h, dsp/drums.h. */
+#include "dsp/tuner.h"
+#include "dsp/drums.h"
+void engine_set_tuner(bool on);
+bool engine_tuner_poll(tuner_result_t *out);   /* main loop */
+drums_t *engine_drums(void);
+
 #endif
