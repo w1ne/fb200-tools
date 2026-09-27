@@ -32,7 +32,7 @@ Verified on a real pedal:
 | Area | What works |
 | --- | --- |
 | **Sound** | Stock chain: noise gate → compressor → 10 amp models + 4-band tone stack → 10 cab IRs + 9 user-IR slots → 12 modulations → 5 reverbs. Parity against the stock DSP: amp and tone bit-exact, the rest within -105 dB. |
-| **Front panel** | 3-digit display, 16 knobs with LEDs, 4 footswitches with the stock actions (slot select, bank chords, stomp mode, tuner, save). The 40-LED light bar stays dark. |
+| **Front panel** | 3-digit display, 16 knobs with LEDs, 4 footswitches with the stock actions (slot select, bank chords, stomp mode, tuner, save). |
 | **Presets** | Your stock presets load and save in the stock format and survive switching firmware |
 | **Drums & tuner** | Stock drum machine (40 rhythms, played from the samples already in your pedal's flash) and stock YIN tuner |
 | **USB** | Class-compliant audio interface (record and play back, 44.1 kHz). The stock USB identity and control protocol, so `fb200 info` and IR import work. |
@@ -42,7 +42,8 @@ Verified on a real pedal:
 
 New since then, tested on the host but **not yet on a pedal**: save to any slot and to
 another bank, the stock rhythm-mode buttons, drum/tuner/rhythm-mode commands from the app,
-input gain, tuner calibration and mute, factory reset.
+input gain, tuner calibration and mute, factory reset, the footswitch light rings (slot,
+live-mode modules, colours from the app, save blink, rhythm tempo flash).
 
 **Better than stock so far:**
 - Updates over USB without holding A+D.
@@ -54,7 +55,7 @@ input gain, tuner calibration and mute, factory reset.
 - Drum hits start on time (the stock plays each one up to 31 ms early).
 - The Bluetooth audio switch from the app survives a reboot (the stock turns it back on).
 
-Still open: the RGB light bar, a test session with the phone app, a 48 kHz option, and
+Still open: the light rings on a pedal, a test session with the phone app, a 48 kHz option, and
 the "better" roadmap. The code runs on the stock hardware only.
 
 ## Flashing

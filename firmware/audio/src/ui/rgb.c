@@ -78,9 +78,9 @@ void rgb_fill(uint8_t r, uint8_t g, uint8_t b)
     for (int i = 0; i < RGB_COUNT; i++) rgb_set(i, r, g, b);
 }
 
-void rgb_show(void)
+bool rgb_show(void)
 {
-    if (busy) return;
+    if (busy) return false;
     uint8_t *w = wire;
     for (int i = 0; i < RGB_COUNT; i++)
         for (int c = 0; c < 3; c++)
@@ -88,4 +88,5 @@ void rgb_show(void)
     flexio_uart_transfer_t xfer = {.data = wire, .dataSize = sizeof wire};
     busy = true;
     if (FLEXIO_UART_TransferSendEDMA(&uart, &handle, &xfer) != kStatus_Success) busy = false;
+    return busy;
 }

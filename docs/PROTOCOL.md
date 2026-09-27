@@ -205,8 +205,8 @@ preset that also has our marker at `P+0x96` (`PARITY.md` M4); `85` writes
 from the stored preset; BLE `83` follows), `[2..6]` S`+0x1A..0x1E` (on write
 `+0x1B..0x1E` > 72 -> 9), `[7..9]` S`+0x2C..0x2E` (`+0x2D` = tuner on),
 `[10]` S`+0x17` Bluetooth audio on (a change sends `AT+B501`/`AT+B500`,
-`AT+CZ`), `[11]` S`[0x24 + slot]`, `[12]` S`[0x28 + slot]` (per-slot byte and
-per-slot level, default 100). `B7` (4 B) = S`+0x1B..0x1E`. `C9 [b]` = S`+0x20`.
+`AT+CZ`), `[11]` S`[0x24 + slot]`, `[12]` S`[0x28 + slot]` (the current slot's
+light-ring colour 0..9 and level 0..100, default 0 = red and 100). `B7` (4 B) = S`+0x1B..0x1E`. `C9 [b]` = S`+0x20`.
 
 ### 5.6 Rhythm, battery, connect dump
 

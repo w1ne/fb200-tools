@@ -11,6 +11,7 @@
  *   fsw a-d press|release|long   queue a footswitch event, run ui_task
  *   tick <ms>             advance the clock by ms, run ui_task
  *   disp | drums | leds   print the display text / drum state / knob LEDs
+ *   rgb                   print the 40 RGB LEDs as sent (rrggbb each) + frame count
  *   factory 0|1           no / fake factory presets in the stock data
  *
  * Every command's output ends with "." on its own line. */
@@ -24,6 +25,7 @@
 #include "audio/engine.h"
 #include "ui/controls.h"
 #include "ui/display.h"
+#include "ui/rgb.h"
 #include "dsp/stock_data.h"
 
 #define FLASH_SIZE 0x100000u
@@ -53,6 +55,14 @@ fsw_event_t fsw_event(int *sw)
     return ev;
 }
 bool fsw_down(int sw) { return sw >= 0 && sw < 4 && sw_down[sw]; }
+/* RGB LEDs (ui/lightbar.c): the last frame sent, and how many were sent */
+static uint8_t rgb_px[40][3], rgb_sent[40][3];
+static unsigned rgb_frames;
+void rgb_set(int i, uint8_t r, uint8_t g, uint8_t b)
+{
+    if (i >= 0 && i < 40) { rgb_px[i][0] = r; rgb_px[i][1] = g; rgb_px[i][2] = b; }
+}
+bool rgb_show(void) { memcpy(rgb_sent, rgb_px, sizeof rgb_sent); rgb_frames++; return true; }
 /* engine: drum machine and tuner (ui.c's rhythm/tuner modes) */
 static drums_t drums;
 drums_t *engine_drums(void) { return &drums; }
@@ -208,6 +218,10 @@ int main(void)
                 snprintf((char *)fake_factory.preset[i], 20, "Factory %02u", i);
             snprintf((char *)fake_factory.preset[STOCK_FACTORY_NAMED], 20, "EMPTY");
             g_stock_factory = atoi(a) ? &fake_factory : NULL;
+        } else if (!strcmp(cmd, "rgb")) {
+            printf("RGB ");
+            for (int i = 0; i < 40; i++) printf("%02x%02x%02x", rgb_sent[i][0], rgb_sent[i][1], rgb_sent[i][2]);
+            printf(" %u\n", rgb_frames);
         } else if (!strcmp(cmd, "leds")) {
             printf("LEDS ");
             for (int i = 0; i < 16; i++) printf("%d", led_on[i]);

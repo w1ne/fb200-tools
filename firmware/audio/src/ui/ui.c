@@ -2,6 +2,7 @@
 #include "ui/ui.h"
 #include "ui/controls.h"
 #include "ui/display.h"
+#include "ui/lightbar.h"
 #include "debug/cdc_log.h"
 #include "audio/engine.h"
 #include "proto/proto.h"
@@ -196,6 +197,7 @@ static int save_to(unsigned b, unsigned s)
         settings_dirty = true;
         revision++;
     }
+    if (r == 0) lightbar_save(s_now);     /* the stock blinks for 1 s, then writes */
     display_text(r == 0 ? "SAV" : "ERR");
     overlay_until = 0;
     log_printf("save %u%c: %s\r\n", b, "AbCd"[s], r == 0 ? "ok" : "FAILED");
@@ -419,6 +421,30 @@ static void leds(uint32_t now)
     }
 }
 
+/* The footswitch light rings (ui/lightbar.c) follow the mode; live mode
+ * lights a ring per module that is on (stock 0x6a94: A reverb, B mod, C amp
+ * or cab, D comp). */
+static void light_rings(uint32_t now)
+{
+    lightbar_in_t in = {
+        .mode = tuner_mode ? LB_TUNER : rhythm_mode ? LB_RHYTHM : stomp ? LB_LIVE : LB_PRESET,
+        .slot = (uint8_t)slot,
+        .colour = settings.b[S_LIGHT_COLOUR + slot],
+        .level = settings.b[S_LIGHT_LEVEL + slot],
+    };
+    if (in.mode == LB_LIVE) {
+        in.on = (uint8_t)((pget(&edit, P_REV_EN) == 1) << SW_A | (pget(&edit, P_MOD_EN) == 1) << SW_B |
+                          (pget(&edit, P_AMP_EN) == 1 || pget(&edit, P_CAB_EN) == 1) << SW_C |
+                          (pget(&edit, P_COMP_EN) == 1) << SW_D);
+    } else if (in.mode == LB_RHYTHM) {
+        const drums_t *d = engine_drums();
+        in.on = (uint8_t)(fsw_down(SW_A) << SW_A | fsw_down(SW_B) << SW_B);
+        in.playing = d->on;
+        in.bpm = d->bpm;
+    }
+    lightbar_task(now, &in);
+}
+
 /* note index 1..12 = A#, B, C, C#, D, D#, E, F, F#, G, G#, A (stock) */
 static void show_tuner(void)
 {
@@ -443,6 +469,7 @@ void ui_task(uint32_t now_ms)
     footswitches(now_ms);
     knobs(now_ms);
     leds(now_ms);
+    light_rings(now_ms);
     if (overlay_until && (int32_t)(now_ms - overlay_until) >= 0) {
         overlay_until = 0;
         shown_knob = -1;

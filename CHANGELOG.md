@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repeats (20-500 Hz), tone. Between MOD and reverb. Stock presets keep their sound:
   the stock delay fields play only in presets with our marker (docs/PARITY.md M4).
   Console: `delay [on|off] [time] [fb] [mix] [lowcut] [tone]`.
+- **Footswitch light rings** (the 40 RGB LEDs, 10 in each footswitch dome), as the
+  stock LED code: preset mode lights the loaded slot's dome in its colour from the
+  app (colour and level per slot), live mode lights a dome per module that is on,
+  the tuner turns them off, rhythm mode shows A/B held, the tempo on C and play on
+  D. A save blinks the saved slot's dome for 1 s. Frames go out only on a change.
 
 ## [0.7.0] - 2026-09-27
 
