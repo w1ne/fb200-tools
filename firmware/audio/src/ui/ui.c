@@ -291,3 +291,25 @@ const preset_t *ui_edit_preset(void) { return &edit; }
 unsigned ui_preset_index(void) { return bank * 4u + slot; }
 uint8_t ui_master(void) { return settings.b[S_MASTER]; }
 uint32_t ui_revision(void) { return revision; }
+
+void ui_edit_write(unsigned off, const void *src, unsigned n)
+{
+    if (off >= PRESET_SIZE || n > PRESET_SIZE - off) return;
+    memcpy(edit.b + off, src, n);
+    revision++;
+}
+
+void ui_edit_load(const preset_t *p)
+{
+    edit = *p;
+    revision++;
+}
+
+settings_t *ui_settings(void) { return &settings; }
+
+void ui_settings_changed(void)
+{
+    stomp = settings.b[S_STOMP] == 1;
+    settings_dirty = true;
+    revision++;
+}

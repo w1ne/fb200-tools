@@ -15,4 +15,10 @@ void ui_select(unsigned index);           /* console / remote */
 int ui_save(void);                        /* write the edit buffer to its slot */
 void ui_set_log(bool on);                 /* log footswitch and knob events */
 void ui_flush_settings(void);             /* write unsaved settings now (power fail) */
+/* Remote edits (app protocol, src/proto): write into the live edit buffer or
+ * replace it; access the global settings block. All bump ui_revision(). */
+void ui_edit_write(unsigned off, const void *src, unsigned n);
+void ui_edit_load(const preset_t *p);
+settings_t *ui_settings(void);
+void ui_settings_changed(void);           /* after writing through ui_settings() */
 #endif

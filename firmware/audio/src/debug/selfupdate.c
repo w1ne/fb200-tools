@@ -243,10 +243,12 @@ void fw_rx_task(void)
 }
 
 /* Data store: rewrite part of one 4 KB sector (read-modify-write, as the
- * stock does) inside the preset/settings region F:0x71000..0x89000
- * (docs/UI_AND_STORAGE.md §5). Verifies by reading back. 0 on success. */
+ * stock does) inside the preset/settings/IR region F:0x71000..0xA1800:
+ * presets, settings, rhythm, BT name, update flag, IR names/flags and the
+ * 9 user IR slots at 0x89000 + slot * 0x2800 (docs/UI_AND_STORAGE.md §5,
+ * docs/PROTOCOL.md). Verifies by reading back. 0 on success. */
 #define STORE_BASE  0x00071000u
-#define STORE_LIMIT 0x00089000u
+#define STORE_LIMIT 0x000A1800u
 static uint32_t sector_buf[SECTOR / 4];
 
 int flash_store(uint32_t offset, const void *data, uint32_t len)
