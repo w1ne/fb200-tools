@@ -58,6 +58,7 @@ static bool settings_dirty;
 static bool ui_log;
 static bool tuner_mode, rhythm_mode;
 static bool rhythm_dirty;
+static bool modifier_used;   /* A held while a knob turned: A is a modifier */
 static uint32_t rhythm_dirty_ms;
 static uint32_t s_now;
 
@@ -220,7 +221,8 @@ static void footswitches(uint32_t now)
                 settings.b[S_RHYTHM] = rhythm_mode;
                 proto_notify_rhythm_mode();
                 show_preset();
-            } else if (peak_mask == (1u << SW_A) && !stomp && !rhythm_mode && !tuner_mode) {
+            } else if (peak_mask == (1u << SW_A) && !stomp && !rhythm_mode && !tuner_mode &&
+                       !modifier_used) {
                 long_used = true;
                 if (ui_save() == 0) proto_notify_saved();
                 overlay_until = now + 1000u;
@@ -228,12 +230,13 @@ static void footswitches(uint32_t now)
         } else if (ev == FSW_RELEASE) {
             down_mask &= (uint8_t)~(1u << sw);
             if (down_mask == 0) {
-                if (!long_used) {
+                if (!long_used && !modifier_used) {
                     if (peak_mask && !(peak_mask & (peak_mask - 1u))) action_single(__builtin_ctz(peak_mask));
                     else action_chord(peak_mask);
                 }
                 peak_mask = 0;
                 long_used = false;
+                modifier_used = false;
             }
         }
     }
@@ -265,14 +268,22 @@ static void knobs(uint32_t now)
         uint16_t v = knob_units(k), s = stored(k);
         if (ui_log) log_printf("knob k%d = %u (raw %u, stored %u%s)\r\n", k, v,
                                (unsigned)knob_value(k), s, caught[k] ? "" : ", not caught");
-        if (rhythm_mode && (k == 14 || k == 8)) {
-            /* rhythm mode (better than stock, which needs the app): LEVEL =
-             * drum level 0..100, RATE = tempo 40..260 BPM, acting at once */
+        bool a_held = fsw_down(SW_A);
+        if ((rhythm_mode || a_held) && (k == 14 || k == 8 || (a_held && k == 9))) {
+            /* Drum controls (better than stock, which needs the app), acting
+             * at once: in rhythm mode, or with footswitch A held as a
+             * modifier: LEVEL = drum level 0..100, RATE = tempo 40..260 BPM,
+             * and (A held) MOD = rhythm 1..40. */
             drums_t *d = engine_drums();
             uint16_t shown;
             const char *name;
+            if (a_held) modifier_used = true;
             if (k == 14) { drums_set_level(d, v); shown = d->level; name = "dLE"; }
-            else {
+            else if (k == 9) {
+                drums_set_rhythm(d, knob_value(k) * DRUMS_RHYTHMS / 4096u);
+                shown = (uint16_t)(d->rhythm + 1u);
+                name = "PAt";
+            } else {
                 drums_set_tempo(d, DRUMS_BPM_MIN + v * (DRUMS_BPM_MAX - DRUMS_BPM_MIN) / 100u);
                 shown = d->bpm;
                 name = "bPn";
@@ -309,9 +320,9 @@ static void knobs(uint32_t now)
     /* name shown and the knob stopped: switch to its value */
     if (shown_knob >= 0 && name_until && (int32_t)(now - name_until) >= 0) {
         name_until = 0;
-        if (rhythm_mode && (shown_knob == 14 || shown_knob == 8)) {
+        if ((rhythm_mode || fsw_down(SW_A)) && (shown_knob == 14 || shown_knob == 8 || shown_knob == 9)) {
             drums_t *d = engine_drums();
-            show_value(shown_knob, shown_knob == 14 ? d->level : d->bpm, true);
+            show_value(shown_knob, shown_knob == 14 ? d->level : shown_knob == 9 ? d->rhythm + 1u : d->bpm, true);
         } else {
             show_value(shown_knob, knob_units(shown_knob), caught[shown_knob]);
         }
