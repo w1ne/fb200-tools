@@ -1,6 +1,7 @@
 /* fb200-audio console. Commands (see `help`):
  *   help | stats | hb on|off | scan | dump [bus addr] | peek <addr> [len]
- *   poke <addr> <val> | reset | reboot
+ *   poke <addr> <val> | crc <addr> <len> | fwinfo | fwbegin <len> <crc32>
+ *   reset | reboot   (fwbegin: USB self-update, see selfupdate.h)
  * Addresses accept 0x.. hex or decimal. peek/poke are limited to RAM/flash
  * (peripheral access can stall a clock-gated block). */
 #include <stdint.h>
@@ -10,6 +11,7 @@
 #include "console.h"
 #include "fsl_iomuxc.h"
 #include "audio/i2c_probe.h"
+#include "selfupdate.h"
 
 extern int g_bss_writable;
 
@@ -80,58 +82,33 @@ static void cmd_src(void)
                (unsigned)*(volatile uint32_t *)0x400F801Cu);
 }
 
-/* Direct call into the bootloader's DFU entry (0x6000333C, mapped in flash).
- * Hypothesis: the stock app's 0xC1 calls it directly instead of resetting. */
-__attribute__((noreturn)) static void jump_dfu(void)
-{
-    tud_disconnect();
-    for (volatile uint32_t i = 0; i < 2000000u; i++) {
-    }
-    ((void (*)(void))(0x6000333Cu | 1u))();
-    __builtin_unreachable();
-}
-
-/* Program one byte into the FlexSPI NOR flash through the IP command
- * interface, reusing the LUT the bootloader loaded (sequence 1 = page
- * program, per the FCB). Used to write the update flag. */
-static int flash_program_byte(uint32_t flash_offset, uint8_t value)
-{
-    volatile uint32_t *fx = (volatile uint32_t *)0x402A8000u;
-    fx[0x14 / 4] = (1u << 0) | (1u << 3);          /* W1C: IPCMDDONE/IPCMDERR */
-    fx[0xA0 / 4] = flash_offset;                   /* IPCR0: flash offset */
-    fx[0xBC / 4] = (1u << 0);                      /* IPTXFCR: clear TX FIFO */
-    fx[0x180 / 4] = (uint32_t)value;               /* TFDR0: byte to program */
-    fx[0xA4 / 4] = (1u << 8) | 1u;                 /* IPCR1: seq 1, 1 byte */
-    fx[0xB0 / 4] = 1u;                             /* IPCMD: trigger */
-    uint32_t timeout = 2000000u;
-    while (!(fx[0x14 / 4] & (1u << 0)) && --timeout) {
-    }
-    int ok = (fx[0x14 / 4] & (1u << 0)) != 0u && (fx[0x14 / 4] & (1u << 3)) == 0u;
-    fx[0x14 / 4] = (1u << 0) | (1u << 3);
-    return ok;
-}
-
-/* Handover to the vendor bootloader: the stock app's 0xC1 path.
- * RE (docs/BOOTLOADER.md): the bootloader's update-mode entry is 0x600091BC
- * (it performs its own pin/IO and USB init); the bootloader reaches it when
- * the app-validity checks fail or the A+D buttons are held. Call it directly
- * like the stock 0xC1 handler does. */
-__attribute__((noreturn)) static void handover(void)
-{
-    log_printf("handover: calling update-mode entry 0x600091bc\r\n");
-    cdc_log_task();
-    tud_disconnect();
-    for (volatile uint32_t i = 0; i < 2000000u; i++) {
-    }
-    ((void (*)(void))(0x600091BCu | 1u))();
-    __builtin_unreachable();
-}
-
 static void cmd_help(void)
 {
     log_printf("commands: help | stats | src | hb on|off | scan | dump [bus addr] |\r\n"
                "          peek <addr> [len] | dumpmem <addr> <len> | poke <addr> <val> |\r\n"
-               "          handover (DFU) | dfu (direct) | reset | reboot\r\n");
+               "          crc <addr> <len> | fwinfo | fwbegin <len> <crc32> | reset\r\n");
+}
+
+static void cmd_crc(const char *a1, const char *a2)
+{
+    int ok1, ok2;
+    uint32_t addr = parse_num(a1, &ok1);
+    uint32_t len = parse_num(a2, &ok2);
+    if (!ok1 || !ok2 || !mem_ok(addr) || !mem_ok(addr + len)) {
+        log_printf("usage: crc <addr> <len>\r\n");
+        return;
+    }
+    log_printf("crc %08x %u = %08x\r\n", (unsigned)addr, (unsigned)len,
+               (unsigned)fw_crc32((const uint8_t *)addr, len));
+}
+
+static void cmd_fwbegin(const char *a1, const char *a2)
+{
+    int ok1, ok2;
+    uint32_t len = parse_num(a1, &ok1);
+    uint32_t crc = parse_num(a2, &ok2);
+    if (!ok1 || !ok2) { log_printf("usage: fwbegin <len> <crc32>\r\n"); return; }
+    fw_begin(len, crc);
 }
 
 static void cmd_stats(void)
@@ -213,23 +190,11 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "dumpmem")) cmd_dumpmem(argv[1], argv[2]);
     else if (streq(argv[0], "src")) cmd_src();
     else if (streq(argv[0], "poke")) cmd_poke(argv[1], argv[2]);
-    else if (streq(argv[0], "flagtest")) {
-        int ok = flash_program_byte(0x00086000u, 0x00u);
-        log_printf("flag write %s; flag reads %02x\r\n", ok ? "ok" : "FAILED",
-                   (unsigned)*(volatile uint8_t *)0x60086000u);
-    }
-    else if (streq(argv[0], "dfu")) {
-        log_printf("jumping to the bootloader DFU entry\r\n");
-        cdc_log_task();
-        jump_dfu();
-    }
-    else if (streq(argv[0], "handover")) {
-        log_printf("handover (DFU via the bootloader's 0xC1 path)\r\n");
-        cdc_log_task();
-        handover();
-    }
+    else if (streq(argv[0], "crc")) cmd_crc(argv[1], argv[2]);
+    else if (streq(argv[0], "fwinfo")) fw_info();
+    else if (streq(argv[0], "fwbegin")) cmd_fwbegin(argv[1], argv[2]);
     else if (streq(argv[0], "reset") || streq(argv[0], "reboot")) {
-        log_printf("rebooting (handover)\r\n");
+        log_printf("rebooting\r\n");
         cdc_log_task();
         console_reboot();
     }
@@ -240,6 +205,7 @@ void console_init(void) { line_len = 0; heartbeat_on = 0; }
 
 void console_task(void)
 {
+    if (fw_active()) { fw_rx_task(); return; }
     while (tud_cdc_available()) {
         char c = (char)tud_cdc_read_char();
         if (c == '\r' || c == '\n') {

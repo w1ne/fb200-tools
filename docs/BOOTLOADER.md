@@ -2,8 +2,9 @@
 
 Reverse-engineered 2026-09-27 by dumping the bootloader region over the USB
 console (`dumpmem`) from the running open firmware. This is how the pedal
-boots, how it decides between the application and update (DFU) mode, and how
-our firmware performs the same handover so flashing never needs A+D.
+boots, how it decides between the application and update (DFU) mode, and why
+the handover into the vendor DFU failed, and the USB self-update that
+replaces it.
 
 ## 1. Flash layout (verified by dump)
 
@@ -45,22 +46,41 @@ application (or the updater) copies the two flash words into the RAM slots
 before resetting, so only a cooperating firmware can trigger DFU. The flag
 byte is simply erased flash (`0xFF`), so it does not gate a normal unit.
 
-## 3. Handover recipe (implemented in `firmware/audio`)
+## 3. Handover into the vendor DFU: NOT solved (parked)
 
-The stock app's `0xC1` command performs this handover; our firmware does the
-same in the `handover` console command:
+Four attempts failed on hardware (2026-09-27):
 
-1. `*(0x20010174) = *(0x600CF000)`, `*(0x2001051C) = *(0x60003004)`.
-2. Drive the update pin high: pad `GPIO_B1_08` (ALT5 = GPIO2_IO24),
-   `GDIR` output, `DR_SET` bit 24.
-3. USB disconnect, short delay, `NVIC_SystemReset()`.
+1. RAM handshake + driving `GPIO_B1_08` high + `NVIC_SystemReset()`: the
+   bootloader boots the application anyway.
+2. Jump to `0x6000333C`: this is the boot-the-app trampoline, not DFU.
+3. Write the flag byte at `0x60086000` over FlexSPI IP commands: the write
+   failed (no write-enable sequence; and the decision block wants `0xFF`
+   there anyway).
+4. Call the updater entry `0x600091BC` directly: the pedal hangs (it needs
+   the bootloader's runtime state) and drops off USB.
 
-The bootloader then takes the DFU path, enumerates as `0483:5703`, and
-`fb200 fw flash ... --no-jump` works. A plain `NVIC_SystemReset()` without
-the handshake boots the application again, which is how the earlier attempts
-failed.
+These commands are removed from the console.
 
-## 4. Practical notes
+## 4. USB self-update (replaces the handover)
+
+The open firmware rewrites its own application region, so the vendor DFU is
+not needed for development. `firmware/audio/src/debug/selfupdate.c` uses the
+RT1062 ROM FlexSPI NOR driver (ROM API tree at `0x0020001C`) with the FCB
+copied from `0x60000000`. All firmware code runs from ITCM, so it can erase
+and program flash while it runs.
+
+- Region: `0x60010000..0x60041000` (block 0) only. The bootloader and the
+  model library are never touched, so A+D stays the recovery path.
+- Console: `fwinfo`, `crc <addr> <len>`, `fwbegin <len> <crc32>` + raw
+  stream, then `reset`.
+- Host: `firmware/tools/usb_update.py IMAGE.mr`. It first checks that flash
+  at `0x60010400` holds the vendor boot region of the image (proves the
+  mapping), then erases, streams, verifies the CRC32 read back from flash,
+  and resets.
+- Every image flashed this way must contain `selfupdate.c`, or the next
+  update needs A+D again.
+
+## 5. Practical notes
 
 - After flashing, the updater's exit jumps straight into the image; no power
   cycle is needed.
