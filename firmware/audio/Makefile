@@ -82,7 +82,8 @@ SRC_C := \
   src/debug/selfupdate.c src/debug/recovery.c src/debug/regs.c \
   src/audio/i2c_probe.c \
   src/audio/usb_audio.c src/audio/engine.c src/audio/frontend.c \
-  src/ui/pads.c src/ui/display.c src/ui/controls.c src/ui/power.c src/audio/codec.c \
+  src/ui/pads.c src/ui/display.c src/ui/controls.c src/ui/power.c \
+  src/ui/ui.c src/preset/preset.c src/audio/codec.c \
   src/audio/sai.c src/audio/drift.c \
   $(TUSB_DIR)/src/tusb.c \
   $(TUSB_DIR)/src/common/tusb_fifo.c \
@@ -112,7 +113,7 @@ SRC_C := \
 ifeq ($(VARIANT),recovery)
 SRC_C := $(filter-out src/led.c src/dsp/% src/audio/engine.c \
                     src/audio/usb_audio.c src/audio/codec.c src/audio/sai.c \
-                    src/audio/drift.c src/audio/frontend.c src/ui/% \
+                    src/audio/drift.c src/audio/frontend.c src/ui/% src/preset/% \
                     $(MCUX_CORE)/drivers/adc_12b1msps_sar/% \
                     $(MCUX_CORE)/drivers/sai/% $(MCUX_CORE)/drivers/edma/% \
                     $(MCUX_CORE)/drivers/dmamux/%,$(SRC_C))

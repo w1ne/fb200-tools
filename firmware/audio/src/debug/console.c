@@ -26,6 +26,7 @@
 #include "ui/display.h"
 #include "ui/controls.h"
 #include "ui/power.h"
+#include "ui/ui.h"
 #endif
 
 extern int g_bss_writable;
@@ -108,6 +109,7 @@ static void cmd_help(void)
              "          testgen off|sine|white|impulse [freq] | meters on|off | x\r\n"
              "  led   : led on|off|scan | ledpin <gpio> <pin>\r\n"
              "  ui    : ui | uimon on|off | disp <text> | kled <0-15> on|off | power\r\n"
+             "          preset [0-39] | save\r\n"
              "  tests : crash | hang\r\n"
 #endif
              "  debug : stats | src | hb on|off | clocks | crumbs | crashdump | crashclear\r\n"
@@ -119,7 +121,6 @@ static void cmd_help(void)
 }
 
 #ifndef FB200_RECOVERY
-static int ui_monitor;
 
 static void cmd_ui(void)
 {
@@ -129,21 +130,6 @@ static void cmd_ui(void)
         log_printf("k%d=%u%s", k, (unsigned)knob_value(k), (k % 8 == 7) ? "\r\n" : " ");
 }
 
-/* `uimon on`: stream footswitch events and knob moves to the console. */
-void ui_monitor_task(void)
-{
-    int sw;
-    fsw_event_t ev;
-    while ((ev = fsw_event(&sw)) != FSW_NONE) {
-        if (ui_monitor)
-            log_printf("fsw %c %s\r\n", "ABCD"[sw],
-                       ev == FSW_PRESS ? "press" : ev == FSW_RELEASE ? "release" : "long");
-    }
-    for (int k = 0; k < KNOB_COUNT; k++) {
-        if (knob_changed(k) && ui_monitor)
-            log_printf("knob k%d = %u\r\n", k, (unsigned)knob_value(k));
-    }
-}
 #endif
 
 static void cmd_peek32(const char *a1, const char *a2)
@@ -501,6 +487,17 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "crumbs")) crumbs_print();
 #ifndef FB200_RECOVERY
     else if (streq(argv[0], "ui")) cmd_ui();
+    else if (streq(argv[0], "preset")) {
+        int ok;
+        uint32_t n = parse_num(argv[1], &ok);
+        if (argc > 1 && ok && n < PRESET_COUNT) ui_select(n);
+        const preset_t *p = ui_edit_preset();
+        log_printf("preset %u: amp en=%u model=%u gain=%u  cab en=%u type=%u  mod en=%u type=%u  rev en=%u type=%u  master=%u\r\n",
+                   ui_preset_index(), pget(p, P_AMP_EN), pget(p, P_AMP_MODEL), pget(p, P_AMP_GAIN),
+                   pget(p, P_CAB_EN), pget(p, P_CAB_TYPE), pget(p, P_MOD_EN), pget(p, P_MOD_TYPE),
+                   pget(p, P_REV_EN), pget(p, P_REV_TYPE), ui_master());
+    }
+    else if (streq(argv[0], "save")) ui_save();
     else if (streq(argv[0], "power")) {
         const power_state_t *p = power_state();
         log_printf("power: battery=%u (level %u) supply=%u%s charging=%u\r\n",
@@ -508,8 +505,8 @@ static void dispatch(char *cmd)
                    p->supply_low ? " LOW" : "", (unsigned)p->charging);
     }
     else if (streq(argv[0], "uimon")) {
-        ui_monitor = (argc > 1 && streq(argv[1], "on"));
-        log_printf("ui monitor %s\r\n", ui_monitor ? "on" : "off");
+        ui_set_log(argc > 1 && streq(argv[1], "on"));
+        log_printf("ui monitor %s\r\n", (argc > 1 && streq(argv[1], "on")) ? "on" : "off");
     }
     else if (streq(argv[0], "disp")) { display_text(argc > 1 ? argv[1] : ""); log_printf("ok\r\n"); }
     else if (streq(argv[0], "kled")) {

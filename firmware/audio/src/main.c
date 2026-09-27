@@ -16,10 +16,10 @@
 #include "ui/display.h"
 #include "ui/controls.h"
 #include "ui/power.h"
+#include "ui/ui.h"
 
 extern int g_bss_writable;
 extern uint32_t tusb_time_millis_api(void);
-void ui_monitor_task(void);   /* console.c */
 
 /* Handover to the vendor bootloader: the stock 0xC1 handler mutes the codec
  * and issues a software reset (SCB->AIRCR SYSRESETREQ, stock ITCM 0x18c68);
@@ -71,11 +71,7 @@ void app_main(void)
     display_init();
     controls_init();
     power_init();
-    {   /* stock global settings (F:0x80000): +0x21 slot, +0x22 bank */
-        const volatile uint8_t *st = (const volatile uint8_t *)0x60080000u;
-        char txt[4] = {'P', (char)('0' + (st[0x22] % 10u)), "AbCd"[st[0x21] & 3u], 0};
-        display_text(txt);
-    }
+    ui_init();
     if (!codec_ok) {
         engine_set_mute(true); /* start muted when the codec did not answer */
     }
@@ -93,7 +89,7 @@ void app_main(void)
             display_task(now);
             controls_task(now);
             power_task(now);
-            ui_monitor_task();
+            ui_task(now);
         }
 #endif
         cdc_log_task();

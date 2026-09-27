@@ -241,3 +241,34 @@ void fw_rx_task(void)
                    (unsigned)fw_rx, (unsigned)fw_len);
     }
 }
+
+/* Data store: rewrite part of one 4 KB sector (read-modify-write, as the
+ * stock does) inside the preset/settings region F:0x71000..0x89000
+ * (docs/UI_AND_STORAGE.md §5). Verifies by reading back. 0 on success. */
+#define STORE_BASE  0x00071000u
+#define STORE_LIMIT 0x00089000u
+static uint32_t sector_buf[SECTOR / 4];
+
+int flash_store(uint32_t offset, const void *data, uint32_t len)
+{
+    uint32_t sector = offset & ~(SECTOR - 1u);
+    if (offset < STORE_BASE || offset + len > STORE_LIMIT || len == 0u ||
+        offset + len > sector + SECTOR || active) {
+        return -1;
+    }
+    memcpy(sector_buf, (const void *)(FLASH_AHB + sector), SECTOR);
+    memcpy((uint8_t *)sector_buf + (offset - sector), data, len);
+    if (!lut_init() || !write_enable() ||
+        ip(SEQ_ERASE, sector, kFLEXSPI_Command, NULL, 0) != kStatus_Success || !wait_idle(2000u)) {
+        return -2;
+    }
+    for (uint32_t p = 0; p < SECTOR; p += PAGE) {
+        if (!write_enable() ||
+            ip(SEQ_PROGRAM, sector + p, kFLEXSPI_Write, sector_buf + p / 4u, PAGE) != kStatus_Success ||
+            !wait_idle(100u)) {
+            return -3;
+        }
+    }
+    refresh_ahb(sector, SECTOR);
+    return memcmp((const void *)(FLASH_AHB + offset), data, len) == 0 ? 0 : -4;
+}
