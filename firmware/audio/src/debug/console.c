@@ -229,7 +229,7 @@ static void dispatch(char *cmd)
             extern uint32_t tusb_time_millis_api(void);
             uint32_t t0 = tusb_time_millis_api();
             while (tusb_time_millis_api() - t0 < 300u) { tud_task(); cdc_log_task(); }
-            recovery_launch_app();
+            recovery_launch_app(1);
         }
     }
 #endif

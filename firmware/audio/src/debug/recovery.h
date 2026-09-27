@@ -29,6 +29,6 @@ void wdog_feed(void);
 void crumbs_print(void);
 void recovery_request(void) __attribute__((noreturn));   /* app -> recovery */
 const char *recovery_boot(void);   /* recovery: returns the stay reason or launches the app */
-void recovery_launch_app(void) __attribute__((noreturn));
+void recovery_launch_app(int usb_up) __attribute__((noreturn));   /* 1 = console running */
 int slot_valid(const char **why);
 #endif

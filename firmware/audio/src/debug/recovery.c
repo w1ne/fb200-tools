@@ -116,7 +116,7 @@ static void copier(uint32_t blob_len)
     }
 }
 
-void recovery_launch_app(void)
+void recovery_launch_app(int usb_up)
 {
     const char *why;
     if (!slot_valid(&why)) {   /* callers check; never jump into a bad slot */
@@ -131,7 +131,10 @@ void recovery_launch_app(void)
         NVIC->ICER[i] = 0xFFFFFFFFu;
         NVIC->ICPR[i] = 0xFFFFFFFFu;
     }
-    if (USB1->USBCMD & USBHS_USBCMD_RS_MASK) {   /* console was up: detach */
+    /* Only touch USB if we started it: at boot its clock may be gated, and a
+     * read of a gated peripheral stalls the bus forever (the first hardware
+     * run of this image hung here, before the watchdog was armed). */
+    if (usb_up) {
         USB1->USBCMD &= ~USBHS_USBCMD_RS_MASK;
         for (volatile uint32_t i = 0; i < 4000000u; i++) {
         }
@@ -161,5 +164,5 @@ const char *recovery_boot(void)
     if (snap[0] == CRUMB_REQUEST) return "requested by the app";
     if ((srsr & SRSR_WDOG) || (WDOG1_WRSR & 0x2u)) return "watchdog reset (app hung)";
     if (!slot_valid(&why)) return why;
-    recovery_launch_app();
+    recovery_launch_app(0);
 }
