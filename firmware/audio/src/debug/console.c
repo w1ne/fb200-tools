@@ -8,6 +8,7 @@
 #include "tusb.h"
 #include "cdc_log.h"
 #include "console.h"
+#include "fsl_iomuxc.h"
 #include "audio/i2c_probe.h"
 
 extern int g_bss_writable;
@@ -73,16 +74,44 @@ static void cmd_dumpmem(const char *a1, const char *a2)
 static void cmd_src(void)
 {
     log_printf("SRC_SRSR=%08x SRC_SBMR1=%08x SRC_SBMR2=%08x\r\n",
-               (unsigned)*(volatile uint32_t *)0x400F8020u,
+               (unsigned)*(volatile uint32_t *)0x400F8008u,
                (unsigned)*(volatile uint32_t *)0x400F8004u,
                (unsigned)*(volatile uint32_t *)0x400F801Cu);
+}
+
+/* Software handover to the vendor bootloader, mirroring the stock app's 0xC1
+ * path. RE of the bootloader decision block (0x60008d50..0x60008d84):
+ *   DFU requires (GPIO3_12 high OR GPIO2_24 high)
+ *     AND [0x600CF000] == [0x20010174]
+ *     AND [0x60003004] == [0x2001051C]
+ *     AND *(0x60086000) == 0xFF (erased flash; already true).
+ * The app copies the two flash words into the RAM handshake slots and drives
+ * the update pin (active high) before resetting. */
+__attribute__((noreturn)) static void handover(void)
+{
+    /* 1. RAM handshake slots (flash -> RAM copies) */
+    *(volatile uint32_t *)0x20010174u = *(volatile uint32_t *)0x600CF000u;
+    *(volatile uint32_t *)0x2001051Cu = *(volatile uint32_t *)0x60003004u;
+
+    /* 2. Fake the update button on GPIO2_IO24 (pad GPIO_B1_08, ALT5=GPIO) */
+    IOMUXC_SetPinMux(IOMUXC_GPIO_B1_08_GPIO2_IO24, 0U);
+    *(volatile uint32_t *)0x401F838Cu = 0x00000008u;          /* pad: DSE=1, no pull */
+    *(volatile uint32_t *)0x401BC004u |= (1u << 24);          /* GDIR: output */
+    *(volatile uint32_t *)0x401BC084u = (1u << 24);           /* DR_SET: high */
+
+    /* 3. Reset; the bootloader now takes the DFU path */
+    tud_disconnect();
+    for (volatile uint32_t i = 0; i < 2000000u; i++) {
+    }
+    NVIC_SystemReset();
+    __builtin_unreachable();
 }
 
 static void cmd_help(void)
 {
     log_printf("commands: help | stats | src | hb on|off | scan | dump [bus addr] |\r\n"
                "          peek <addr> [len] | dumpmem <addr> <len> | poke <addr> <val> |\r\n"
-               "          reset | reboot\r\n");
+               "          handover (DFU) | reset | reboot\r\n");
 }
 
 static void cmd_stats(void)
@@ -164,6 +193,11 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "dumpmem")) cmd_dumpmem(argv[1], argv[2]);
     else if (streq(argv[0], "src")) cmd_src();
     else if (streq(argv[0], "poke")) cmd_poke(argv[1], argv[2]);
+    else if (streq(argv[0], "handover")) {
+        log_printf("handover (DFU via the bootloader's 0xC1 path)\r\n");
+        cdc_log_task();
+        handover();
+    }
     else if (streq(argv[0], "reset") || streq(argv[0], "reboot")) {
         log_printf("rebooting (handover)\r\n");
         cdc_log_task();
