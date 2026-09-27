@@ -52,7 +52,9 @@ save preset (M); in stomp mode the switches toggle modules; boot with D held
 Knobs: 16, through two 74HC4051 muxes. Select lines GPIO2_IO17/18/19
 (pads `B1_01/02/03`); outputs ADC1 IN3 (`AD_B0_14`, k0-k7) and IN4
 (`AD_B0_15`, k8-k15). One channel per 10 ms (full scan 80 ms), 8 samples,
-drop min/max, average, invert (4095 - v); change threshold 48 counts.
+drop min/max, average; change threshold 48 counts. The notes said the
+stock inverts (4095 - v); on the pedal that turned every knob the wrong
+way (user report), so our firmware uses the raw reading.
 
 | knob | LED | target |
 | --- | --- | --- |

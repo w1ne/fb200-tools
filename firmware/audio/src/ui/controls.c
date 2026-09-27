@@ -63,7 +63,9 @@ uint16_t adc1_read(uint32_t ch)
 
 static uint16_t adc_read(uint32_t ch)
 {
-    return (uint16_t)(4095u - adc1_read(ch));   /* knobs: stock inverts */
+    /* Not inverted: the RE notes said the stock uses 4095 - v, but on the
+     * pedal that made every knob turn the wrong way (user report). */
+    return adc1_read(ch);
 }
 
 void controls_task(uint32_t now_ms)

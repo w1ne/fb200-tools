@@ -4,7 +4,7 @@
 #include <stdint.h>
 /* Footswitches A-D (active low) and 16 knobs (two 74HC4051 into ADC1),
  * docs/UI_AND_STORAGE.md §2. Values are 0..4095, 0 = fully counter-clockwise
- * (the stock inverts the raw reading the same way). */
+ * (the raw ADC reading; verified by turning the knobs on the pedal). */
 #define FSW_COUNT 4
 #define KNOB_COUNT 16
 typedef enum { FSW_NONE, FSW_PRESS, FSW_RELEASE, FSW_LONG } fsw_event_t;
