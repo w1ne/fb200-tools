@@ -69,6 +69,14 @@ void power_task(uint32_t now_ms)
     if (st.supply_low != was_low) power_fail_changed(st.supply_low);
 
     blink = !blink;
+    /* Charging: LED off from the MCU, exactly as the stock (0x1897c drives
+     * GPIO2 IO0/1/3 all high = off while GPIO1_IO19 is high). The manual's
+     * solid red (charging) / solid green (full) must then come from the
+     * charger chip, not from the firmware.
+     * TODO(pedal): charge with the open firmware and look at the status LED:
+     * red while charging, green when full = nothing to do; dark = the stock
+     * does drive it somewhere else (then io0 = red, io1 = green, as the
+     * battery colours below). */
     if (st.charging) status_led(1, 1, 1);
     else if (st.level >= 2) status_led(1, 0, 1);
     else if (st.level == 1) status_led(0, 0, 1);
