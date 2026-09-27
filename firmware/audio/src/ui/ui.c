@@ -178,15 +178,17 @@ static void toggle_module(int m)
     if (m == M_AMP) proto_notify_module(kProtoModule[M_CAB]);
 }
 
-/* Rhythm mode buttons (our mapping; the stock in-mode roles are not known):
- * A play/stop, B previous rhythm, C next rhythm, D tap tempo. */
+/* Rhythm mode buttons as the stock (manual p.14; code 0x9fec A, 0xa2d6 B,
+ * 0xa54e C, 0xa714 D): A previous rhythm (1 wraps to 40), B next rhythm,
+ * C tap tempo, D play/stop. */
 static void rhythm_single(int sw)
 {
     drums_t *d = engine_drums();
-    if (sw == SW_A) { if (d->on) drums_stop(d); else drums_start(d); }
-    else if (sw == SW_B) drums_set_rhythm(d, (d->rhythm + DRUMS_RHYTHMS - 1u) % DRUMS_RHYTHMS);
-    else if (sw == SW_C) drums_set_rhythm(d, (d->rhythm + 1u) % DRUMS_RHYTHMS);
-    else drums_tap(d, s_now);
+    if (sw == SW_A) drums_set_rhythm(d, (d->rhythm + DRUMS_RHYTHMS - 1u) % DRUMS_RHYTHMS);
+    else if (sw == SW_B) drums_set_rhythm(d, (d->rhythm + 1u) % DRUMS_RHYTHMS);
+    else if (sw == SW_C) drums_tap(d, s_now);
+    else if (d->on) drums_stop(d);
+    else drums_start(d);
     rhythm_dirty = true;
     rhythm_dirty_ms = s_now;
     show_rhythm();

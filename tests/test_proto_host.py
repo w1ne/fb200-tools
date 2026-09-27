@@ -360,6 +360,32 @@ def test_bank_browse_loads_from_the_shown_bank_or_times_out(h):
     assert h.cmd("index") == ["IDX 36"]
 
 
+def drums(h) -> list[int]:
+    """on, rhythm 0..39, level, bpm, last tap time"""
+    return [int(v) for v in h.cmd("drums")[0].split()[1:]]
+
+
+def test_rhythm_mode_buttons_as_stock(h):
+    h.cmd("fsw c press")
+    h.cmd("fsw b press")
+    h.cmd("fsw b long")                                        # C held + B long
+    h.cmd("fsw b release")
+    h.cmd("fsw c release")
+    assert disp(h) == "d01" and drums(h)[:2] == [0, 0]
+    tap(h, "a")                                                # A: rhythm - 1, wraps
+    assert drums(h)[1] == 39 and disp(h) == "d40"
+    tap(h, "b")
+    tap(h, "b")                                                # B: rhythm + 1
+    assert drums(h)[1] == 1 and disp(h) == "d02"
+    h.cmd("tick 500")
+    tap(h, "c")                                                # C: tap tempo
+    assert drums(h)[4] > 1000
+    tap(h, "d")                                                # D: play / stop
+    assert drums(h)[0] == 1
+    tap(h, "d")
+    assert drums(h)[0] == 0
+
+
 # ---------------------------------------------------------------- IR slots
 
 def test_ir_import_list_query_delete_with_the_client(h):
