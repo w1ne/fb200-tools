@@ -147,16 +147,48 @@ void engine_init(void)
 
 void engine_set_tuner(bool on) { s_tuner_on = on; }
 
+static volatile bool s_reapply;
+
+/* Re-initialise every DSP module; the preset is re-applied from the main
+ * loop (engine_needs_reapply). */
+void engine_dsp_reset(void)
+{
+    amp_init(&s_amp, (float)AUDIO_FS);
+    cab_init(&s_cab);
+    gate_init(&s_gate, (float)AUDIO_FS);
+    comp_init(&s_comp, (float)AUDIO_FS);
+    mod_init(&s_mod, (float)AUDIO_FS);
+    reverb_init(&s_rev, (float)AUDIO_FS);
+    s_amp_model = s_cab_type = -1;
+    s_reapply = true;
+}
+
+bool engine_needs_reapply(void)
+{
+    bool r = s_reapply;
+    s_reapply = false;
+    return r;
+}
+
 /* User IR slots (cab 11..19): the stock IR store, F:0x88000 used flags,
- * F:0x89000 + slot * 0x2800 data (float32). An empty slot is silent, as the
- * stock (cab 1 taps with gain 0). */
-static void load_user_ir(unsigned slot)
+ * F:0x89000 + slot * 0x2800 data (float32). Returns 0 if the slot is empty.
+ * The stock plays an empty slot as silence; that left users with a pedal
+ * that "stopped working" (seen 2026-09-27: our first version even read the
+ * erased flash as NaN taps and stayed silent for good). An empty slot now
+ * bypasses the cab instead. */
+static int load_user_ir(unsigned slot)
 {
     const volatile uint8_t *used = (const volatile uint8_t *)(0x60000000u + 0x88000u);
+    if (used[slot] != 1) return 0;
     const float *ir = (const float *)(0x60000000u + 0x89000u + slot * 0x2800u);
     memcpy(s_ir, ir, sizeof s_ir);
-    cab_set_ir(&s_cab, s_ir, used[slot] == 1 ? cab_user_ir_gain(s_ir) : 0.0f);
+    for (unsigned i = 0; i < CAB_TAPS; i++)
+        if (!(s_ir[i] > -1e6f && s_ir[i] < 1e6f)) s_ir[i] = 0.0f;   /* NaN/inf -> 0 */
+    cab_set_ir(&s_cab, s_ir, cab_user_ir_gain(s_ir));
+    return 1;
 }
+
+static bool s_cab_bypass;   /* user IR slot selected but empty */
 
 void engine_apply_preset(const preset_t *p, unsigned master)
 {
@@ -168,8 +200,9 @@ void engine_apply_preset(const preset_t *p, unsigned master)
                    pget(p, P_AMP_MIDFREQ), pget(p, P_AMP_TREBLE), pget(p, P_AMP_VOLUME));
     int cab = pget(p, P_CAB_TYPE);
     if (cab != s_cab_type) {
+        s_cab_bypass = false;
         if (cab >= 1 && cab <= 10) (void)cab_set_model(&s_cab, cab);
-        else if (cab >= 11 && cab <= 19) load_user_ir((unsigned)(cab - 11));
+        else if (cab >= 11 && cab <= 19) s_cab_bypass = !load_user_ir((unsigned)(cab - 11));
         s_cab_type = cab;
     }
     s_gate_en = pget(p, P_GATE_EN) != 0;
@@ -318,11 +351,23 @@ void engine_task(void)
     if (s_gate_en) gate_process(&s_gate, x, (unsigned)n);
     if (s_comp_en) comp_process(&s_comp, x, (unsigned)n);
     if (s_amp_en) amp_process(&s_amp, x, (unsigned)n);
-    if (s_cab_en) cab_process(&s_cab, x, (unsigned)n);
+    if (s_cab_en && !s_cab_bypass) cab_process(&s_cab, x, (unsigned)n);
     if (s_mod_en) mod_process(&s_mod, x, (unsigned)n);
     float xl[ENGINE_FRAMES], xr[ENGINE_FRAMES];
     if (s_rev_en) reverb_process(&s_rev, x, xl, xr, (unsigned)n);   /* mono in, L/R out */
     else { memcpy(xl, x, n * sizeof x[0]); memcpy(xr, x, n * sizeof x[0]); }
+    /* Never get stuck silent: one NaN/inf in a filter state keeps a chain
+     * outputting NaN (which reaches the DAC as 0). Reset the DSP state and
+     * re-apply the preset on the next main-loop pass. */
+    for (size_t i = 0; i < n; i++) {
+        if (!(xl[i] > -1e6f && xl[i] < 1e6f) || !(xr[i] > -1e6f && xr[i] < 1e6f)) {
+            engine_dsp_reset();
+            memset(xl, 0, sizeof xl);
+            memset(xr, 0, sizeof xr);
+            s_stats.dsp_resets++;
+            break;
+        }
+    }
     for (size_t i = 0; i < n; i++) {
         s_master += 0.001f * (s_master_target - s_master);   /* stock: smoothed master */
         float g = s_tuner_on ? 0.0f : s_master;               /* stock: tuning is silent */

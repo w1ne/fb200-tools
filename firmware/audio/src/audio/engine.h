@@ -10,6 +10,7 @@ typedef struct {
     uint32_t fifo_inserts; /* playback ring starved: last frame repeated */
     uint32_t dma_errors;   /* SAI FIFO error flags seen */
     uint32_t latency_skips; /* output blocks skipped to bound DAC latency */
+    uint32_t dsp_resets;    /* non-finite output -> DSP state reset */
 } engine_stats_t;
 
 void engine_init(void);
@@ -38,5 +39,7 @@ drums_t *engine_drums(void);
 /* Apply a preset (stock layout) and the master volume 0..100 to the chain. */
 #include "preset/preset.h"
 void engine_apply_preset(const preset_t *p, unsigned master);
+void engine_dsp_reset(void);
+bool engine_needs_reapply(void);   /* after a DSP reset: apply the preset again */
 
 #endif

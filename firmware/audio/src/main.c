@@ -102,7 +102,8 @@ void app_main(void)
             {   /* push front-panel / app edits into the DSP chain */
                 static uint32_t applied = 0xFFFFFFFFu;
                 static uint8_t applied_master = 0xFF;
-                if (ui_revision() != applied || ui_master() != applied_master) {
+                if (engine_needs_reapply() || ui_revision() != applied ||
+                    ui_master() != applied_master) {
                     applied = ui_revision();
                     applied_master = ui_master();
                     engine_apply_preset(ui_edit_preset(), applied_master);

@@ -205,10 +205,11 @@ static void cmd_stats(void)
 #ifndef FB200_RECOVERY
     engine_stats_t es;
     engine_get_stats(&es);
-    log_printf("engine: gain=%d dB mute=%d drops=%lu inserts=%lu dma_errs=%lu skips=%lu\r\n",
+    log_printf("engine: gain=%d dB mute=%d drops=%lu inserts=%lu dma_errs=%lu skips=%lu resets=%lu\r\n",
                (int)engine_get_gain_db(), engine_get_mute() ? 1 : 0,
                (unsigned long)es.fifo_drops, (unsigned long)es.fifo_inserts,
-               (unsigned long)es.dma_errors, (unsigned long)es.latency_skips);
+               (unsigned long)es.dma_errors, (unsigned long)es.latency_skips,
+               (unsigned long)es.dsp_resets);
     log_printf("meters: peak L=%d R=%d (x1000)\r\n",
                (int)(g_meter_peak[0] * 1000.0f),
                (int)(g_meter_peak[1] * 1000.0f));
