@@ -101,6 +101,8 @@ static bool s_meters;
 static tuner_t s_tuner;
 static drums_t s_drums;
 static bool s_tuner_on;
+static bool s_tuner_mute = true;        /* S+0x2e, stock default 1 */
+static dsp_knob_t s_in_gain;            /* S+0x1a, smoothed like the stock */
 /* the stock chain (docs/PARITY.md M2): amp (+ tone stack) -> cab, mono */
 static amp_t s_amp;
 static cab_t s_cab;
@@ -130,6 +132,9 @@ void engine_init(void)
     s_fault_mute = false;
     s_meters = false;
     tuner_init(&s_tuner, 440);
+    /* stock input gain smoother (callback 0x17ffe): y = t*0.001 + y*0.999 */
+    dsp_knob_init(&s_in_gain, 0.001f, 0.999f);
+    dsp_knob_set(&s_in_gain, 0.9999702f);
     amp_init(&s_amp, (float)AUDIO_FS);
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;   /* cycle counter for `stats` */
     DWT->CYCCNT = 0;
@@ -218,6 +223,19 @@ void engine_apply_preset(const preset_t *p, unsigned master)
                       pget(p, P_REV_AE), pget(p, P_REV_A8));
     s_master_target = (float)(master > 100u ? 100u : master) * 0.01f;
 }
+void engine_apply_settings(const settings_t *s)
+{
+    /* 0 dB: the float the stock smoother settles on from below (it stalls
+     * short of 1.0), for bit parity at the default setting */
+    float g = gain_input_stock(s->b[S_IN_GAIN]);
+    dsp_knob_set(&s_in_gain, g == 1.0f ? 0.9999702f : g);
+    /* stock 0x913c: A4 = 435 + S+0x2c (default 5 = 440 Hz); out of range
+     * (e.g. an erased block) -> the default */
+    unsigned cal = s->b[S_TUNER_CAL];
+    tuner_set_a4(&s_tuner, 435 + (int)(cal <= 15u ? cal : 5u));
+    s_tuner_mute = s->b[S_TUNER_MUTE] != 0;
+}
+
 bool engine_tuner_poll(tuner_result_t *out) { return tuner_poll(&s_tuner, out) != 0; }
 drums_t *engine_drums(void) { return &s_drums; }
 
@@ -335,8 +353,9 @@ void engine_task(void)
         s_block.data[1][i] = (float)in[i * 2 + 1] * (1.0f / 32768.0f);
     }
     /* The stock feeds the chain and the tuner with L + R of the instrument
-     * ADC; into the amp at x 0.9999702 (a unity gain whose smoother stalls
-     * there - needed for bit parity, tests/test_stock_dsp_parity.py). */
+     * ADC; into the chain times the input gain (S+0x1a). At the default
+     * 0 dB that is x 0.9999702 (a unity gain whose smoother stalls there -
+     * needed for bit parity, tests/test_stock_dsp_parity.py). */
     uint32_t t0 = DWT->CYCCNT;
     float x[ENGINE_FRAMES];
     if (s_testgen_in && s_testgen.mode != TESTGEN_OFF) {   /* test signal into the chain */
@@ -346,7 +365,7 @@ void engine_task(void)
     }
     for (size_t i = 0; i < n; i++) x[i] = s_block.data[0][i] + s_block.data[1][i];
     tuner_feed(&s_tuner, x, n);
-    for (size_t i = 0; i < n; i++) x[i] *= 0.9999702f;
+    for (size_t i = 0; i < n; i++) x[i] *= dsp_knob_next(&s_in_gain);
     /* stock chain (ITCM 0x7b60): gate -> comp -> amp -> cab -> mod -> reverb */
     if (s_gate_en) gate_process(&s_gate, x, (unsigned)n);
     if (s_comp_en) comp_process(&s_comp, x, (unsigned)n);
@@ -373,7 +392,7 @@ void engine_task(void)
     for (size_t i = nbt; i < n; i++) btl[i] = btr[i] = 0.0f;
     for (size_t i = 0; i < n; i++) {
         s_master += 0.001f * (s_master_target - s_master);   /* stock: smoothed master */
-        float g = s_tuner_on ? 0.0f : s_master;               /* stock: tuning is silent */
+        float g = s_tuner_on && s_tuner_mute ? 0.0f : s_master;   /* stock: S+0x2e mutes the tuner */
         /* stock mix: out = chain*master + BT*master*1.3 (capture: + BT) */
         s_block.data[0][i] = xl[i] * g + btl[i] * g * 1.3f;
         s_block.data[1][i] = xr[i] * g + btr[i] * g * 1.3f;

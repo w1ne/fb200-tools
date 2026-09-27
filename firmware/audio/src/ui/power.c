@@ -3,6 +3,7 @@
 #include "ui/controls.h"
 #include "fsl_gpio.h"
 #include "ui/ui.h"
+#include "proto/proto.h"
 
 #define ANALOG_CFG 0x00B0u
 #define LED_CFG    0x10B0u
@@ -14,6 +15,11 @@ static const uint16_t kLevel[4] = {0xE74u, 0xE10u, 0xD98u, 0xC80u};   /* >= -> 4
 static power_state_t st;
 static uint32_t last_ms;
 static bool blink;
+/* A new level counts after LEVEL_READS equal readings in a row (the stock
+ * 0x18940 wants 100 at its own rate; ours are 250 ms apart). */
+#define LEVEL_READS 8u
+static uint8_t pending, pending_n, sent_level;
+static bool started, sent_charging;
 
 /* status RGB LED on GPIO2_IO0/1/3 (B0_00/01/03), active low: 1 = off */
 static void status_led(uint8_t io0, uint8_t io1, uint8_t io3)
@@ -47,7 +53,16 @@ void power_task(uint32_t now_ms)
     st.charging = GPIO_PinRead(GPIO1, 19u) != 0u;
     uint8_t lvl = 0;
     while (lvl < 4 && st.battery_raw < kLevel[lvl]) lvl++;
-    st.level = (uint8_t)(4u - lvl);
+    lvl = st.charging ? 4u : (uint8_t)(4u - lvl);   /* stock 0x1897c: level 4 while charging */
+    if (!started) st.level = lvl;
+    else if (lvl == st.level) pending_n = 0;
+    else if (lvl != pending) { pending = lvl; pending_n = 1; }
+    else if (++pending_n >= LEVEL_READS) st.level = lvl;
+    /* stock 0x18a5e: BB to the app when the level or the charger changes */
+    if (started && (st.level != sent_level || st.charging != sent_charging)) proto_notify_battery();
+    sent_level = st.level;
+    sent_charging = st.charging;
+    started = true;
     bool was_low = st.supply_low;
     if (st.supply_raw < SUPPLY_FAIL) st.supply_low = true;
     else if (st.supply_raw > SUPPLY_OK) st.supply_low = false;

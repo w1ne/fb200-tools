@@ -70,6 +70,15 @@ int main(void)
     for (float db = -24.0f; db <= 24.0f; db += 0.5f)
         assert(fabsf(dsp_db_to_gain(db) - powf(10.0f, db / 20.0f)) < 0.01f);
 
+    /* stock input gain table (S+0x1a): mute, -55..-5 dB in 5 dB, 0 dB x2, +0.5..+6 dB */
+    assert(gain_input_stock(0) == 0.0f);
+    for (unsigned i = 1; i <= 25; i++) {
+        float db = i <= 11 ? -60.0f + 5.0f * (float)i : i <= 13 ? 0.0f : 0.5f * (float)(i - 13);
+        assert(fabsf(gain_input_stock(i) / powf(10.0f, db / 20.0f) - 1.0f) < 1e-6f);
+    }
+    assert(gain_input_stock(GAIN_INPUT_DEFAULT) == 1.0f && gain_input_stock(12) == 1.0f);
+    assert(gain_input_stock(26) == 1.0f && gain_input_stock(255) == 1.0f);   /* -> default */
+
     printf("dsp host tests OK\n");
     return 0;
 }

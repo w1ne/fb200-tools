@@ -1,11 +1,12 @@
 #ifndef FB200_BT_H
 #define FB200_BT_H
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 /* Bluetooth module link: LPUART5 (GPIO_B1_12 TX / B1_13 RX), 115200 8N1,
  * like the stock (docs/UI_AND_STORAGE.md §4). The module takes AT commands
  * and is otherwise a transparent BLE UART carrying the app's AA 55 frames. */
-void bt_init(void);
+void bt_init(bool audio_on);                    /* audio_on: settings S+0x17 */
 void bt_task(uint32_t now_ms);
 int bt_send(const uint8_t *data, size_t n);     /* non-blocking; -1 while busy/full */
 int bt_at(const char *cmd);                     /* sends cmd + "\r\n" */

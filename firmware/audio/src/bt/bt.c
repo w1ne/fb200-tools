@@ -14,7 +14,7 @@ static uint8_t tx_buf[256];
 static volatile int tx_busy;
 static uint8_t log_buf[128];
 static size_t log_len;
-static const char *const kInit[] = {"AT+TM", "AT+CN00", "AT+B501", "AT+B401"};
+static const char *kInit[] = {"AT+TM", "AT+CN00", "AT+B501", "AT+B401"};
 static uint8_t q[2048];            /* app frames waiting for the UART */
 static uint32_t q_head, q_tail;
 static int step = -1;               /* AT start-up step, -1 = not started */
@@ -29,8 +29,11 @@ static void cb(LPUART_Type *b, lpuart_handle_t *h, status_t s, void *u)
     if (s == kStatus_LPUART_TxIdle) tx_busy = 0;
 }
 
-void bt_init(void)
+void bt_init(bool audio_on)
 {
+    /* The stock always sends AT+B501 at boot (0x1b8f0), so its Bluetooth
+     * audio switch (S+0x17) is lost on a reboot; we keep it. */
+    kInit[2] = audio_on ? "AT+B501" : "AT+B500";
     IOMUXC_SetPinMux(IOMUXC_GPIO_B1_12_LPUART5_TX, 0U);
     IOMUXC_SetPinMux(IOMUXC_GPIO_B1_13_LPUART5_RX, 0U);
     IOMUXC_SetPinConfig(IOMUXC_GPIO_B1_12_LPUART5_TX, PAD_CFG);
@@ -90,7 +93,8 @@ static void pump_queue(void)
 }
 
 /* The stock start-up sequence (ITCM 0x1b630), minus the renames (the module
- * keeps its name): AT+TM, then AT+CN00, AT+B501, AT+B401, 150 ms apart. */
+ * keeps its name): AT+TM, then AT+CN00, AT+B501 (B500: audio off), AT+B401,
+ * 150 ms apart. */
 
 void bt_task(uint32_t now_ms)
 {

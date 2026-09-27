@@ -39,6 +39,8 @@ drums_t *engine_drums(void);
 /* Apply a preset (stock layout) and the master volume 0..100 to the chain. */
 #include "preset/preset.h"
 void engine_apply_preset(const preset_t *p, unsigned master);
+/* Global settings: input gain (S+0x1a), tuner A4 (S+0x2c), tuner mute (S+0x2e). */
+void engine_apply_settings(const settings_t *s);
 void engine_dsp_reset(void);
 bool engine_needs_reapply(void);   /* after a DSP reset: apply the preset again */
 

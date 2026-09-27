@@ -79,8 +79,8 @@ void app_main(void)
     controls_init();
     power_init();
     rgb_init();
-    bt_init();
     ui_init();
+    bt_init(ui_settings()->b[S_BT] != 0);   /* after ui_init: Bluetooth audio on/off */
     proto_port_init();   /* after ui_init: it reads the edit buffer */
     usb_hid_init();
     if (!codec_ok) {
@@ -109,6 +109,7 @@ void app_main(void)
                     applied = ui_revision();
                     applied_master = ui_master();
                     engine_apply_preset(ui_edit_preset(), applied_master);
+                    engine_apply_settings(ui_settings());
                 }
             }
             bt_task(now);
