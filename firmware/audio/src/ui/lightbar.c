@@ -2,11 +2,10 @@
 #include "ui/lightbar.h"
 #include "ui/rgb.h"
 
-/* First LED of each footswitch's ring, A..D. Measured on the pedal with a
- * camera: LEDs 0-9 are in the D dome (rightmost), 30-39 in A (leftmost).
- * The stock code addresses switch s as LEDs 10*s..10*s+9 (A = 0-9, e.g.
- * 0x19414, rhythm ring A = switch A at 0x68ca): see docs/PARITY.md. */
-static const uint8_t kRingFirst[4] = {30, 20, 10, 0};
+/* First LED of each footswitch's ring, A..D: switch s is LEDs 10*s..10*s+9,
+ * as the stock addresses them (0x19414; rhythm ring A = switch A at 0x68ca).
+ * Checked on the pedal: selecting slot A lights the dome of LEDs 0-9. */
+static const uint8_t kRingFirst[4] = {0, 10, 20, 30};
 
 /* Stock palette (DTCM 0x2000766c), 0xRRGGBB: red, orange, yellow, green,
  * cyan, blue, magenta, pink, white. Index 9 reads the word after the table

@@ -49,7 +49,7 @@ Status words:
 | 16 knobs with pickup, knob LEDs (on / blink / off) | DONE, BETTER | `ui.c` `knobs`, `leds`; knob table measured on the pedal; display names the knob and marks "not picked up" |
 | Knob LEDs off in tuner mode | DONE | `ui.c` `leds`; host test |
 | Display: `P`/`L` + bank + slot, `d`, 0-100 values, tuner | DONE | `ui/display.c`, `ui.c` |
-| Footswitch light rings (40 RGB LEDs, 10 per dome): switch status, app colours, save blink, tempo flash | DONE (host) | `ui/lightbar.c` from the stock LED task 0x67e0: preset mode = only the loaded slot's ring, in its app colour and level (0x19414); live mode = a ring per switch while its module is on, fixed colours (0x6a94); tuner = all off; rhythm = A/B lit while held, C tempo flash, D lit while playing (0x68ca). Frames only on change, at most every 20 ms. Host tests. **Ring order**: the stock addresses switch A as LEDs 0-9 (0x19414, 0x68ca reads switch A's GPIO for ring 0), but the camera puts LEDs 0-9 in the D dome; ours follows the camera. Check on the pedal (below) |
+| Footswitch light rings (40 RGB LEDs, 10 per dome): switch status, app colours, save blink, tempo flash | DONE (host) | `ui/lightbar.c` from the stock LED task 0x67e0: preset mode = only the loaded slot's ring, in its app colour and level (0x19414); live mode = a ring per switch while its module is on, fixed colours (0x6a94); tuner = all off; rhythm = A/B lit while held, C tempo flash, D lit while playing (0x68ca). Frames only on change, at most every 20 ms. Host tests. Ring order as the stock (switch A = LEDs 0-9); checked on the pedal: slot A lights that dome |
 | Status LED (battery level, charging) | DONE | `ui/power.c`: level colours from stock thresholds. While charging the stock code turns the LED off too (0x1897c); the manual's red/green must come from the charger chip. Check on the pedal |
 | Factory reset (app `B2`, console `factory yes`) | DONE | stock routine 0x18fe0: 40 presets (20 factory + 20 EMPTY), default settings, rhythm block, IR list; factory presets from the stock data blob v2; `ui_factory_reset`, `proto_factory_reset`; host test. Keeps the master volume (stock default 0) |
 | Test mode (boot with D held) | MISSING | low priority, meaning not known |
@@ -142,10 +142,7 @@ The changes of 2026-09-27 are tested on the host only. On the pedal:
       or cab), D green (comp); each switch toggles its own dome;
     - tuner: all domes dark;
     - rhythm mode: A and B red while held, C flashes red at the tempo (dark
-      for the first half of each beat), D red while the drums play;
-    - on the stock firmware, rhythm mode, hold A: note which dome lights (the
-      stock code sends it on LEDs 0-9). If it is the A dome, the camera map
-      is wrong; if it is the D dome, the stock has the rings reversed.
+      for the first half of each beat), D red while the drums play.
 
 ## Stock effect ports
 
@@ -262,7 +259,7 @@ Budgets on this chip: 600 MHz / 44.1 kHz = 13.6k cycles per sample; RAM
   with the stock buttons), knobs with pickup, knob LEDs, presets in the stock
   format, factory reset, battery/charger monitor, settings save, tuner, drum
   machine, Bluetooth (AT, app protocol, BT audio on SAI3). Open: the pedal
-  checks above (incl. the light rings, gap 2), then the test session (gap 1).
+  checks above (incl. the light rings), then the test session (gap 1).
 - **M4 - better core (after parity):** 48 kHz / 24-bit engine (needed for
   NAM; stock assets resampled offline), latency <3 ms, CPU/RAM profiler;
   bass chain additions: crossover clean-blend drive, 5-7 band EQ + HPF/LPF,

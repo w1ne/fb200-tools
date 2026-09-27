@@ -465,7 +465,7 @@ def test_knob_leds_off_in_tuner_mode(h):
 
 # ------------------------------------------------------ footswitch light rings
 # LEDs 0-9 are in the D dome, 10-19 C, 20-29 B, 30-39 A (camera, UI_AND_STORAGE §3).
-RING_FIRST = {"a": 30, "b": 20, "c": 10, "d": 0}
+RING_FIRST = {"a": 0, "b": 10, "c": 20, "d": 30}
 OFF = (0, 0, 0)
 RED = (0x3F, 0, 0)          # the stock sends every byte >> 2 (0x17d54)
 

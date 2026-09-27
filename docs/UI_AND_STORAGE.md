@@ -99,11 +99,11 @@ wrong, its knob-LED pairing right):
   FlexIO UART at 6.6 Mbaud + eDMA, 24 UART chars per LED (0xC0 = 0,
   0xFC = 1), 25 % brightness (the stock sends every byte >> 2).
   **They are rings inside the 4 footswitch domes, 10 per dome** (camera,
-  2026-09-28): LEDs 0-9 = footswitch D (rightmost), 10-19 = C, 20-29 = B,
-  30-39 = A (leftmost). The order inside a ring is not mapped: each ring is
-  driven as one colour. The white light bars on the panel are separate and
-  not driven by these LEDs. The stock code addresses switch A as LEDs 0-9
-  (the opposite order): see `docs/PARITY.md`. Behaviour (stock LED task
+  2026-09-28): LEDs 0-9 = footswitch A, 10-19 = B, 20-29 = C, 30-39 = D,
+  as the stock code addresses them (checked: selecting slot A lights the
+  0-9 dome). The order inside a ring is not mapped: each ring is driven as
+  one colour. The white light bars on the panel are separate and not
+  driven by these LEDs. Behaviour (stock LED task
   0x67e0, ours `ui/lightbar.c`): `docs/STOCK_FEATURES.md` "Light rings".
 - Status RGB LED: GPIO2_IO0/1/3 (`B0_00/01/03`), active low; battery on
   ADC channel 9 (`AD_B1_04`), charger sense GPIO1_IO19 (`AD_B1_03`).
