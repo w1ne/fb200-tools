@@ -158,8 +158,11 @@ static void knobs(uint32_t now)
         if (ui_log) log_printf("knob k%d = %u (raw %u, stored %u%s)\r\n", k, v,
                                (unsigned)knob_value(k), s, caught[k] ? "" : ", not caught");
         if (!caught[k]) {
-            int d = (int)v - (int)s;
-            if (d < -2 || d > 2) continue;    /* pickup: wait until the knob passes the value */
+            /* pickup: act only once the knob reaches the stored value
+             * (+-2 % on level knobs; exact on selectors, where a tolerance
+             * would jump the loaded model/type to the knob position) */
+            int d = (int)v - (int)s, tol = kKnob[k].types ? 0 : 2;
+            if (d < -tol || d > tol) continue;
             caught[k] = true;
         }
         if (v == s) continue;
