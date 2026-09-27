@@ -18,6 +18,6 @@ int fw_active(void);
 void fw_rx_task(void);   /* call instead of the line reader while active */
 void fw_info(void);
 void fw_test(void);
-/* Preset/settings store: RMW of one 4 KB sector in F:0x71000..0x89000. */
+/* Preset/settings/IR store: RMW of one 4 KB sector in F:0x71000..0xA1800. */
 int flash_store(uint32_t offset, const void *data, uint32_t len);          /* non-destructive: WREN must set WEL */
 #endif

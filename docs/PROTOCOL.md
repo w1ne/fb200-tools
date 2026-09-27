@@ -1,11 +1,15 @@
-# FB200 USB HID Protocol
+# FB200 App Protocol (USB HID and BLE)
 
-Reverse-engineered documentation of the USB HID protocol used by the FLAMMA FB200
-(a Mooer-based bass multi-effects pedal), as implemented by `fb200-tools` v0.1.
+Reverse-engineered documentation of the protocol the FLAMMA FB200 (a
+Mooer-based bass multi-effects pedal) speaks to the official Electron editor
+(USB HID) and the phone app (BLE).
 
-Everything below was verified against a real FB200 (application firmware V1.0.1),
-the official Electron editor, and the commands `fb200-tools` sends and receives
-today. Facts that are known but not yet implemented (firmware update mode) are
+The framing, CRC, version and IR commands were verified against a real FB200
+(application firmware V1.0.1), the official Electron editor, and the commands
+`fb200-tools` sends and receives. The full command set in §5 comes from the
+stock firmware image (static analysis plus emulation of its dispatcher; marked
+**(E)** where emulated) and is implemented by our firmware
+(`firmware/audio/src/proto`). Facts that are known but not yet implemented (firmware update mode) are
 marked as such.
 
 ## 1. USB identities
@@ -57,11 +61,33 @@ Example: get version (`fn = 0x00`, no payload) is
 ### Identify byte
 
 The official Electron app writes an **identify byte** before `fn`
-(`0x11` = PC, `0x10` = BLE). The FB200's USB HID interface accepts frames
-**without** it; an identify `0x11` frame receives **no reply over USB**
-(BLE presumably requires it). `fb200-tools` therefore always sends
-identify-less frames, and all offsets in this document describe identify-less
-framing. Device replies use the same framing, also without an identify byte.
+(`0x11` = PC, `0x10` = BLE). The stock firmware does **not** support it: its
+dispatcher (ITCM `0x46c4`) reads `fn` from frame byte 4 and there is no
+command `0x10`/`0x11`, so an identify frame is silently dropped over USB and
+BLE alike (this is why an identify `0x11` frame gets no reply). Replies never
+carry it. `fb200-tools` and our firmware use identify-less frames; our
+firmware drops identify frames like the stock.
+
+### Transports (stock firmware)
+
+Both transports feed the same reassembly state machine (ITCM `0x7264`, one
+instance and 1 KB buffer per transport) and the same dispatcher:
+
+| id / reply mask | Transport | Receive | Send |
+|---|---|---|---|
+| `1` | USB HID interface 3 | report `[len][len bytes]` appended to a 2 KB ring | frame split into 63-byte chunks, each a 64-byte report `[len][chunk][zero pad]` (`0x1b384`) |
+| `2` | BLE via the Bluetooth module (LPUART5, 115200 8N1, transparent UART) | every RX byte into a 2 KB ring (IRQ `0xaf70`) | raw frame bytes in 70-byte UART chunks; after each chunk the stock waits up to 14 ms for a module-ready flag (`0x115f0`) |
+
+Reassembly: wait for `AA`, then `55` (else resync), read `len`, which must
+be `1..0x3FA` (else resync); wait for `len + 6` bytes; check the CRC; on any
+mismatch drop one byte and resync on the next `AA`. A partial frame waits for
+more bytes, so a frame may arrive in any number of pieces.
+
+Replies are queued (200 entries, ITCM `0xbd58`) with a transport mask and
+built by a task (`0xfad0`). A command's reply goes to the transport it came
+from; **unsolicited notifications go to BLE only** (the phone app is the live
+editor; the Electron editor only uses info and IR commands). A few replies
+are hard-wired to USB (noted in §5).
 
 ## 4. CRC16
 
@@ -86,79 +112,155 @@ Verified vectors:
 
 ## 5. Command set
 
-Application-mode commands (device `34DB:800F`, vendor HID interface):
+Reverse-engineered from the stock `V1.0.1` image: dispatcher ITCM `0x46c4`,
+reply builder `0xfad0`. Layouts marked **(E)** were confirmed by emulating the
+stock dispatcher + reply builder with crafted frames (Unicorn, RAM images from
+the vendor loader); the others are from static reading of the same code.
+Payload offsets exclude `fn`. All u16 are little endian. "edit" = the live
+edit buffer (the current preset, 256 bytes, layout in
+[`UI_AND_STORAGE.md`](UI_AND_STORAGE.md) §5 / `firmware/audio/src/preset/preset.h`);
+"S" = the global settings block (49 bytes, flash `0x80000`).
 
-| fn | Direction | Meaning | Payload / reply |
-|----|-----------|---------|-----------------|
-| `00` | host → dev | Get version | reply `fn=01`, see §5.1 |
-| `61` | host → dev | Upload IR | 9 frames, see §5.2; reply `fn=62` per frame |
-| `63` | host → dev | Query IR slot | `[01, slot u16 LE, 00]`; reply `fn=64`, see §5.3 |
-| `67` | host → dev | Delete IR slot | `[01, slot u16 LE, 01]`; reply `fn=68`, see §5.4 |
-| `C1` | host → dev | Jump to bootloader | device re-enumerates as `0483:5703` |
-| `B2` | dev → host | Device notification | client should re-query the IR list |
+### 5.1 Summary
 
-IR slots are **1-based** (`1..9`). Offsets are within the reply payload, i.e.
-after the `fn` byte.
+| fn | Request payload | Effect | Reply (to requester unless noted) |
+|---|---|---|---|
+| `00` | - | get version | `01` version (55 B) **(E)** |
+| `FA` | - | short version | `FB` (41 B), **to USB only** **(E)** |
+| `C3` | - | device info | `C4` (47 B), **to USB only** **(E)** |
+| `61` | IR upload frame | assemble an IR, commit on the last frame | `62` per frame **(E)** |
+| `63` | `[type=1][slot u16][op]` | IR name (op 0) or data chunk op (1..20) | `64` **(E)** |
+| `65` | `[type=1][first u16][last u16]` | IR slot list, slots first..last (<= 9) | `66` **(E)** |
+| `67` | `[type=1][slot u16][op][name 50]` | op 1 delete, op 2 rename | `68` + BLE `69` **(E)** |
+| `80`..`86` | module block (u16s) | write one effect module of edit | none; BLE echo of the block when a model change loaded defaults **(E)** |
+| `94` | - | app connect: dump state | `A1 B0 B7 BA BB B5 83 C9` **(E)** |
+| `96` | `[index]` | read preset `index` from flash | `97 [index][256 B]` **(E)** |
+| `97` | `[index][256 B]` | store preset (index `FF`: edit only, no store) | `99 [1]`, `98 [index]` |
+| `98` | `[index]` | select preset 0..39 | BLE `98 [index]`, BLE `83` **(E)** |
+| `99` | `[index][name 20]` | rename preset (selects it, stores it) | BLE `97 [index][256 B]`, BLE `A1` |
+| `A0` | `[7 B]` | module order -> edit `+0xBC..0xC2` | none |
+| `A3` | `[u16]` | stored in RAM (`0x2000844c`), purpose unknown | none (queues `A4`, which the builder does not emit) **(E)** |
+| `B0` | `[13 B]` settings block | write settings (see 5.5) | BLE `83` if the global cab switch changed **(E)** |
+| `B2` | - | **factory reset**: all 40 presets + settings + rhythm | `B2 [1]` to requester **and** USB **(E)** |
+| `B3` | `[name 20]` | Bluetooth name: S`+0x02..0x15`, flash `0x83000`, AT commands | none **(E)** |
+| `B7` | `[4 B]` | S`+0x1B..0x1E` (each > 72 -> 9) | none **(E)** |
+| `B8` | `[a][-][b][c]` | S`+0x2C` = a, `+0x2D` = b, `+0x2E` = c | none **(E)** |
+| `BA` | `[6 B]` rhythm | rhythm block (see 5.6) | none **(E)** |
+| `C1`, `C4` | - | enter the updater: flash `0x86000` = `00`, `AT+B500`, `AT+CZ`, `C2 [1]` to USB, SYSRESETREQ | `C2 [1]` |
+| `C9` | `[b]` | S`+0x20` (rhythm mode) = b | none **(E)** |
+| `D6` | `[b]` | BLE flow flag (RAM) | none; from BLE the stock also sends `9B 00` on USB |
+| `D9` | - | read the 30-byte block at flash `0x85000` | `DA [30 B]` **(E)** |
+| `DA` | `[30 B]` | write the block at flash `0x85000` | none **(E)** |
+| other | - | ignored (incl. identify-byte frames) | none |
 
-### 5.1 Get version (`00` → reply `01`)
+### 5.2 Version and info replies
 
-Request payload: none. Reply payload: 55 bytes.
+- `01` (55 B): product `[0:32]` NUL padded (`FB200`), application version
+  `[32:39]`, firmware `[39:46]`, Bluetooth `[46:53]`, hardware rev `[53:55]`
+  (stock `V1.0.0` / `V1.0.1` / `V1.0.0` / `A`). Captured reply in §7.
+- `FB` (41 B): product `[0:32]`, firmware `[32:39]`, hardware rev `[39:41]`.
+- `C4` (47 B): product `[0:32]`, `'A'`, `01`, firmware `[34:41]`, then
+  `05 00 0A 0A 00 00` (meaning unknown).
 
-| Payload offset | Size | Field | Captured value |
-|----------------|------|-------|----------------|
-| `0` | 32 | product id, NUL-padded ASCII | `FB200` |
-| `32` | 7 | application version, NUL-terminated | `V1.0.0` |
-| `39` | 7 | firmware version, NUL-terminated | `V1.0.1` |
-| `46` | 7 | Bluetooth module version, NUL-terminated | `V1.0.0` |
-| `53` | 2 | hardware revision, NUL-terminated | `A` |
+### 5.3 Effect modules `80`..`86`
 
-A full annotated capture is in §7.
+Request = the module's u16 fields in order; the edit buffer is written, the
+values are clamped, and there is no reply. When the model/type field changes,
+the stock loads that model's default parameters (tables at DTCM `0x2000845c`
+amp, `0x2000875e` mod, `0x20008868` delay, `0x20008830` reverb; copied into
+`firmware/audio/src/proto/proto.c`) and echoes the resulting block to BLE with
+the same `fn`. The pedal sends the same `80`..`86` blocks to BLE when a knob
+or footswitch changes a module.
 
-### 5.2 Upload IR (`61` → reply `62` per frame)
+| fn | edit offset | fields (u16) | clamps (value > max -> replacement) | defaults on type change |
+|---|---|---|---|---|
+| `80` | `0x14` | en, type, p1..p4 | en>1->1, type>21->1, p>100->100 | no |
+| `81` | `0x5C` | en, type, level | en>1->1, type>4->1, level>100->100 | no |
+| `82` amp | `0x2C` | en, model, gain, bass, mid, midfreq, treble, volume | model>120->1, p>100->100; en && model 0 -> 1 | 6 params (models 1..55) |
+| `83` cab | `0x44` | en, type, p1..p4 | type>120->1, p1>4->4, p2,p3>100->100, p4>9->9; en && type 0 -> 1 | no (type >= 11 selects user IR `type - 11`; reloads the IR) |
+| `84` mod | `0x74` | en, type, p1..p5 | type>21->1, p1..p4>100->100, p5>240->100 | 5 params |
+| `85` delay | `0x8C` | en, type, p1, p2, time | type>6->1, p>100->100, time clamped to 40..2500 ms | 3 params |
+| `86` reverb | `0xA4` | en, type, p1..p4 | type>5->1, p1>200->200, p2..p4>100->100 | 4 params |
 
-One import is **9 frames**: 1 metadata frame followed by 8 data frames. Each
-frame is acknowledged with `fn=62` before the next one is sent.
+### 5.4 Presets
 
-Frame payload layout:
+- `96 [i]` -> `97 [i][256 B]` from flash (`0x71000 + i * 0x200`).
+- `97 [i][256 B]`, i < 40: write flash, make it the current preset
+  (S`+0x16` = i, `+0x21` = i & 3, `+0x22` = i >> 2), reload it, then reply
+  `99 [01]` and `98 [i]`. `i = FF` replaces the edit buffer only.
+- `98 [i]`: select; notifications `98 [i]` and `83` (cab block) go to BLE only.
+- `99 [i][name 20]`: select i, set the name, store; BLE `97 [i][preset]` and
+  `A1 [i][edit]`.
+- `A1 [i][256 B]` (notification / connect dump): the edit buffer with the
+  current index.
 
-| Offset | Size | Field |
-|--------|------|-------|
-| `0` | 1 | file type, always `01` |
-| `1` | 2 | slot index, u16 LE, `1..9` |
-| `3` | 1 | total frame count (`09`) |
-| `4` | 1 | frame index, `0` = metadata, `1..8` = data |
-| `5` | 2 | data length, u16 LE |
-| `7` | n | metadata frame: IR name; data frames: 512 bytes of samples |
+### 5.5 Settings
 
-- Metadata frame (index `0`): the payload is the IR name, printable ASCII,
-  maximum 50 characters.
-- Data frames (index `1..8`): 512 bytes each of `float32` little-endian
-  samples — 4096 bytes / 1024 samples total.
+`B0` payload / reply (13 B): `[0]` S`+0x16` current preset (ignored on write),
+`[1]` S`+0x19` global cab switch (0 forces the edit cab off, else restores it
+from the stored preset; BLE `83` follows), `[2..6]` S`+0x1A..0x1E` (on write
+`+0x1B..0x1E` > 72 -> 9), `[7..9]` S`+0x2C..0x2E` (`+0x2D` = tuner on),
+`[10]` S`+0x17` Bluetooth audio on (a change sends `AT+B501`/`AT+B500`,
+`AT+CZ`), `[11]` S`[0x24 + slot]`, `[12]` S`[0x28 + slot]` (per-slot byte and
+per-slot level, default 100). `B7` (4 B) = S`+0x1B..0x1E`. `C9 [b]` = S`+0x20`.
 
-See §6 for the sample format.
+### 5.6 Rhythm, battery, connect dump
 
-### 5.3 Query IR slot (`63` → reply `64`)
+- `BA` (6 B): `[on 0/1][? 0/1][pattern 0..39][volume 0..100][tempo u16]`,
+  flash `0x81000`, default `00 00 00 64 6E 00` (tempo 110). The stock clamps on
+  load and always boots with it off.
+- `BB` (2 B): `[battery level * 25][charging]` (BLE on change).
+- `B5 [1]`: sent in the connect dump (the stock sets a "connected" flag).
+- `94` (connect) -> `A1 [S+0x16][edit]`, `B0`, `B7`, `BA`, `BB`, `B5 [1]`,
+  `83` (cab block), `C9 [S+0x20]`, all to the requester.
 
-Request payload: `[01, slot u16 LE, 00]` (4 bytes).
+### 5.7 IR slots
 
-Reply payload offsets:
+Slots are 1-based `1..9` (the stock range-checks the slot against 50 but only
+stores 9). Storage: names 9 x 50 B at flash `0x87000`, used flags at
+`0x88000`, data `0x2800` B per slot at `0x89000 + (slot-1) * 0x2800`.
 
-| Offset | Size | Field |
-|--------|------|-------|
-| `3` | 1 | `00` = slot empty, non-zero = occupied |
-| `6` | 2 | name length, u16 LE |
-| `8` | n | name, printable ASCII |
+- `61` upload: `[type=1][slot u16][total][index][len u16][data]`. Index 0
+  carries the name (<= 50 B, printable), indices 1.. carry data appended to a
+  `0x2800` buffer; when `index == total - 1` and all indices arrived in
+  order, the name, flag and full `0x2800` data are written to flash and BLE
+  gets `69`. Every frame is answered `62 [01][slot][00][index]` (the slot's
+  high byte is always 0). The official app sends 1 + 8 frames (4096 B).
+- `63 [1][slot u16][op]` -> `64`: empty slot `[1][slot u16][00]`; used slot,
+  op 0 `[1][slot u16][01][21][00][50 u16][name 50]`; op k = 1..20
+  `[1][slot u16][01][21][k][0x200 u16][512 B = data chunk k]`.
+- `65 [1][first u16][last u16]` -> `66`: one 59-byte record per slot.
+- `67 [1][slot u16][op][name 50]`: op 1 delete (flag 0, name "Empty"),
+  op 2 rename (only if used). Reply `68 [1][slot u16][ok]`, then BLE `69`.
+- `69` record (59 B): `[1][slot u16][used][used ? 2 : 0][name 50][used ? 50 : 0][0 0 0]`.
+- `9B [b]` (stock, to USB): sent when a BLE IR upload starts (`00`) / ends
+  (`01`), and for a BLE `D6`.
 
-### 5.4 Delete IR slot (`67` → reply `68`)
+### 5.8 Notifications the pedal sends by itself (BLE only in the stock)
 
-Request payload: `[01, slot u16 LE, 01]` (4 bytes).
+| Trigger | fn |
+|---|---|
+| knob changes a module parameter | `80`..`86` block |
+| footswitch / bank selects a preset | `98 [index]`, `83` |
+| long-A save | `97 [index][preset]`, `98 [index]`, `B0` |
+| tuner / stomp-mode / rhythm changes | `B0`, `BA`, `C9 [S+0x20]` |
+| battery level change | `BB` |
+| IR stored / renamed / deleted | `69` |
 
-Reply payload offset `3`: `00` = failure, non-zero = success.
+`B2` is the **factory reset** acknowledgement (the earlier reading of `B2` as
+an "IR list changed" notification was wrong: the stock only sends it in reply
+to a `B2` request).
 
-### 5.5 Notifications (`B2`)
+### 5.9 Our firmware
 
-The device can send `fn=B2` spontaneously to tell the client that the IR list
-changed; the client should re-query the slots. `fb200-tools` v0.1 ignores it.
+`firmware/audio/src/proto/proto.{c,h}` implements all of the above
+transport-independently (`proto_feed`, per-transport senders, notification
+API, weak hooks for Bluetooth/AT, updater and factory reset); host tests in
+`tests/test_proto_host.py`. Differences from the stock: `FA`/`C3` reply to the
+requester, not USB only; slots above 9 are ignored instead of corrupting
+state; the notification mask is configurable (`proto_set_notify_mask`,
+default BLE like the stock); `9B` is not sent; the version reply reports our
+firmware version (`PROTO_FW_VERSION`).
 
 ## 6. IR format
 
@@ -250,6 +352,12 @@ No vendor binaries are redistributed in this repository: this documentation is
 a description of observed behavior, and the code is an independent client
 implementation. Official firmware and applications must be obtained through
 official channels.
+
+- **Stock firmware emulation (2026-09-27).** The command set in §5 was read
+  from the stock `V1.0.1` image and confirmed by running its dispatcher and
+  reply builder in Unicorn on the RAM images produced by the vendor loader,
+  feeding crafted frames and capturing the frames it sends (USB and BLE
+  senders hooked) and its flash writes.
 
 ## References
 

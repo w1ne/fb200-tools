@@ -85,6 +85,7 @@ SRC_C := \
   src/audio/usb_audio.c src/audio/engine.c src/audio/frontend.c \
   src/ui/pads.c src/ui/display.c src/ui/controls.c src/ui/power.c \
   src/ui/ui.c src/ui/rgb.c src/preset/preset.c src/audio/codec.c \
+  src/proto/proto.c src/proto/proto_port.c \
   src/audio/sai.c src/audio/drift.c \
   $(TUSB_DIR)/src/tusb.c \
   $(TUSB_DIR)/src/common/tusb_fifo.c \
@@ -117,7 +118,7 @@ SRC_C := \
 ifeq ($(VARIANT),recovery)
 SRC_C := $(filter-out src/led.c src/dsp/% src/audio/engine.c \
                     src/audio/usb_audio.c src/audio/codec.c src/audio/sai.c \
-                    src/audio/drift.c src/audio/frontend.c src/ui/% src/preset/% \
+                    src/audio/drift.c src/audio/frontend.c src/ui/% src/preset/% src/proto/% \
                     $(MCUX_CORE)/drivers/adc_12b1msps_sar/% $(MCUX_CORE)/drivers/flexio/% \
                     $(MCUX_CORE)/drivers/sai/% $(MCUX_CORE)/drivers/edma/% \
                     $(MCUX_CORE)/drivers/dmamux/%,$(SRC_C))
