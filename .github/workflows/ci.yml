@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install toolchain
-        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi make curl
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi make curl
       - name: Install package
         run: pip install -e .
       - name: Build firmware
@@ -73,7 +73,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install toolchain
-        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi make curl
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi make curl
       - name: Install package
         run: pip install -e .
       - name: Build firmware

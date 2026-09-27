@@ -12,6 +12,7 @@
 #include "audio/codec.h"
 #include "led.h"
 #include "debug/recovery.h"
+#include "audio/frontend.h"
 
 extern int g_bss_writable;
 
@@ -52,6 +53,7 @@ void app_main(void)
     tusb_init();
 #ifndef FB200_RECOVERY
     i2c_probe_init();
+    frontend_init();
     engine_init();
     led_init();
     bool codec_ok = codec_init();
@@ -60,6 +62,7 @@ void app_main(void)
     codec_init_stats(&codec_retries, &codec_retry_reg);
     log_printf("codec init: %s (retries=%lu first=%x)\r\n", codec_ok ? "ok" : "FAILED",
                (unsigned long)codec_retries, (unsigned)codec_retry_reg);
+    frontend_enable();
     if (!codec_ok) {
         engine_set_mute(true); /* start muted when the codec did not answer */
     }

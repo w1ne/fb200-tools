@@ -1,10 +1,6 @@
-/* NAU88L21 codec driver: software reset, clocking, power-up sequence and
- * volume control. The signal path is codec ADC -> SAI RX and SAI TX -> codec
- * DAC; the codec is the I2S clock slave (the SAI drives MCLK/BCLK/FS).
- *
- * Power-up follows the vendor power sequence: bias/VMID first, analog ADC
- * power with a 125 ms settle, then clock/digital enables, DAC path, output
- * stages, charge pump ramp, class-G headphone amp, TESTDAC off, unmute. */
+/* NAU88L21 codec driver: the stock init sequence, register access and
+ * volume/mute. The signal path is codec ADC -> SAI1 RX and SAI1 TX -> codec
+ * DAC; the codec is the I2S clock slave (SAI1 drives MCLK/BCLK/FS). */
 #include <string.h>
 #include "audio/codec.h"
 #include "audio/nau8821.h"
@@ -15,61 +11,94 @@
 #include "fsl_lpi2c.h"
 #endif
 
+/* The stock firmware's codec init, replayed as data: 76 writes in order,
+ * no delays (recovered from the stock image: codec_init at ITCM 0x19f34,
+ * table at DTCM 0x20007834; see docs/AUDIO_PATH.md). Only R1C differs: the
+ * stock runs 32-bit I2S words, our SAI 16-bit. The rates fit 48 kHz too:
+ * R03=0050 -> ADC/DAC clock MCLK/2 = 6.144 MHz, R2B/R2C -> OSR 128.
+ *
+ * Input path (NAU88L21 datasheet / Linux nau8821): R1D=0000 drives ADCOUT
+ * (the default 8010 tri-states it), R6B=0000 connects the mic inputs,
+ * R72=0170 powers ADC L/R with VREF=VMID, R74=0502 MICBIAS (guitar front
+ * end), R7E=0101 PGA 0 dB. Our first hand-built sequence got R03, R1D, R72
+ * and R7E wrong and the input read exactly zero. */
 static const codec_write_t kInitSequence[] = {
-    /* Software reset, written twice per the datasheet reset procedure. */
-    {NAU8821_R00_RESET, 0xFFFF, 0},
-    {NAU8821_R00_RESET, 0xFFFF, 0},
-    /* Clocking: MCLK = 256*Fs (12.288 MHz at 48 kHz), no dividers. */
-    {NAU8821_R03_CLK_DIVIDER, NAU8821_CLK_DIV_MCLK_DIRECT, 0},
-    /* Digital audio interface: I2S format, 16-bit data, clock slave. */
-    {NAU8821_R1C_I2S_PCM_CTRL1, NAU8821_I2S_DL_16 | NAU8821_I2S_DF_I2S, 0},
-    {NAU8821_R1D_I2S_PCM_CTRL2, NAU8821_I2S_SLAVE, 0},
-    /* Analog bias and VMID bring-up. */
-    {NAU8821_R66_BIAS_ADJ, NAU8821_BIAS_VMID, 0},
-    {NAU8821_R76_BOOST, NAU8821_GLOBAL_BIAS_EN, 0},
-    {NAU8821_R66_BIAS_ADJ,
-     NAU8821_BIAS_VMID | NAU8821_BIAS_VMID_SEL_2 | NAU8821_BIAS_TESTDAC_EN, 0},
-    {NAU8821_R76_BOOST,
-     NAU8821_GLOBAL_BIAS_EN | NAU8821_PRECHARGE_DIS |
-         NAU8821_HP_BOOST_DIS | NAU8821_HP_BOOST_G_DIS |
-         NAU8821_SHORT_SHUTDOWN_EN, 0},
-    {NAU8821_R1E_LEFT_TIME_SLOT, NAU8821_DIS_FS_SHORT_DET, 0},
-    {NAU8821_R4B_CLASSG_CTRL, NAU8821_CLASSG_TIMER_64MS, 0},
-    {NAU8821_R6A_ANALOG_CONTROL_2,
-     NAU8821_HP_NON_CLASSG_CURRENT_2xADJ | NAU8821_DAC_CAPACITOR_MSB |
-         NAU8821_DAC_CAPACITOR_LSB, 0},
-    {NAU8821_R73_RDAC, NAU8821_DAC_CLK_DELAY_2NS | NAU8821_DAC_VREF_1V7, 0},
-    /* 64x oversampling both ways; the reset defaults are hissy. */
-    {NAU8821_R2B_ADC_RATE, NAU8821_ADC_SYNC_DOWN_64, 0},
-    {NAU8821_R2C_DAC_CTRL1, NAU8821_DAC_OVERSAMPLE_64, 0},
-    /* Analog ADC power, then let it settle before the digital path. */
-    {NAU8821_R72_ANALOG_ADC_2, NAU8821_POWERUP_ADCL | NAU8821_POWERUP_ADCR, 0},
-    {NAU8821_R72_ANALOG_ADC_2, NAU8821_POWERUP_ADCL | NAU8821_POWERUP_ADCR,
-     125},
-    /* Clock and digital path enables. */
-    {NAU8821_R01_ENA_CTRL,
-     NAU8821_EN_I2S_CLK | NAU8821_EN_DAC_CLK | NAU8821_EN_ADC_CLK |
-         NAU8821_EN_ADCL | NAU8821_EN_ADCR | NAU8821_EN_DACL |
-         NAU8821_EN_DACR, 0},
-    /* DAC enables and clocks, output stages, charge pump, class G. */
-    {NAU8821_R73_RDAC,
-     NAU8821_DAC_EN_L | NAU8821_DAC_EN_R | NAU8821_DAC_CLK_EN_L |
-         NAU8821_DAC_CLK_EN_R | NAU8821_DAC_CLK_DELAY_2NS |
-         NAU8821_DAC_VREF_1V7, 0},
-    {NAU8821_R7F_POWER_UP_CONTROL,
-     NAU8821_PUP_PGA_L | NAU8821_PUP_PGA_R | NAU8821_PUP_MAIN_DRV_L |
-         NAU8821_PUP_MAIN_DRV_R | NAU8821_PUP_DRV_INSTG_L |
-         NAU8821_PUP_DRV_INSTG_R | NAU8821_PUP_INTEG_L | NAU8821_PUP_INTEG_R,
-     0},
-    {NAU8821_R80_CHARGE_PUMP, NAU8821_CHARGE_PUMP_EN, 0},
-    {NAU8821_R80_CHARGE_PUMP, NAU8821_CHARGE_PUMP_EN | NAU8821_JAMNODCLOW,
-     20},
-    {NAU8821_R4B_CLASSG_CTRL,
-     NAU8821_CLASSG_TIMER_64MS | NAU8821_CLASSG_EN | NAU8821_CLASSG_LDAC_EN |
-         NAU8821_CLASSG_RDAC_EN, 0},
-    /* TESTDAC off so the DAC signal passes through; unmute. */
-    {NAU8821_R66_BIAS_ADJ, NAU8821_BIAS_VMID | NAU8821_BIAS_VMID_SEL_2, 0},
-    {NAU8821_R31_MUTE_CTRL, 0x0000, 0},
+    {0x00, 0x0000, 0},
+    {0x01, 0x0FFF, 0},
+    {0x03, 0x0050, 0},
+    {0x04, 0x0000, 0},
+    {0x05, 0x00BC, 0},
+    {0x06, 0x0000, 0},
+    {0x07, 0x4000, 0},
+    {0x08, 0x1000, 0},
+    {0x09, 0x0600, 0},
+    {0x0A, 0x0031, 0},
+    {0x0B, 0x26E9, 0},
+    {0x0D, 0xC000, 0},
+    {0x0F, 0x0000, 0},
+    {0x11, 0x0000, 0},
+    {0x12, 0x8053, 0},
+    {0x13, 0x0000, 0},
+    {0x1A, 0x0000, 0},
+    {0x1B, 0x0000, 0},
+    {0x1C, 0x0002, 0}, /* stock 000E (32-bit); ours: I2S, 16-bit */
+    {0x1D, 0x0000, 0},
+    {0x1E, 0x2000, 0},
+    {0x1F, 0x0000, 0},
+    {0x21, 0x0000, 0},
+    {0x22, 0x0000, 0},
+    {0x23, 0x0000, 0},
+    {0x24, 0x0000, 0},
+    {0x25, 0x0000, 0},
+    {0x26, 0x0000, 0},
+    {0x27, 0x0000, 0},
+    {0x28, 0x0000, 0},
+    {0x29, 0x0000, 0},
+    {0x2A, 0x0000, 0},
+    {0x2B, 0x0002, 0},
+    {0x2C, 0x0082, 0},
+    {0x2D, 0x0000, 0},
+    {0x2F, 0x0000, 0},
+    {0x30, 0x0000, 0},
+    {0x31, 0x0000, 0},
+    {0x32, 0x0000, 0},
+    {0x34, 0xCFCF, 0},
+    {0x35, 0xCFCF, 0},
+    {0x36, 0x1486, 0},
+    {0x37, 0x0F12, 0},
+    {0x38, 0x25FF, 0},
+    {0x39, 0x3457, 0},
+    {0x3A, 0x1486, 0},
+    {0x3B, 0x0F12, 0},
+    {0x3C, 0x25F9, 0},
+    {0x3D, 0x3457, 0},
+    {0x41, 0x0000, 0},
+    {0x42, 0x0000, 0},
+    {0x43, 0x0000, 0},
+    {0x44, 0x0000, 0},
+    {0x45, 0x0000, 0},
+    {0x46, 0x0000, 0},
+    {0x47, 0x0000, 0},
+    {0x48, 0x0000, 0},
+    {0x49, 0x0000, 0},
+    {0x4A, 0x0000, 0},
+    {0x4B, 0x2007, 0},
+    {0x4C, 0x0000, 0},
+    {0x55, 0x0000, 0},
+    {0x66, 0x0060, 0},
+    {0x68, 0x0000, 0},
+    {0x69, 0x0000, 0},
+    {0x6A, 0x1003, 0},
+    {0x6B, 0x0000, 0},
+    {0x71, 0x0011, 0},
+    {0x72, 0x0170, 0},
+    {0x73, 0x3308, 0},
+    {0x74, 0x0502, 0},
+    {0x76, 0x3140, 0},
+    {0x77, 0x0000, 0},
+    {0x7E, 0x0101, 0},
+    {0x7F, 0xC03F, 0},
+    {0x80, 0x0720, 0},
 };
 
 size_t codec_build_init_sequence(codec_write_t *seq, size_t max)
@@ -124,8 +153,8 @@ static uint16_t s_init_first_retry_reg = 0xFFFFu;
  * leave the pedal muted with an unconfigured codec. */
 bool codec_init(void)
 {
-    codec_write_t seq[64];
-    size_t n = codec_build_init_sequence(seq, 64);
+    const codec_write_t *seq = kInitSequence;
+    size_t n = sizeof(kInitSequence) / sizeof(kInitSequence[0]);
     bool ok = true;
     uint32_t cpu = CLOCK_GetFreq(kCLOCK_CpuClk);
     s_init_retries = 0;

@@ -1,4 +1,5 @@
 import shutil
+import sys
 import subprocess
 from pathlib import Path
 
@@ -14,18 +15,52 @@ pytestmark = pytest.mark.skipif(
     shutil.which("cc") is None, reason="host C compiler not installed"
 )
 
+DSP = FW / ".deps" / "cmsis-dsp"
+DSP_GROUPS = ["BasicMathFunctions", "ComplexMathFunctions", "FastMathFunctions",
+              "FilteringFunctions", "TransformFunctions", "StatisticsFunctions",
+              "SupportFunctions", "CommonTables"]
+OUT_BLOCKS = FW / "build" / "dsp_blocks_host_test"
+
+
+def cmsis_dsp_args() -> list[str]:
+    """CMSIS-DSP sources + flags for a host build. The library is fetched by the
+    firmware Makefile rule (pinned tag, SHA-256 checked) rather than skipped:
+    a skipped DSP test would read as green."""
+    subprocess.run(["make", "-C", str(FW), ".deps/cmsis-dsp/Include/arm_math.h"], check=True)
+    strip = "-Wl,-dead_strip" if sys.platform == "darwin" else "-Wl,--gc-sections"
+    return ["-ffunction-sections", "-fdata-sections", strip,
+            "-I", str(DSP / "Include"), "-I", str(DSP / "PrivateInclude"),
+            *[str(DSP / "Source" / g / f"{g}.c") for g in DSP_GROUPS]]
+
 
 def test_dsp_host_suite():
     OUT.parent.mkdir(parents=True, exist_ok=True)
     sources = [str(p) for p in sorted((FW / "src" / "dsp").glob("*.c"))]
     subprocess.run(
         ["cc", "-O2", "-Wall", "-Wextra", "-I", str(FW / "src"),
-         str(FW / "tests" / "dsp_host_test.c"), *sources, "-lm", "-o", str(OUT)],
+         str(FW / "tests" / "dsp_host_test.c"), *sources, *cmsis_dsp_args(), "-lm",
+         "-o", str(OUT)],
         check=True,
     )
     result = subprocess.run([str(OUT)], capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "dsp host tests OK" in result.stdout
+
+
+def test_dsp_blocks_suite():
+    """Convolver vs brute-force FIR, RBJ biquads vs analytic response, gate."""
+    OUT_BLOCKS.parent.mkdir(parents=True, exist_ok=True)
+    blocks = [FW / "src" / "dsp" / f for f in ("conv.c", "biquad.c", "gate.c", "math.c")]
+    subprocess.run(
+        ["cc", "-O2", "-Wall", "-Wextra", "-I", str(FW / "src"),
+         str(FW / "tests" / "dsp_blocks_host_test.c"), *map(str, blocks), *cmsis_dsp_args(),
+         "-lm", "-o", str(OUT_BLOCKS)],
+        check=True,
+    )
+    result = subprocess.run([str(OUT_BLOCKS)], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "dsp blocks host tests OK" in result.stdout
+    assert "conv 2048 taps" in result.stdout
 
 
 def test_engine_drift_suite():

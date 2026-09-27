@@ -18,9 +18,22 @@ MCU_DIR      := $(MCUX_DEVICES)/RT1060/MIMXRT1062
 SDK_DEPS  := hw/mcu/nxp/mcuxsdk-core hw/mcu/nxp/mcux-devices-rt lib/CMSIS_6
 SDK_STAMP := $(TUSB_DIR)/.mcux-sdk-fetched
 
+# CMSIS-DSP (FFT, biquads, vector math), pinned + checksum-verified like
+# TinyUSB. Only the group aggregate sources are compiled; --gc-sections keeps
+# just what the firmware references.
+DSP_DIR   := .deps/cmsis-dsp
+DSP_SRC   := $(DSP_DIR)/Source
+DSP_GROUPS := BasicMathFunctions ComplexMathFunctions FastMathFunctions \
+              FilteringFunctions TransformFunctions StatisticsFunctions \
+              SupportFunctions CommonTables
+
 -include tinyusb.lock
+-include cmsis-dsp.lock
 TINYUSB_URL ?= https://github.com/hathach/tinyusb/archive/refs/tags/$(TINYUSB_TAG).tar.gz
 
+# Needs a toolchain with newlib (CMSIS-DSP includes <math.h>): Debian/Ubuntu
+# gcc-arm-none-eabi + libnewlib-arm-none-eabi, or the Arm GNU Toolchain
+# (CROSS=<path>/bin/arm-none-eabi-). Homebrew's arm-none-eabi-gcc has no libc.
 CROSS   ?= arm-none-eabi-
 CC      := $(CROSS)gcc
 OBJCOPY := $(CROSS)objcopy
@@ -43,7 +56,8 @@ TUSB_INC  := \
   -I $(MCUX_CORE)/drivers/edma \
   -I $(MCUX_CORE)/drivers/dmamux \
   -I $(MCU_DIR)/drivers/romapi \
-  -I $(MCUX_CORE)/drivers/flexspi
+  -I $(MCUX_CORE)/drivers/flexspi \
+  -I $(DSP_DIR)/Include -I $(DSP_DIR)/PrivateInclude
 TUSB_DEFS := \
   -DCFG_TUSB_MCU=OPT_MCU_MIMXRT10XX \
   -DCPU_MIMXRT1062DVL6A \
@@ -51,20 +65,22 @@ TUSB_DEFS := \
   -DNDEBUG \
   -DI2C_RETRY_TIMES=100000
 CFLAGS    := $(CPUFLAGS) -O2 -g3 -ffreestanding -fno-builtin -fno-common \
+             -ffunction-sections -fdata-sections \
              -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables \
              -Wall -Wextra -Wno-unused-parameter -std=gnu11 \
              $(if $(filter recovery,$(VARIANT)),-DFB200_RECOVERY) \
              $(TUSB_INC) $(TUSB_DEFS) -I src -I src/compat -I board -I . -MMD -MP
-LDFLAGS   := $(CPUFLAGS) -nostdlib -T linker.ld -Wl,-Map=$(TARGET).map,--cref
+LDFLAGS   := $(CPUFLAGS) -nostdlib -Wl,--gc-sections -T linker.ld -Wl,-Map=$(TARGET).map,--cref
 
 SRC_C := \
   src/startup.c src/vectors.c src/main.c src/memfuncs.c \
   src/system_clock.c src/usb_descriptors.c src/compat/stubs.c src/led.c \
   src/dsp/dsp.c src/dsp/math.c src/dsp/gain.c src/dsp/testgen.c \
+  src/dsp/conv.c src/dsp/biquad.c src/dsp/gate.c \
   src/debug/log_fmt.c src/debug/cdc_log.c src/debug/console.c \
   src/debug/selfupdate.c src/debug/recovery.c src/debug/regs.c \
   src/audio/i2c_probe.c \
-  src/audio/usb_audio.c src/audio/engine.c src/audio/codec.c \
+  src/audio/usb_audio.c src/audio/engine.c src/audio/frontend.c src/audio/codec.c \
   src/audio/sai.c src/audio/drift.c \
   $(TUSB_DIR)/src/tusb.c \
   $(TUSB_DIR)/src/common/tusb_fifo.c \
@@ -93,11 +109,14 @@ SRC_C := \
 ifeq ($(VARIANT),recovery)
 SRC_C := $(filter-out src/led.c src/dsp/% src/audio/engine.c \
                     src/audio/usb_audio.c src/audio/codec.c src/audio/sai.c \
-                    src/audio/drift.c \
+                    src/audio/drift.c src/audio/frontend.c \
                     $(MCUX_CORE)/drivers/sai/% $(MCUX_CORE)/drivers/edma/% \
                     $(MCUX_CORE)/drivers/dmamux/%,$(SRC_C))
 endif
 
+ifneq ($(VARIANT),recovery)
+SRC_C += $(foreach g,$(DSP_GROUPS),$(DSP_SRC)/$(g)/$(g).c)
+endif
 SRC_S := src/stage2.S
 OBJS  := $(patsubst %,$(TARGET)/%.o,$(SRC_C) $(SRC_S))
 
@@ -135,7 +154,20 @@ layout: deps $(TARGET).elf
 clean:
 	rm -rf build
 
-deps: $(TUSB_DIR)/src/tusb.c $(SDK_STAMP)
+deps: $(TUSB_DIR)/src/tusb.c $(SDK_STAMP) $(DSP_DIR)/Include/arm_math.h
+
+$(DSP_DIR)/Include/arm_math.h: cmsis-dsp.lock
+	@mkdir -p .deps
+	curl -fsSL -o .deps/cmsis-dsp.tar.gz "$(CMSIS_DSP_URL)"
+	echo "$(CMSIS_DSP_SHA256)  .deps/cmsis-dsp.tar.gz" | shasum -a 256 -c - || \
+	  echo "$(CMSIS_DSP_SHA256)  .deps/cmsis-dsp.tar.gz" | sha256sum -c -
+	@rm -rf $(DSP_DIR) .deps/cmsis-dsp.tmp && mkdir -p .deps/cmsis-dsp.tmp
+	tar -xzf .deps/cmsis-dsp.tar.gz -C .deps/cmsis-dsp.tmp --strip-components=1 \
+	  --exclude='*/Testing' --exclude='*/Documentation' --exclude='*/Examples' \
+	  --exclude='*/ComputeLibrary' --exclude='*/dsppp' --exclude='*/PythonWrapper'
+	mv .deps/cmsis-dsp.tmp $(DSP_DIR)
+	@rm -f .deps/cmsis-dsp.tar.gz
+	@touch $@
 
 $(TUSB_DIR)/src/tusb.c: tinyusb.lock
 	@mkdir -p .deps

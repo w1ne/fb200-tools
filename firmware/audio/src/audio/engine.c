@@ -10,21 +10,6 @@
 #include <string.h>
 #include "audio/engine.h"
 
-#ifndef ENGINE_HOST_TEST
-#include "audio/sai.h"
-#include "audio/usb_audio.h"
-#include "audio/codec.h"
-#include "dsp/dsp.h"
-#include "dsp/gain.h"
-#include "dsp/math.h"
-#include "dsp/testgen.h"
-#include "fsl_sai.h"
-#include "tusb.h"
-#endif
-
-#define ENGINE_FRAMES 64
-#define RING_FRAMES 512
-#define MAX_RING_FILL (RING_FRAMES - ENGINE_FRAMES)
 
 #ifndef ENGINE_HOST_TEST
 #include "audio/sai.h"
@@ -38,7 +23,11 @@
 #include "tusb.h"
 #endif
 
-#define ENGINE_FRAMES 64
+/* One engine block = one DSP block: s_block holds DSP_BLOCK frames per
+ * channel. (It was 64 against a 32-frame dsp_block_t: after the start-up
+ * backlog the engine wrote past s_block.) */
+#include "dsp/dsp.h"
+#define ENGINE_FRAMES DSP_BLOCK
 #define RING_FRAMES 512
 #define MAX_RING_FILL (RING_FRAMES - ENGINE_FRAMES)
 #define FAULT_MUTE_MS 100u

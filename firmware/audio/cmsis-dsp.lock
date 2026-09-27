@@ -1,0 +1,3 @@
+CMSIS_DSP_TAG=v1.18.0
+CMSIS_DSP_URL=https://github.com/ARM-software/CMSIS-DSP/archive/refs/tags/v1.18.0.tar.gz
+CMSIS_DSP_SHA256=b60944180f51f9bb50df1a8cccad19d7c1ef8c14ed13da50b9b3f141032c3f56

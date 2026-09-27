@@ -57,6 +57,9 @@ static void sai_clock_init(void)
 
 static void sai_pads(void)
 {
+    /* MCLK is an output only with IOMUXC_GPR1[19] set (the stock sets it).
+     * Without it the codec had no MCLK: ADC zeros, DAC silent. */
+    IOMUXC_EnableMode(IOMUXC_GPR, kIOMUXC_GPR_SAI1MClkOutputDir, true);
     IOMUXC_SetPinMux(IOMUXC_GPIO_SD_B1_03_SAI1_MCLK, 0U);
     IOMUXC_SetPinMux(IOMUXC_GPIO_AD_B1_12_SAI1_RX_DATA00, 0U);
     IOMUXC_SetPinMux(IOMUXC_GPIO_AD_B1_13_SAI1_TX_DATA00, 0U);
