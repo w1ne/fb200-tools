@@ -21,6 +21,7 @@ void engine_set_gain_db(float db);
 float engine_get_gain_db(void);
 void engine_set_testgen(int mode, float amp, float freq); /* 0 off 1 sine 2 white 3 impulse */
 void engine_testgen_input(bool on);   /* testgen into the chain input instead of the output */
+void engine_profile(void);   /* `prof`: cycles per chain stage */
 void engine_cycles(uint32_t *avg, uint32_t *max, uint32_t *budget);   /* since last call */
 void engine_set_mute(bool mute);
 bool engine_get_mute(void);

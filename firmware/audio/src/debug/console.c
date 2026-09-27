@@ -592,6 +592,7 @@ static void dispatch(char *cmd)
                        on ? "on" : "off", r.valid, r.silent, r.note, r.octave, (int)r.cents,
                        (int)r.freq, (int)((r.freq - (int)r.freq) * 100.0f));
     }
+    else if (streq(argv[0], "prof")) engine_profile();
     else if (streq(argv[0], "stock")) {
         int r = stock_check((const void *)STOCK_FLASH, STOCK_FLASH_SIZE);
         log_printf("stock data: flash %s, %s\r\n", stock_error(r),

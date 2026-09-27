@@ -33,7 +33,8 @@ def cmsis_dsp_args() -> list[str]:
     subprocess.run(["make", "-C", str(FW), ".deps/cmsis-dsp/Include/arm_math.h"], check=True)
     strip = "-Wl,-dead_strip" if sys.platform == "darwin" else "-Wl,--gc-sections"
     # __GNUC_PYTHON__ is CMSIS-DSP's own switch for host builds without CMSIS-Core.
-    return ["-D__GNUC_PYTHON__", "-ffunction-sections", "-fdata-sections", strip,
+    # ARM_MATH_LOOPUNROLL as the firmware (Makefile): the tests check the real build
+    return ["-D__GNUC_PYTHON__", "-DARM_MATH_LOOPUNROLL", "-ffunction-sections", "-fdata-sections", strip,
             "-I", str(DSP / "Include"), "-I", str(DSP / "PrivateInclude"),
             *[str(DSP / "Source" / g / f"{g}.c") for g in DSP_GROUPS]]
 

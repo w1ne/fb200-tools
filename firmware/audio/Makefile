@@ -65,7 +65,8 @@ TUSB_DEFS := \
   -DCPU_MIMXRT1062DVL6A \
   -DXIP_EXTERNAL_FLASH=1 \
   -DNDEBUG \
-  -DI2C_RETRY_TIMES=100000
+  -DI2C_RETRY_TIMES=100000 \
+  -DARM_MATH_LOOPUNROLL
 CFLAGS    := $(CPUFLAGS) -O2 -g3 -ffreestanding -fno-builtin -fno-common \
              -ffunction-sections -fdata-sections \
              -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables \
