@@ -14,7 +14,7 @@ dependencies = []
 
 [project.optional-dependencies]
 hid = ["hidapi>=0.14"]
-dev = ["pytest>=8", "ruff>=0.6"]
+dev = ["pytest>=8", "ruff>=0.6", "numpy>=1.26", "scipy>=1.11", "sounddevice>=0.4.6"]
 
 [project.scripts]
 fb200 = "fb200.cli:main"

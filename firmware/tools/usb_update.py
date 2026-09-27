@@ -97,7 +97,7 @@ def main() -> int:
     # flash at 0x60010400 must already hold these bytes. A mismatch means the
     # region does not start where we think; stop before erasing anything.
     want = zlib.crc32(data[BOOT_OFF:BOOT_END]) & 0xFFFFFFFF
-    line = con.command(f"crc {FLASH_BLOCK0 + BOOT_OFF:#x} {BOOT_END - BOOT_OFF}", [b"crc "])
+    line = con.command(f"crc {FLASH_BLOCK0 + BOOT_OFF:#x} {BOOT_END - BOOT_OFF}", [b" = "])
     have = int(line.rsplit(b"=", 1)[1].strip(), 16)
     if have != want and not args.force:
         raise SystemExit(f"mapping check failed: flash {have:08x} != image {want:08x}")
