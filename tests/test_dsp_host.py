@@ -18,7 +18,9 @@ pytestmark = pytest.mark.skipif(
 DSP = FW / ".deps" / "cmsis-dsp"
 DSP_GROUPS = ["BasicMathFunctions", "ComplexMathFunctions", "FastMathFunctions",
               "FilteringFunctions", "TransformFunctions", "StatisticsFunctions",
-              "SupportFunctions", "CommonTables"]
+              "SupportFunctions", "CommonTables",
+              # arm_mfcc_* call the matrix functions; MinGW's linker keeps them
+              "MatrixFunctions"]
 OUT_BLOCKS = FW / "build" / "dsp_blocks_host_test"
 
 
