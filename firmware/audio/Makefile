@@ -180,16 +180,17 @@ $(OBJS): | deps
 
 all: build
 
-build: deps $(TARGET).vectors.bin $(TARGET).blob.bin $(TARGET).copier.bin
+build: deps $(TARGET).vectors.bin $(TARGET).blob.bin $(TARGET).copier.bin $(TARGET).dtcmdata.bin
 
 $(TARGET).elf: $(OBJS) linker.ld
 	$(CC) $(OBJS) $(LDFLAGS) -lgcc -o $@
 
 # .vectors goes to block 0 offset 0; .blob to offset 0x7d4 (LMA in linker.ld).
-$(TARGET).vectors.bin $(TARGET).blob.bin $(TARGET).copier.bin: $(TARGET).elf
+$(TARGET).vectors.bin $(TARGET).blob.bin $(TARGET).copier.bin $(TARGET).dtcmdata.bin: $(TARGET).elf
 	$(OBJCOPY) -O binary -j .vectors $< $(TARGET).vectors.bin
 	$(OBJCOPY) -O binary -j .blob $< $(TARGET).blob.bin
 	$(OBJCOPY) -O binary -j .copier $< $(TARGET).copier.bin
+	$(OBJCOPY) -O binary -j .dtcmdata $< $(TARGET).dtcmdata.bin
 
 $(TARGET)/%.c.o: %.c
 	@mkdir -p $(dir $@)

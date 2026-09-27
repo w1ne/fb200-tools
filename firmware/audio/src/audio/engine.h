@@ -19,6 +19,8 @@ void engine_get_stats(engine_stats_t *out);
 void engine_set_gain_db(float db);
 float engine_get_gain_db(void);
 void engine_set_testgen(int mode, float amp, float freq); /* 0 off 1 sine 2 white 3 impulse */
+void engine_testgen_input(bool on);   /* testgen into the chain input instead of the output */
+void engine_cycles(uint32_t *avg, uint32_t *max, uint32_t *budget);   /* since last call */
 void engine_set_mute(bool mute);
 bool engine_get_mute(void);
 void engine_set_meters(bool on);
@@ -33,5 +35,8 @@ extern volatile float g_meter_peak[2];
 void engine_set_tuner(bool on);
 bool engine_tuner_poll(tuner_result_t *out);   /* main loop */
 drums_t *engine_drums(void);
+/* Apply a preset (stock layout) and the master volume 0..100 to the chain. */
+#include "preset/preset.h"
+void engine_apply_preset(const preset_t *p, unsigned master);
 
 #endif

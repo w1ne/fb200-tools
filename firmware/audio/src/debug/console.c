@@ -108,7 +108,8 @@ static void cmd_help(void)
     log_puts("commands:\r\n"
 #ifndef FB200_RECOVERY
              "  audio : usb | sai | codec | creg <reg> [val] | gain [db] | mute [on|off]\r\n"
-             "          testgen off|sine|white|impulse [freq] | meters on|off | x\r\n"
+             "          testgen off|sine|white|impulse [freq] | tin <same> (into the chain, -20 dBFS)\r\n"
+             "          meters on|off | x | cpu\r\n"
              "  led   : led on|off|scan | ledpin <gpio> <pin>\r\n"
              "  ui    : ui | uimon on|off | disp <text> | kled <0-15> on|off | power\r\n"
              "          preset [0-39] | save | rgb 0xRRGGBB [led] | rgb cfg 0xIIS0S1\r\n"
@@ -467,7 +468,26 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "codec")) cmd_codec();
     else if (streq(argv[0], "sai")) cmd_sai();
     else if (streq(argv[0], "gain") || streq(argv[0], "g")) cmd_gain(argv[1]);
-    else if (streq(argv[0], "testgen") || streq(argv[0], "t")) cmd_testgen(argv[1], argv[2]);
+    else if (streq(argv[0], "testgen") || streq(argv[0], "t")) {
+        engine_testgen_input(false);
+        cmd_testgen(argv[1], argv[2]);
+    }
+    else if (streq(argv[0], "tin")) {   /* test signal into the chain input, -20 dBFS */
+        cmd_testgen(argv[1], argv[2]);
+        int ok = 0;
+        float f = argv[2] ? (float)parse_num(argv[2], &ok) : 1000.0f;
+        int mode = streq(argv[1] ? argv[1] : "", "sine") ? 1 : streq(argv[1] ? argv[1] : "", "white") ? 2
+                 : streq(argv[1] ? argv[1] : "", "impulse") ? 3 : 0;
+        engine_set_testgen(mode, 0.1f, ok ? f : 1000.0f);
+        engine_testgen_input(mode != 0);
+    }
+    else if (streq(argv[0], "cpu")) {
+        uint32_t avg, max, budget;
+        engine_cycles(&avg, &max, &budget);
+        log_printf("cpu: engine block avg %lu max %lu cycles of %lu (%lu%% / %lu%%)\r\n",
+                   (unsigned long)avg, (unsigned long)max, (unsigned long)budget,
+                   (unsigned long)(100u * avg / budget), (unsigned long)(100u * max / budget));
+    }
     else if (streq(argv[0], "mute") || streq(argv[0], "m")) cmd_mute(argv[1]);
     else if (streq(argv[0], "meters")) cmd_meters(argv[1]);
     else if (streq(argv[0], "x")) cmd_x();

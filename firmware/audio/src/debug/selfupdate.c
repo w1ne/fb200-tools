@@ -22,7 +22,7 @@
 /* Regions (flash offsets, docs/BOOTLOADER.md §4): the app slot, and the
  * recovery image (block 0 start, which also holds the vendor loader). */
 #define APP_OFFSET   0x00020000u
-#define APP_LIMIT    0x00041000u   /* model library starts here */
+#define APP_LIMIT    0x00071000u   /* app slot + its data, up to the presets */
 #define REC_OFFSET   0x00010000u
 #define REC_LIMIT    0x00020000u
 #define FCB_TAG      0x42464346u   /* "FCFB" */

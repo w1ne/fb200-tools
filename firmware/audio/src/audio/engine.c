@@ -22,6 +22,9 @@
 #include "dsp/testgen.h"
 #include "dsp/drums.h"
 #include "dsp/tuner.h"
+#include "dsp/amp.h"
+#include "dsp/cab.h"
+#include "preset/preset.h"
 #include "fsl_sai.h"
 #include "tusb.h"
 #endif
@@ -93,6 +96,15 @@ static bool s_meters;
 static tuner_t s_tuner;
 static drums_t s_drums;
 static bool s_tuner_on;
+/* the stock chain (docs/PARITY.md M2): amp (+ tone stack) -> cab, mono */
+static amp_t s_amp;
+static cab_t s_cab;
+static bool s_amp_en, s_cab_en;
+static int s_amp_model = -1, s_cab_type = -1;
+static float s_master = 1.0f, s_master_target = 1.0f;
+static float s_ir[CAB_TAPS];
+static bool s_testgen_in;               /* testgen feeds the chain input */
+static uint32_t s_cyc_max, s_cyc_sum, s_cyc_n;   /* DWT cycles per block */
 static uint32_t s_drop_tx_blocks;
 static uint32_t s_meter_last_ms;
 
@@ -109,6 +121,11 @@ void engine_init(void)
     s_fault_mute = false;
     s_meters = false;
     tuner_init(&s_tuner, 440);
+    amp_init(&s_amp, (float)AUDIO_FS);
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;   /* cycle counter for `stats` */
+    DWT->CYCCNT = 0;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+    cab_init(&s_cab);
 #ifdef FB200_STOCK_DRUMS
     drums_init(&s_drums, (const void *)DRUMS_BANK_ADDR, &stock_drums_data);
 #else
@@ -117,6 +134,34 @@ void engine_init(void)
 }
 
 void engine_set_tuner(bool on) { s_tuner_on = on; }
+
+/* User IR slots (cab 11..19): the stock IR store, F:0x88000 used flags,
+ * F:0x89000 + slot * 0x2800 data (float32). An empty slot is silent, as the
+ * stock (cab 1 taps with gain 0). */
+static void load_user_ir(unsigned slot)
+{
+    const volatile uint8_t *used = (const volatile uint8_t *)(0x60000000u + 0x88000u);
+    const float *ir = (const float *)(0x60000000u + 0x89000u + slot * 0x2800u);
+    memcpy(s_ir, ir, sizeof s_ir);
+    cab_set_ir(&s_cab, s_ir, used[slot] == 1 ? cab_user_ir_gain(s_ir) : 0.0f);
+}
+
+void engine_apply_preset(const preset_t *p, unsigned master)
+{
+    s_amp_en = pget(p, P_AMP_EN) != 0;
+    s_cab_en = pget(p, P_CAB_EN) != 0;
+    int model = pget(p, P_AMP_MODEL);
+    if (model != s_amp_model && amp_set_model(&s_amp, model) == 0) s_amp_model = model;
+    amp_set_params(&s_amp, pget(p, P_AMP_GAIN), pget(p, P_AMP_BASS), pget(p, P_AMP_MID),
+                   pget(p, P_AMP_MIDFREQ), pget(p, P_AMP_TREBLE), pget(p, P_AMP_VOLUME));
+    int cab = pget(p, P_CAB_TYPE);
+    if (cab != s_cab_type) {
+        if (cab >= 1 && cab <= 10) (void)cab_set_model(&s_cab, cab);
+        else if (cab >= 11 && cab <= 19) load_user_ir((unsigned)(cab - 11));
+        s_cab_type = cab;
+    }
+    s_master_target = (float)(master > 100u ? 100u : master) * 0.01f;
+}
 bool engine_tuner_poll(tuner_result_t *out) { return tuner_poll(&s_tuner, out) != 0; }
 drums_t *engine_drums(void) { return &s_drums; }
 
@@ -134,6 +179,16 @@ void engine_set_gain_db(float db)
 float engine_get_gain_db(void)
 {
     return s_gain_db;
+}
+
+void engine_testgen_input(bool on) { s_testgen_in = on; }
+
+void engine_cycles(uint32_t *avg, uint32_t *max, uint32_t *budget)
+{
+    *avg = s_cyc_n ? s_cyc_sum / s_cyc_n : 0;
+    *max = s_cyc_max;
+    *budget = (uint32_t)((uint64_t)SystemCoreClock * ENGINE_FRAMES / AUDIO_FS);
+    s_cyc_sum = s_cyc_n = s_cyc_max = 0;
 }
 
 void engine_set_testgen(int mode, float amp, float freq)
@@ -223,21 +278,33 @@ void engine_task(void)
         s_block.data[0][i] = (float)in[i * 2 + 0] * (1.0f / 32768.0f);
         s_block.data[1][i] = (float)in[i * 2 + 1] * (1.0f / 32768.0f);
     }
-    {   /* tuner input: L + R of the instrument ADC, as the stock */
-        float mono[ENGINE_FRAMES];
-        for (size_t i = 0; i < n; i++) mono[i] = s_block.data[0][i] + s_block.data[1][i];
-        tuner_feed(&s_tuner, mono, n);
+    /* The stock feeds the chain and the tuner with L + R of the instrument
+     * ADC; into the amp at x 0.9999702 (a unity gain whose smoother stalls
+     * there - needed for bit parity, tests/test_stock_dsp_parity.py). */
+    uint32_t t0 = DWT->CYCCNT;
+    float x[ENGINE_FRAMES];
+    if (s_testgen_in && s_testgen.mode != TESTGEN_OFF) {   /* test signal into the chain */
+        memset(&s_block, 0, sizeof s_block);
+        testgen_process(&s_testgen, &s_block, n);
+        for (size_t i = 0; i < n; i++) s_block.data[1][i] = 0.0f;   /* mono source on L */
     }
-    gain_process(&s_gain, &s_block, n);
-    if (s_testgen.mode != TESTGEN_OFF) {
+    for (size_t i = 0; i < n; i++) x[i] = s_block.data[0][i] + s_block.data[1][i];
+    tuner_feed(&s_tuner, x, n);
+    for (size_t i = 0; i < n; i++) x[i] *= 0.9999702f;
+    if (s_amp_en) amp_process(&s_amp, x, (unsigned)n);
+    if (s_cab_en) cab_process(&s_cab, x, (unsigned)n);
+    for (size_t i = 0; i < n; i++) {
+        s_master += 0.001f * (s_master_target - s_master);   /* stock: smoothed master */
+        float y = s_tuner_on ? 0.0f : x[i] * s_master;        /* stock: tuning is silent */
+        s_block.data[0][i] = y;
+        s_block.data[1][i] = y;
+    }
+    gain_process(&s_gain, &s_block, n);                         /* console `gain` */
+    if (s_testgen.mode != TESTGEN_OFF && !s_testgen_in) {
         testgen_process(&s_testgen, &s_block, n);
     }
     if (s_meters) {
         update_meters(&s_block, n);
-    }
-    if (s_tuner_on) {
-        /* stock default (settings +0x2e = 1): tuning is silent */
-        memset(s_block.data, 0, sizeof s_block.data);
     }
 
     /* USB capture carries the processed signal only. */
@@ -265,11 +332,16 @@ void engine_task(void)
     for (size_t i = 0; i < n; i++) {
         float l = s_block.data[0][i] + (float)play[i * 2 + 0] * (1.0f / 32768.0f);
         float r = s_block.data[1][i] + (float)play[i * 2 + 1] * (1.0f / 32768.0f);
-        if (l > 1.0f) l = 1.0f; else if (l < -1.0f) l = -1.0f;
-        if (r > 1.0f) r = 1.0f; else if (r < -1.0f) r = -1.0f;
+        /* stock output clip */
+        if (l > 0.95f) l = 0.95f; else if (l < -0.95f) l = -0.95f;
+        if (r > 0.95f) r = 0.95f; else if (r < -0.95f) r = -0.95f;
         out[i * 2 + 0] = (int16_t)(l * 32767.0f);
         out[i * 2 + 1] = (int16_t)(r * 32767.0f);
     }
+    uint32_t dt = DWT->CYCCNT - t0;
+    s_cyc_sum += dt;
+    s_cyc_n++;
+    if (dt > s_cyc_max) s_cyc_max = dt;
     if (s_drop_tx_blocks != 0) {
         s_drop_tx_blocks--; /* `x` underrun check: skip the refill */
     } else if (sai_tx_fill() > TX_TARGET_FILL) {

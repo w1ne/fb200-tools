@@ -76,7 +76,14 @@ def build_recovery(stock_block0: bytes, vectors: bytes, blob: bytes, copier: byt
     return bytes(rec)
 
 
-def build_slot(vectors: bytes, blob: bytes, version: int = 1) -> bytes:
+SLOT_DATA_OFF = 0x21000         # slot offset of the const tables (flash 0x60041000)
+SLOT_DATA_MAX = 0x30000         # up to the presets at 0x60071000
+
+
+def build_slot(vectors: bytes, blob: bytes, data: bytes = b"") -> bytes:
+    """App slot: header (v2: + data length/CRC), vectors, blob; the const
+    tables (linker .dtcmdata) follow at SLOT_DATA_OFF and are copied to DTCM
+    by the app's startup."""
     if len(vectors) != 0x400:
         raise SystemExit("app vectors must be 0x400 bytes")
     if 0x400 + len(blob) > APP_ITCM_LIMIT:
@@ -84,10 +91,16 @@ def build_slot(vectors: bytes, blob: bytes, version: int = 1) -> bytes:
     blob = blob + b"\xff" * (-len(blob) % 4)
     body = vectors + blob
     crc = zlib.crc32(body) & 0xFFFFFFFF
-    header = struct.pack("<4I", SLOT_MAGIC, len(blob), crc, version).ljust(SLOT_HDR, b"\xff")
+    if len(data) > SLOT_DATA_MAX:
+        raise SystemExit(f"app data too large ({len(data)} > {SLOT_DATA_MAX})")
+    data = data + b"\xff" * (-len(data) % 4)
+    header = struct.pack("<6I", SLOT_MAGIC, len(blob), crc, 2, len(data),
+                         zlib.crc32(data) & 0xFFFFFFFF).ljust(SLOT_HDR, b"\xff")
     slot = header + body
-    if SLOT_OFF + len(slot) > BLOCK0_SIZE:
-        raise SystemExit("app slot exceeds block 0")
+    if data:
+        if len(slot) > SLOT_DATA_OFF:
+            raise SystemExit("app image overlaps its data area")
+        slot = slot.ljust(SLOT_DATA_OFF, b"\xff") + data
     return slot
 
 
@@ -113,8 +126,13 @@ def main() -> int:
     require_update_commands("app", part(args.app, "blob"))
     rec = build_recovery(b0, part(args.recovery, "vectors"), part(args.recovery, "blob"),
                          part(args.recovery, "copier"))
-    slot = build_slot(part(args.app, "vectors"), part(args.app, "blob"))
-    block0 = (rec + slot).ljust(BLOCK0_SIZE, b"\xff")
+    data_path = Path(f"{args.app}.dtcmdata.bin")
+    data = data_path.read_bytes() if data_path.exists() else b""
+    slot = build_slot(part(args.app, "vectors"), part(args.app, "blob"), data)
+    # The DFU image only covers block 0 (up to 0x60041000): it cannot carry the
+    # app data. Recovery then stays on the console (data CRC) until the app is
+    # updated over USB, which writes the whole slot including the data.
+    block0 = (rec + slot)[:BLOCK0_SIZE].ljust(BLOCK0_SIZE, b"\xff")
     mr = MrFile(stock.header, [MrBlock(stock.blocks[0].tag, block0),
                                MrBlock(stock.blocks[1].tag, stock.blocks[1].data)])
 
@@ -122,8 +140,8 @@ def main() -> int:
     (args.outdir / "fb200-recovery.bin").write_bytes(rec)
     (args.outdir / "fb200-app.slot").write_bytes(slot)
     (args.outdir / "fb200-twostage.mr").write_bytes(mr.to_bytes())
-    print(f"recovery {len(rec)} B, app slot {len(slot)} B "
-          f"(blob {len(slot) - SLOT_HDR - 0x400} B), .mr written to {args.outdir}")
+    print(f"recovery {len(rec)} B, app slot {len(slot)} B (blob {len(part(args.app, 'blob'))} B, "
+          f"data {len(data)} B), .mr written to {args.outdir}")
     return 0
 
 

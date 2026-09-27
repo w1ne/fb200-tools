@@ -23,7 +23,11 @@ typedef struct {
     uint32_t blob_len;    /* bytes loaded to ITCM 0x400 */
     uint32_t crc;         /* CRC32 of vectors (0x400) + blob */
     uint32_t version;
+    uint32_t data_len;    /* v2: const tables at SLOT_DATA, copied to DTCM at boot */
+    uint32_t data_crc;
 } slot_header_t;
+#define SLOT_DATA       0x60041000u   /* up to the presets at 0x60071000 */
+#define SLOT_DATA_MAX   0x30000u
 
 void wdog_feed(void);
 void crumbs_print(void);

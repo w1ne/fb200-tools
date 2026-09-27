@@ -67,6 +67,9 @@ def main() -> int:
     parser.add_argument("--elf", type=Path, required=True, help="firmware ELF for symbols")
     parser.add_argument("--app-elf", type=Path,
                         help="two-stage image: follow recovery into this app build")
+    parser.add_argument("--app-slot", type=Path,
+                        help="write this app slot image (with its data) at 0x60020000, "
+                             "as the USB update does; the DFU .mr cannot carry the data")
     parser.add_argument("--max-instructions", type=int, default=4_000_000)
     parser.add_argument("--mmio", action="store_true",
                         help="list peripheral accesses (first PC per 4 KiB block) on the path")
@@ -98,6 +101,8 @@ def main() -> int:
     uc.mem_write(0x60010000, mr.blocks[0].data)
     if len(mr.blocks) > 1:
         uc.mem_write(MODELS_BASE, mr.blocks[1].data)
+    if args.app_slot:
+        uc.mem_write(0x60020000, args.app_slot.read_bytes())
 
     hits: set[str] = set()
     count = [0]

@@ -158,6 +158,11 @@ int slot_valid(const char **why)
         *why = "app slot length invalid";
         return 0;
     }
+    if (h->version >= 2u && (h->data_len > SLOT_DATA_MAX ||
+                             fw_crc32((const uint8_t *)SLOT_DATA, h->data_len) != h->data_crc)) {
+        *why = "app data CRC mismatch (update the app over USB)";
+        return 0;
+    }
     if (fw_crc32((const uint8_t *)SLOT_VECTORS, 0x400u + h->blob_len) != h->crc) {
         *why = "app slot CRC mismatch";
         return 0;

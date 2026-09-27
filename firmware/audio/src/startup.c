@@ -53,6 +53,15 @@ void stage2_main(void)
     bss[0] = 0;
     bss[0x358A4 / 4 - 1] = 0;
 
+#ifndef FB200_RECOVERY
+    /* Large const tables: flash (F:0x41000, after the app slot) -> DTCM
+     * (linker.ld .dtcmdata). After the writability probe above, which touches
+     * the first word of this region. */
+    extern uint32_t __dtcmdata_start__[], __dtcmdata_end__[];
+    const volatile uint32_t *from = (const volatile uint32_t *)0x60041000u;
+    for (volatile uint32_t *to = __dtcmdata_start__; to < __dtcmdata_end__; ) *to++ = *from++;
+#endif
+
     *(volatile uint32_t *)0xE000ED08u = 0;   /* SCB->VTOR = ITCM base */
     __asm volatile ("dsb 0xF" ::: "memory");
     __asm volatile ("isb 0xF" ::: "memory");
