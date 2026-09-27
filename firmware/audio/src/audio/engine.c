@@ -388,7 +388,11 @@ void engine_task(void)
         update_meters(&s_block, n);
     }
 
-    /* USB capture carries the processed signal only. */
+    /* Drums before the capture tap: the stock leaves them out of the USB
+     * recording; a user playing along wants them in (better than stock). */
+    if (!s_tuner_on) drums_process_stereo(&s_drums, s_block.data[0], s_block.data[1], n);
+
+    /* USB capture: chain + Bluetooth audio + drums. */
     {
         float fb[ENGINE_FRAMES * 2];
         for (size_t i = 0; i < n; i++) {
@@ -398,8 +402,6 @@ void engine_task(void)
         usb_audio_push(fb, n);
     }
 
-    /* Drums go to the output only, after the capture tap (stock mix). */
-    if (!s_tuner_on) drums_process_stereo(&s_drums, s_block.data[0], s_block.data[1], n);
 
     /* Host playback, drift-compensated, only while the host streams. */
     if (usb_audio_playing()) {
