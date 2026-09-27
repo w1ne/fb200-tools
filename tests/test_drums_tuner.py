@@ -87,7 +87,8 @@ def test_selftest_without_stock_data():
 def test_blob_reads_the_stock_image(stock_blob):
     blob = stock_blob.read_bytes()
     stockdata.verify(blob)
-    assert len(blob) == 59276   # sizeof(stock_data_t): tests/test_stockdata.py checks the C side
+    # sizeof(stock_data_t) + 21 factory presets (version 2): test_stockdata.py checks the C side
+    assert len(blob) == 59276 + 21 * 256
 
 
 @pytest.mark.parametrize("rhythm,bpm,secs,block", [(0, 110, 3.0, 32), (7, 180, 2.0, 8),
