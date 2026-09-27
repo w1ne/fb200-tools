@@ -39,10 +39,30 @@ the literal pool of the stock SAI init at ITCM ~0x1abdc, cross-checked against
 | TX_SYNC | `GPIO_AD_B1_15` | ALT3 | 0x10B0 |
 
 The codec uses a single BCLK/FS pair for both directions, so our SAI runs TX
-asynchronous (it generates the clocks) and RX synchronous with TX. The stock
-image also contains a second, separate SAI3 init (pads `GPIO_EMC_33/38/39`,
-RX_DATA/TX_BCLK/TX_SYNC) — presumably the instrument-input path; not used by
-our firmware.
+asynchronous (it generates the clocks) and RX synchronous with TX.
+
+**MCLK only leaves the chip with `IOMUXC_GPR1[19]` (SAI1_MCLK_DIR) set.** The
+stock sets it (ITCM 0x1ac6c); our first firmware did not, so the codec had no
+MCLK: the ADC read exactly zero and the DAC was silent. Check: `peek32
+0x400AC004` must show bit 19 (`0x80080000`).
+
+**The guitar input is the codec ADC on SAI1 RX**, not SAI3. The stock SAI3
+(pads `GPIO_EMC_33` RX_DATA, `EMC_38` TX_BCLK, `EMC_39` TX_SYNC; no MCLK, no
+TX data; 44.1 kHz, 2 x 32-bit I2S, RX sync to TX, interrupt driven) is only
+mixed into the output as an aux stream: most likely the Bluetooth module's
+audio (the module is controlled over LPUART5, `GPIO_B1_12/13`, 115200, AT
+commands). `GPIO_EMC_32/35` are driven high at boot (module enable/reset?).
+
+Stock SAI1 details (for reference; we run 48 kHz/16-bit): 44.1 kHz from
+PLL4 = 722.5344 MHz / 64 = 11.2896 MHz MCLK, 32-bit I2S words, BCLK = 64 fs,
+FIFO watermark 16, interrupt driven (no DMA), 8 frames per IRQ.
+
+## Board GPIOs around the audio path
+
+Replayed from the stock (`src/audio/frontend.c`): at boot `GPIO_B1_15` high,
+`B1_10` low, `B1_09` and `B1_11` high; after the codec and SAI run, `B1_15`
+-> 0 and `B1_10` -> 1. Function not known yet (likely output mute release
+and input front-end enable).
 
 ## Clocks
 
@@ -56,8 +76,13 @@ our firmware.
 
 - `src/audio/sai.c`: SAI1 + eDMA (ping-pong, 32-frame blocks, 512-frame SPSC
   rings), `sai_pull`/`sai_push` for the engine.
-- `src/audio/codec.c`: NAU88L21 reset + power-up sequence + volume; the
-  sequence builder is host-tested (`tests/test_codec_init.py`).
+- `src/audio/codec.c`: the **stock init table replayed as data** (76
+  writes, from `codec_init` at ITCM 0x19f34; only R1C differs: 16-bit I2S).
+  Key input registers: R03=0050 (ADC/DAC clock MCLK/2 = 6.144 MHz; 0 would
+  be 2x the datasheet max), R1D=0000 (ADCOUT driven, not tri-stated),
+  R6B=0000, R72=0170 (ADC L/R power, VREF=VMID), R74=0502 (MICBIAS),
+  R7E=0101 (PGA 0 dB). Host-tested (`tests/test_codec_init.py`). The stock
+  never touches the codec after init.
 - `src/audio/engine.c`: codec ADC -> (DSP chain, later) -> codec DAC, USB
   capture fed from the same stream, host playback monitored into the DAC.
 - Console: `codec` (dump key registers + re-init), `creg <reg> [val]`
