@@ -15,6 +15,7 @@
 #include "audio/codec.h"
 #include "audio/sai.h"
 #include "audio/engine.h"
+#include "led.h"
 #include "selfupdate.h"
 
 extern int g_bss_writable;
@@ -92,7 +93,8 @@ static void cmd_help(void)
 {
     log_printf("commands: help | stats | usb | sai | codec | creg <reg> [val] |\r\n"
                "          gain [db] | testgen off|sine|white|impulse [freq] | mute [on|off] |\r\n"
-               "          meters on|off | x (TX underrun check) | src |\r\n"
+               "          meters on|off | x (TX underrun check) | led on|off|scan |\r\n"
+               "          ledpin <gpio> <pin> | src |\r\n"
                "          hb on|off | scan | dump [bus addr] | peek <addr> [len] |\r\n"
                "          dumpmem <addr> <len> | poke <addr> <val> | crc <addr> <len> |\r\n"
                "          fwinfo | fwbegin <len> <crc32> | reset\r\n");
@@ -171,6 +173,37 @@ static void cmd_creg(const char *a1, const char *a2)
             log_printf("creg %02lx: ERR\r\n", (unsigned long)reg);
         }
     }
+}
+
+static void cmd_led(const char *a1, const char *a2)
+{
+    (void)a2;
+    if (streq(a1, "on")) {
+        led_set(true);
+        log_printf("led on\r\n");
+    } else if (streq(a1, "off")) {
+        led_set(false);
+        log_printf("led off\r\n");
+    } else if (streq(a1, "scan")) {
+        led_scan_start();
+        log_printf("ledscan started (%d candidates)\r\n", led_candidate_count());
+    } else {
+        log_printf("led: %s | scan=%d\r\n", led_get() ? "on" : "off",
+                   led_scan_active() ? 1 : 0);
+    }
+}
+
+static void cmd_ledpin(const char *a1, const char *a2)
+{
+    int ok1, ok2;
+    long g = (long)parse_num(a1, &ok1);
+    long pin = (long)parse_num(a2, &ok2);
+    if (!ok1 || !ok2 || g < 0 || g > 4 || pin < 0 || pin > 31) {
+        log_printf("usage: ledpin <gpio 1..4> <pin 0..31> (0 0 = none)\r\n");
+        return;
+    }
+    led_select((int)g, (int)pin);
+    log_printf("led pin GPIO%ld_IO%ld selected\r\n", g, pin);
 }
 
 static void cmd_gain(const char *a1)
@@ -332,6 +365,8 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "mute") || streq(argv[0], "m")) cmd_mute(argv[1]);
     else if (streq(argv[0], "meters")) cmd_meters(argv[1]);
     else if (streq(argv[0], "x")) cmd_x();
+    else if (streq(argv[0], "led")) cmd_led(argv[1], argv[2]);
+    else if (streq(argv[0], "ledpin")) cmd_ledpin(argv[1], argv[2]);
     else if (streq(argv[0], "creg")) cmd_creg(argv[1], argv[2]);
     else if (streq(argv[0], "hb")) {
         heartbeat_on = (argc > 1 && streq(argv[1], "on"));

@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FW = ROOT / "firmware" / "audio"
 OUT = FW / "build" / "dsp_host_test"
 OUT_ENGINE = FW / "build" / "engine_host_test"
+OUT_LED = FW / "build" / "led_host_test"
 
 pytestmark = pytest.mark.skipif(
     shutil.which("cc") is None, reason="host C compiler not installed"
@@ -39,3 +40,16 @@ def test_engine_drift_suite():
                             check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "drift host tests OK" in result.stdout
+
+
+def test_led_pattern_suite():
+    OUT_LED.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["cc", "-O2", "-Wall", "-Wextra", "-I", str(FW / "src"),
+         str(FW / "tests" / "led_host_test.c"), "-o", str(OUT_LED)],
+        check=True,
+    )
+    result = subprocess.run([str(OUT_LED)], capture_output=True, text=True,
+                            check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "led host tests OK" in result.stdout

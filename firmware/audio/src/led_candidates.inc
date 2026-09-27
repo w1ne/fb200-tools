@@ -1,0 +1,49 @@
+/* Candidate LED pads: the stock firmware configures these as outputs.
+ * Generated from the stock image's pin tables + fsl_iomuxc.h. */
+static const led_pin_t kCandidates[] = {
+    {2, 0, 0x401F813Cu, 5u, 0x401F832Cu}, /* GPIO_B0_00 */
+    {2, 1, 0x401F8140u, 5u, 0x401F8330u}, /* GPIO_B0_01 */
+    {2, 3, 0x401F8148u, 5u, 0x401F8338u}, /* GPIO_B0_03 */
+    {2, 17, 0x401F8180u, 5u, 0x401F8370u}, /* GPIO_B1_01 */
+    {2, 18, 0x401F8184u, 5u, 0x401F8374u}, /* GPIO_B1_02 */
+    {2, 19, 0x401F8188u, 5u, 0x401F8378u}, /* GPIO_B1_03 */
+    {2, 24, 0x401F819Cu, 5u, 0x401F838Cu}, /* GPIO_B1_08 */
+    {2, 31, 0x401F81B8u, 5u, 0x401F83A8u}, /* GPIO_B1_15 */
+    {3, 12, 0x401F81BCu, 5u, 0x401F83ACu}, /* GPIO_SD_B0_00 */
+    {3, 13, 0x401F81C0u, 5u, 0x401F83B0u}, /* GPIO_SD_B0_01 */
+    {3, 14, 0x401F81C4u, 5u, 0x401F83B4u}, /* GPIO_SD_B0_02 */
+    {3, 18, 0x401F8094u, 5u, 0x401F8284u}, /* GPIO_EMC_32 */
+    {3, 21, 0x401F80A0u, 5u, 0x401F8290u}, /* GPIO_EMC_35 */
+    {4, 0, 0x401F8014u, 5u, 0x401F8204u}, /* GPIO_EMC_00 */
+    {4, 1, 0x401F8018u, 5u, 0x401F8208u}, /* GPIO_EMC_01 */
+    {4, 2, 0x401F801Cu, 5u, 0x401F820Cu}, /* GPIO_EMC_02 */
+    {4, 3, 0x401F8020u, 5u, 0x401F8210u}, /* GPIO_EMC_03 */
+    {4, 4, 0x401F8024u, 5u, 0x401F8214u}, /* GPIO_EMC_04 */
+    {4, 5, 0x401F8028u, 5u, 0x401F8218u}, /* GPIO_EMC_05 */
+    {4, 6, 0x401F802Cu, 5u, 0x401F821Cu}, /* GPIO_EMC_06 */
+    {4, 7, 0x401F8030u, 5u, 0x401F8220u}, /* GPIO_EMC_07 */
+    {4, 8, 0x401F8034u, 5u, 0x401F8224u}, /* GPIO_EMC_08 */
+    {4, 9, 0x401F8038u, 5u, 0x401F8228u}, /* GPIO_EMC_09 */
+    {4, 10, 0x401F803Cu, 5u, 0x401F822Cu}, /* GPIO_EMC_10 */
+    {4, 11, 0x401F8040u, 5u, 0x401F8230u}, /* GPIO_EMC_11 */
+    {4, 12, 0x401F8044u, 5u, 0x401F8234u}, /* GPIO_EMC_12 */
+    {4, 13, 0x401F8048u, 5u, 0x401F8238u}, /* GPIO_EMC_13 */
+    {4, 14, 0x401F804Cu, 5u, 0x401F823Cu}, /* GPIO_EMC_14 */
+    {4, 15, 0x401F8050u, 5u, 0x401F8240u}, /* GPIO_EMC_15 */
+    {4, 16, 0x401F8054u, 5u, 0x401F8244u}, /* GPIO_EMC_16 */
+    {4, 17, 0x401F8058u, 5u, 0x401F8248u}, /* GPIO_EMC_17 */
+    {4, 18, 0x401F805Cu, 5u, 0x401F824Cu}, /* GPIO_EMC_18 */
+    {4, 19, 0x401F8060u, 5u, 0x401F8250u}, /* GPIO_EMC_19 */
+    {4, 20, 0x401F8064u, 5u, 0x401F8254u}, /* GPIO_EMC_20 */
+    {4, 21, 0x401F8068u, 5u, 0x401F8258u}, /* GPIO_EMC_21 */
+    {4, 22, 0x401F806Cu, 5u, 0x401F825Cu}, /* GPIO_EMC_22 */
+    {4, 23, 0x401F8070u, 5u, 0x401F8260u}, /* GPIO_EMC_23 */
+    {4, 24, 0x401F8074u, 5u, 0x401F8264u}, /* GPIO_EMC_24 */
+    {4, 25, 0x401F8078u, 5u, 0x401F8268u}, /* GPIO_EMC_25 */
+    {4, 26, 0x401F807Cu, 5u, 0x401F826Cu}, /* GPIO_EMC_26 */
+    {4, 27, 0x401F8080u, 5u, 0x401F8270u}, /* GPIO_EMC_27 */
+    {4, 28, 0x401F8084u, 5u, 0x401F8274u}, /* GPIO_EMC_28 */
+    {4, 29, 0x401F8088u, 5u, 0x401F8278u}, /* GPIO_EMC_29 */
+    {4, 30, 0x401F808Cu, 5u, 0x401F827Cu}, /* GPIO_EMC_30 */
+    {4, 31, 0x401F8090u, 5u, 0x401F8280u}, /* GPIO_EMC_31 */
+};

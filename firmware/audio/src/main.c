@@ -10,6 +10,7 @@
 #include "audio/engine.h"
 #include "audio/usb_audio.h"
 #include "audio/codec.h"
+#include "led.h"
 
 extern int g_bss_writable;
 
@@ -35,6 +36,7 @@ void app_main(void)
     tusb_init();
     i2c_probe_init();
     engine_init();
+    led_init();
     bool codec_ok = codec_init();
     log_printf("codec init: %s\r\n", codec_ok ? "ok" : "FAILED");
     if (!codec_ok) {
@@ -49,6 +51,13 @@ void app_main(void)
         console_task();
         usb_audio_task();
         engine_task();
+        {
+            uint32_t pf, cf, ovf, unf;
+            uint8_t spk_alt, mic_alt;
+            usb_audio_stats(&pf, &cf, &ovf, &unf, &spk_alt, &mic_alt);
+            led_set_streaming(spk_alt != 0 || mic_alt != 0);
+        }
+        led_task();
         if (console_heartbeat_on() && ++loops >= 2000000u) {
             loops = 0;
             log_printf("hb\r\n");

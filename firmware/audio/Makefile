@@ -54,7 +54,7 @@ LDFLAGS   := $(CPUFLAGS) -nostdlib -T linker.ld -Wl,-Map=$(TARGET).map,--cref
 
 SRC_C := \
   src/startup.c src/vectors.c src/main.c src/memfuncs.c \
-  src/system_clock.c src/usb_descriptors.c src/compat/stubs.c \
+  src/system_clock.c src/usb_descriptors.c src/compat/stubs.c src/led.c \
   src/dsp/dsp.c src/dsp/math.c src/dsp/gain.c src/dsp/testgen.c \
   src/debug/log_fmt.c src/debug/cdc_log.c src/debug/console.c \
   src/debug/selfupdate.c \

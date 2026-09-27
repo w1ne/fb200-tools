@@ -32,7 +32,7 @@ FLASH_BLOCK0 = 0x60010000
 
 class Console:
     def __init__(self, port: str) -> None:
-        self.fd = os.open(port, os.O_RDWR | os.O_NOCTTY)
+        self.fd = os.open(port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
         attrs = termios.tcgetattr(self.fd)
         attrs[0] = attrs[1] = attrs[3] = 0          # raw: no iflag/oflag/lflag
         attrs[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
@@ -41,11 +41,18 @@ class Console:
         termios.tcsetattr(self.fd, termios.TCSANOW, attrs)
         self.buf = b""
 
-    def write(self, data: bytes) -> None:
+    def write(self, data: bytes, timeout: float = 10.0) -> None:
+        # Non-blocking: a hung pedal stops draining the CDC endpoint, and a
+        # blocking write would then wedge this process in the kernel.
+        deadline = time.monotonic() + timeout
         view = memoryview(data)
         while view:
-            n = os.write(self.fd, view)
-            view = view[n:]
+            try:
+                view = view[os.write(self.fd, view):]
+            except BlockingIOError:
+                if time.monotonic() > deadline:
+                    raise SystemExit("pedal stopped reading USB (firmware hung?)")
+                time.sleep(0.01)
 
     def expect(self, needles: list[bytes], timeout: float) -> bytes:
         """Read until a line contains one of `needles`; return that line."""
@@ -58,9 +65,10 @@ class Console:
                     print("  <", text.decode(errors="replace"))
                 if any(n in text for n in needles):
                     return text
-            chunk = os.read(self.fd, 4096)
-            if chunk:
-                self.buf += chunk
+            try:
+                self.buf += os.read(self.fd, 4096)
+            except BlockingIOError:
+                time.sleep(0.01)
         raise SystemExit(f"timeout waiting for {needles!r}")
 
     def command(self, cmd: str, needles: list[bytes], timeout: float = 5.0) -> bytes:
