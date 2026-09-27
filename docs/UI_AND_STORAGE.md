@@ -85,10 +85,17 @@ drop min/max, average, invert (4095 - v); change threshold 48 counts.
   ADC channel 9 (`AD_B1_04`), charger sense GPIO1_IO19 (`AD_B1_03`).
 - GPIO2_IO30 (`B1_14`) toggles every 500 ms: heartbeat LED or external
   watchdog (L).
-- **GPIO2_IO26 (`B1_10`) / IO31 (`B1_15`) are a power latch/mute pair,
-  always opposite**; the stock watches ADC channel 7 (`AD_B1_02`) and on a
+- **GPIO2_IO26 (`B1_10`) / IO31 (`B1_15`) are a latch/mute pair, always
+  opposite**; the stock watches ADC channel 7 (`AD_B1_02`) and on a
   power-fail threshold saves settings and flips them. `frontend.c` sets the
-  stock's normal running state; do not drive them otherwise.
+  stock's normal running state.
+- **The power switch is a hard cut** (verified on the pedal, on USB: switch
+  off = full power-on reset, the SRC_GPR crumbs are cleared; ADC7 never
+  dipped before the cut at 250 ms polling). The stock's ADC7 path is a
+  last-milliseconds save from the hold-up capacitors, which needs the
+  settings sector pre-erased. Ours instead writes settings 3 s after any
+  change, so a switch-off loses at most the last 3 s of changes and never
+  the stored settings.
   `B1_09`, `B1_11`, `AD_B0_02` are set high at init (enables/resets, L).
 
 ## 4. Bluetooth (H)
