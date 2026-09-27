@@ -112,18 +112,18 @@ static int flash_program_byte(uint32_t flash_offset, uint8_t value)
 }
 
 /* Handover to the vendor bootloader: the stock app's 0xC1 path.
- * RE (docs/BOOTLOADER.md): the bootloader boots the app only when the flag
- * byte at 0x60086000 reads 0xFF; any other value enters update mode
- * (0x60008d88). Program 0x00 there and reset. */
+ * RE (docs/BOOTLOADER.md): the bootloader's update-mode entry is 0x600091BC
+ * (it performs its own pin/IO and USB init); the bootloader reaches it when
+ * the app-validity checks fail or the A+D buttons are held. Call it directly
+ * like the stock 0xC1 handler does. */
 __attribute__((noreturn)) static void handover(void)
 {
-    int ok = flash_program_byte(0x00086000u, 0x00u);
-    log_printf("handover: flag write %s\r\n", ok ? "ok" : "FAILED");
+    log_printf("handover: calling update-mode entry 0x600091bc\r\n");
     cdc_log_task();
     tud_disconnect();
     for (volatile uint32_t i = 0; i < 2000000u; i++) {
     }
-    NVIC_SystemReset();
+    ((void (*)(void))(0x600091BCu | 1u))();
     __builtin_unreachable();
 }
 
@@ -213,6 +213,11 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "dumpmem")) cmd_dumpmem(argv[1], argv[2]);
     else if (streq(argv[0], "src")) cmd_src();
     else if (streq(argv[0], "poke")) cmd_poke(argv[1], argv[2]);
+    else if (streq(argv[0], "flagtest")) {
+        int ok = flash_program_byte(0x00086000u, 0x00u);
+        log_printf("flag write %s; flag reads %02x\r\n", ok ? "ok" : "FAILED",
+                   (unsigned)*(volatile uint8_t *)0x60086000u);
+    }
     else if (streq(argv[0], "dfu")) {
         log_printf("jumping to the bootloader DFU entry\r\n");
         cdc_log_task();
