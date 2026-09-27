@@ -1,12 +1,31 @@
 /* fb200-audio: milestone 1. Phase 0 adds the I2C probe commands
  * ('s' scan, 'd' dump bus1/0x1A, 'D' dump bus2/0x1A); audio bring-up lands in
  * later tasks (codec, SAI/eDMA, USB audio). */
+#include <stdint.h>
 #include "tusb.h"
 #include "bsp/board_api.h"
 #include "debug/cdc_log.h"
 #include "audio/i2c_probe.h"
 
 extern int g_bss_writable;
+
+/* Hand over to the vendor bootloader (DFU) by jumping to its Cortex-M vector
+ * table at 0x60000000 - the same effect as the stock app's 0xC1 command,
+ * without needing A+D at power-on. */
+__attribute__((noreturn)) static void jump_to_bootloader(void)
+{
+    __asm volatile ("cpsid i" ::: "memory");
+    tud_disconnect();
+    for (volatile uint32_t i = 0; i < 4000000u; i++) {
+    }
+    uint32_t sp = *(volatile uint32_t *)0x60000000u;
+    uint32_t pc = *(volatile uint32_t *)0x60000004u;
+    __asm volatile ("msr msp, %0" :: "r" (sp) : "memory");
+    __asm volatile ("dsb 0xf" ::: "memory");
+    __asm volatile ("isb 0xf" ::: "memory");
+    ((void (*)(void))pc)();
+    __builtin_unreachable();
+}
 
 void app_main(void)
 {
@@ -32,6 +51,9 @@ void app_main(void)
             if (cmd == 's') i2c_scan_all();
             else if (cmd == 'd') i2c_dump(1, 0x1A);
             else if (cmd == 'D') i2c_dump(2, 0x1A);
+            else if (cmd == 'e') i2c_dump(3, 0x1A);
+            else if (cmd == 'f') i2c_dump(4, 0x1A);
+            else if (cmd == 'j') jump_to_bootloader();
         }
     }
 }

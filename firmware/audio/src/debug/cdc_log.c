@@ -4,7 +4,7 @@
 #include "cdc_log.h"
 #include "log_fmt.h"
 
-static char ring[1024];
+static char ring[4096];
 static volatile size_t head, tail;
 
 void cdc_log_init(void) { head = tail = 0; }

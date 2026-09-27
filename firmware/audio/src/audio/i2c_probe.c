@@ -8,29 +8,30 @@
 
 static LPI2C_Type *const kBuses[4] = { LPI2C1, LPI2C2, LPI2C3, LPI2C4 };
 
-/* Bounded wait for any of the given status flags. */
-static bool wait_flags(LPI2C_Type *base, uint32_t flags, uint32_t loops)
-{
-    while (loops--) {
-        if (LPI2C_MasterGetStatusFlags(base) & flags) return true;
-    }
-    return false;
-}
-
-/* Address probe without data: START + address, check NACK, STOP. The SDK's
- * zero-length blocking transfer never completes, so use the primitives. */
+/* Address probe: one-byte read through the SDK transfer (bounded by
+ * I2C_RETRY_TIMES). A present device ACKs the address; absent ones NACK and
+ * the transfer returns kStatus_LPI2C_Nak. */
 static bool probe_addr(LPI2C_Type *base, uint8_t addr)
 {
-    LPI2C_MasterClearStatusFlags(base, kLPI2C_MasterClearFlags);
-    if (LPI2C_MasterStart(base, addr, kLPI2C_Write) != kStatus_Success) return false;
-    if (!wait_flags(base, kLPI2C_MasterEndOfPacketFlag | kLPI2C_MasterNackDetectFlag, 200000u)) {
-        LPI2C_MasterStop(base);
-        return false;
-    }
-    bool acked = (LPI2C_MasterGetStatusFlags(base) & kLPI2C_MasterNackDetectFlag) == 0u;
-    LPI2C_MasterStop(base);
-    (void)wait_flags(base, kLPI2C_MasterStopDetectFlag, 200000u);
-    return acked;
+    uint8_t v = 0;
+    lpi2c_master_transfer_t t = {
+        .slaveAddress = addr, .direction = kLPI2C_Read, .data = &v, .dataSize = 1,
+    };
+    return LPI2C_MasterTransferBlocking(base, &t) == kStatus_Success;
+}
+
+/* Read register `reg` (codec register-index protocol) and report the value. */
+static bool read_reg(LPI2C_Type *base, uint8_t addr, uint8_t reg, uint8_t *out)
+{
+    lpi2c_master_transfer_t t = {
+        .slaveAddress = addr, .direction = kLPI2C_Write, .data = &reg, .dataSize = 1,
+        .flags = kLPI2C_TransferNoStopFlag,
+    };
+    if (LPI2C_MasterTransferBlocking(base, &t) != kStatus_Success) return false;
+    t = (lpi2c_master_transfer_t){
+        .slaveAddress = addr, .direction = kLPI2C_Read, .data = out, .dataSize = 1,
+    };
+    return LPI2C_MasterTransferBlocking(base, &t) == kStatus_Success;
 }
 
 /* I2C pad muxing recovered from the stock image (docs/AUDIO_PATH.md):
@@ -78,7 +79,10 @@ void i2c_scan_all(void)
         int found = 0;
         for (uint8_t a = 0x08; a <= 0x77; a++) {
             if (probe_addr(kBuses[bus], a)) {
+                uint8_t v = 0;
+                bool readable = read_reg(kBuses[bus], a, 0x00, &v);
                 log_printf(" %02x", a);
+                if (readable) log_printf("[%02x]", v);
                 found++;
             }
         }
@@ -94,18 +98,9 @@ void i2c_dump(uint8_t bus, uint8_t addr)
     log_printf("dump bus%d addr %02x\r\n", bus, addr);
     for (uint8_t reg = 0x00; reg < 0x80; reg++) {
         uint8_t v = 0;
-        lpi2c_master_transfer_t t = {
-            .slaveAddress = addr, .direction = kLPI2C_Write, .data = &reg, .dataSize = 1,
-            .flags = kLPI2C_TransferNoStopFlag,
-        };
-        if (LPI2C_MasterTransferBlocking(base, &t) != kStatus_Success) {
-            log_printf("%02x: ERR\r\n", reg);
-            continue;
-        }
-        t = (lpi2c_master_transfer_t){
-            .slaveAddress = addr, .direction = kLPI2C_Read, .data = &v, .dataSize = 1,
-        };
-        if (LPI2C_MasterTransferBlocking(base, &t) == kStatus_Success) log_printf("%02x: %02x\r\n", reg, v);
-        else log_printf("%02x: ERR\r\n", reg);
+        if (read_reg(base, addr, reg, &v)) log_printf("%02x:%02x ", reg, v);
+        else log_printf("%02x:ERR ", reg);
+        if ((reg & 0x0F) == 0x0F) log_printf("\r\n");
     }
+    log_printf("\r\n");
 }
