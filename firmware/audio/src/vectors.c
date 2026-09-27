@@ -33,6 +33,7 @@ void DMA0_DMA16_DriverIRQHandler(void) __attribute__((weak, alias("Default_Handl
 void DMA1_DMA17_DriverIRQHandler(void) __attribute__((weak, alias("Default_Handler")));
 void DMA2_DMA18_DriverIRQHandler(void) __attribute__((weak, alias("Default_Handler")));
 void LPUART5_DriverIRQHandler(void) __attribute__((weak, alias("Default_Handler")));
+void DMA3_DMA19_DriverIRQHandler(void) __attribute__((weak, alias("Default_Handler")));
 
 /* Vendor reset stub at block 0 offset 0x4d8 (flash 0x600104d8). */
 #define VENDOR_STUB 0x600104d9u
@@ -45,12 +46,14 @@ void LPUART5_DriverIRQHandler(void) __attribute__((weak, alias("Default_Handler"
 #define DMA0_VECTOR      (16 + DMA0_DMA16_IRQn)   /* SAI1 RX (src/audio/sai.c) */
 #define DMA1_VECTOR      (16 + DMA1_DMA17_IRQn)   /* SAI1 TX */
 #define DMA2_VECTOR      (16 + DMA2_DMA18_IRQn)   /* RGB LEDs (src/ui/rgb.c) */
+#define DMA3_VECTOR      (16 + DMA3_DMA19_IRQn)   /* Bluetooth audio in (SAI3) */
 #define LPUART5_VECTOR   (16 + LPUART5_IRQn)      /* Bluetooth module (src/bt/bt.c) */
 
 _Static_assert(16 + USB_OTG2_IRQn == 128, "USB OTG2 vector index mismatch");
 _Static_assert(16 + USB_OTG1_IRQn == 129, "USB OTG1 vector index mismatch");
 _Static_assert(SYSTICK_VECTOR == 15, "SysTick vector index mismatch");
-_Static_assert(DMA0_VECTOR == 16 && DMA1_VECTOR == 17 && DMA2_VECTOR == 18,
+_Static_assert(DMA0_VECTOR == 16 && DMA1_VECTOR == 17 && DMA2_VECTOR == 18 &&
+               DMA3_VECTOR == 19,
                "eDMA vector index mismatch");
 
 __attribute__((section(".vectors"), used))
@@ -62,7 +65,8 @@ const void *const g_vectors[256] = {
     [DMA0_VECTOR] = DMA0_DMA16_DriverIRQHandler,
     [DMA1_VECTOR] = DMA1_DMA17_DriverIRQHandler,
     [DMA2_VECTOR] = DMA2_DMA18_DriverIRQHandler,
-    [19 ... LPUART5_VECTOR - 1] = Default_Handler,
+    [DMA3_VECTOR] = DMA3_DMA19_DriverIRQHandler,
+    [20 ... LPUART5_VECTOR - 1] = Default_Handler,
     [LPUART5_VECTOR] = LPUART5_DriverIRQHandler,
     [LPUART5_VECTOR + 1 ... 127] = Default_Handler,
     [USB_OTG2_VECTOR] = USB_OTG2_IRQHandler,

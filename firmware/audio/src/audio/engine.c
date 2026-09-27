@@ -15,6 +15,7 @@
 #ifndef ENGINE_HOST_TEST
 #include "audio/sai.h"
 #include "audio/usb_audio.h"
+#include "audio/bt_audio.h"
 #include "audio/codec.h"
 #include "dsp/dsp.h"
 #include "dsp/gain.h"
@@ -134,6 +135,7 @@ void engine_init(void)
     DWT->CYCCNT = 0;
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
     cab_init(&s_cab);
+    bt_audio_init();
     gate_init(&s_gate, (float)AUDIO_FS);
     comp_init(&s_comp, (float)AUDIO_FS);
     mod_init(&s_mod, (float)AUDIO_FS);
@@ -368,11 +370,15 @@ void engine_task(void)
             break;
         }
     }
+    float btl[ENGINE_FRAMES] = {0}, btr[ENGINE_FRAMES] = {0};
+    size_t nbt = bt_audio_pull(btl, btr, n);                 /* Bluetooth audio in */
+    for (size_t i = nbt; i < n; i++) btl[i] = btr[i] = 0.0f;
     for (size_t i = 0; i < n; i++) {
         s_master += 0.001f * (s_master_target - s_master);   /* stock: smoothed master */
         float g = s_tuner_on ? 0.0f : s_master;               /* stock: tuning is silent */
-        s_block.data[0][i] = xl[i] * g;
-        s_block.data[1][i] = xr[i] * g;
+        /* stock mix: out = chain*master + BT*master*1.3 (capture: + BT) */
+        s_block.data[0][i] = xl[i] * g + btl[i] * g * 1.3f;
+        s_block.data[1][i] = xr[i] * g + btr[i] * g * 1.3f;
     }
     gain_process(&s_gain, &s_block, n);                         /* console `gain` */
     if (s_testgen.mode != TESTGEN_OFF && !s_testgen_in) {

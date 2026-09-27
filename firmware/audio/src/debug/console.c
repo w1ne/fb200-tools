@@ -29,6 +29,7 @@
 #include "ui/ui.h"
 #include "ui/rgb.h"
 #include "bt/bt.h"
+#include "audio/bt_audio.h"
 #endif
 
 extern int g_bss_writable;
@@ -113,7 +114,7 @@ static void cmd_help(void)
              "  led   : led on|off|scan | ledpin <gpio> <pin>\r\n"
              "  ui    : ui | uimon on|off | disp <text> | kled <0-15> on|off | power\r\n"
              "          preset [0-39] | save | rgb 0xRRGGBB [led] | rgb cfg 0xIIS0S1\r\n"
-             "  bt    : bt | bt send <AT+...>\r\n"
+             "  bt    : bt | bt send <AT+...> | btaudio\r\n"
              "  music : tuner on|off | drums [on|off|<1-40>|bpm <n>]\r\n"
              "  tests : crash | hang\r\n"
 #endif
@@ -542,6 +543,13 @@ static void dispatch(char *cmd)
         log_printf("drums %s rhythm %u bpm %u level %u samples %lu patterns %s\r\n", d->on ? "on" : "off",
                    (unsigned)d->rhythm + 1u, (unsigned)d->bpm, (unsigned)d->level,
                    (unsigned long)d->n_samples, d->data ? "yes" : "NO (build with STOCK_MR)");
+    }
+    else if (streq(argv[0], "btaudio")) {
+        uint32_t blocks, fill;
+        int32_t peak;
+        bt_audio_stats(&blocks, &fill, &peak);
+        log_printf("bt audio: blocks %lu fill %lu peak %ld (of 32767)\r\n",
+                   (unsigned long)blocks, (unsigned long)fill, (long)peak);
     }
     else if (streq(argv[0], "bt")) {
         if (argc > 2 && streq(argv[1], "send")) log_printf("bt send %s\r\n", bt_at(argv[2]) == 0 ? "ok" : "busy");
