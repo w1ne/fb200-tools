@@ -743,6 +743,7 @@ void i2c_dump(uint8_t bus, uint8_t addr);
 Create `firmware/audio/src/audio/i2c_probe.c`:
 
 ```c
+#include "fsl_clock.h"
 #include "fsl_lpi2c.h"
 #include "debug/cdc_log.h"
 #include "i2c_probe.h"
@@ -759,13 +760,14 @@ static bool probe_addr(LPI2C_Type *base, uint8_t addr)
 
 void i2c_probe_init(void)
 {
-    /* Codec/board clock facts are confirmed in Task 5; the EVK BSP clock tree
-     * already brings up the LPI2C clocks used here. */
+    uint32_t clk = CLOCK_GetClockRootFreq(kCLOCK_Lpi2cClkRoot);
+    if (clk == 0u) clk = 24000000u;   /* fallback: OSC */
+    log_printf("lpi2c clk=%u Hz\r\n", (unsigned)clk);
     for (int i = 0; i < 4; i++) {
         lpi2c_master_config_t cfg;
         LPI2C_MasterGetDefaultConfig(&cfg);
         cfg.baudRate_Hz = 100000u;
-        LPI2C_MasterInit(kBuses[i], &cfg, 24000000u);
+        LPI2C_MasterInit(kBuses[i], &cfg, clk);
     }
 }
 
@@ -1523,5 +1525,13 @@ gh release create v0.5.0 --title "v0.5.0 — open firmware audio engine" --notes
 
 Tasks 3, 4, 6, 7, 8, 10 need the pedal. Every flash follows the proven flow:
 from stock → `--yes` (0xC1 jump), or from DFU (A+D) → `--yes --no-jump`.
-Pre-flash gate for every image: dry-run through the Unicorn emulator (the
-recipe in `docs/FIRMWARE_BRINGUP.md` §2) before touching hardware.
+Pre-flash gate for every image: dry-run through the Unicorn emulator before
+touching hardware:
+
+```bash
+python firmware/tools/pack_vendor_image.py fb200-stock.mr \
+  firmware/audio/build/fb200-audio.vectors.bin \
+  firmware/audio/build/fb200-audio.blob.bin -o /tmp/fb200-audio.mr --app-only
+python firmware/tools/boot_dry_run.py /tmp/fb200-audio.mr \
+  --elf firmware/audio/build/fb200-audio.elf    # expects "DRY RUN OK"
+```

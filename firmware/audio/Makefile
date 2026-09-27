@@ -34,7 +34,8 @@ TUSB_INC  := \
   -I $(MCUX_CORE)/drivers/common \
   -I $(MCUX_CORE)/drivers/igpio \
   -I $(MCUX_CORE)/drivers/lpuart \
-  -I $(MCUX_CORE)/drivers/ocotp
+  -I $(MCUX_CORE)/drivers/ocotp \
+  -I $(MCUX_CORE)/drivers/lpi2c
 TUSB_DEFS := \
   -DCFG_TUSB_MCU=OPT_MCU_MIMXRT10XX \
   -DCPU_MIMXRT1062DVL6A \
@@ -51,6 +52,7 @@ SRC_C := \
   src/system_clock.c src/usb_descriptors.c src/compat/stubs.c \
   src/dsp/dsp.c src/dsp/math.c src/dsp/gain.c src/dsp/testgen.c \
   src/debug/log_fmt.c src/debug/cdc_log.c \
+  src/audio/i2c_probe.c \
   $(TUSB_DIR)/src/tusb.c \
   $(TUSB_DIR)/src/common/tusb_fifo.c \
   $(TUSB_DIR)/src/device/usbd.c \
@@ -65,6 +67,7 @@ SRC_C := \
   $(MCUX_CORE)/drivers/igpio/fsl_gpio.c \
   $(MCUX_CORE)/drivers/lpuart/fsl_lpuart.c \
   $(MCUX_CORE)/drivers/ocotp/fsl_ocotp.c \
+  $(MCUX_CORE)/drivers/lpi2c/fsl_lpi2c.c \
   $(MCU_DIR)/drivers/fsl_clock.c
 SRC_S := src/stage2.S
 OBJS  := $(patsubst %,$(TARGET)/%.o,$(SRC_C) $(SRC_S))
