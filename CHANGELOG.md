@@ -5,6 +5,49 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-27
+
+First release of the open FB200 firmware (`firmware/audio`), with host tools.
+
+### Added
+
+- **Open firmware with stock-sound parity.** Gate, compressor, 10 amp models + tone
+  stack, 10 cab IRs + 9 user-IR slots, 12 modulations, 5 reverbs. Each module passed
+  against an emulation of the stock DSP (amp/tone bit-exact, the rest within -105 dB).
+- Drum machine (40 rhythms, stock samples played in place from the pedal's flash) and
+  tuner, both matching the stock in emulation.
+- Front panel: 3-digit display, 16 knobs with pickup and LEDs, the stock footswitch
+  actions (slots, bank chords, stomp mode, tuner, rhythm mode, save), 40 RGB LEDs,
+  battery/charger status.
+- Presets and settings in the stock flash format. The stock app protocol over
+  Bluetooth and USB HID, with the stock USB identity (`34DB:800F`).
+- USB audio interface (UAC2, 44.1 kHz) and Bluetooth audio in.
+- Two-stage boot: a resident recovery plus an application slot. Updates over USB with
+  no button combo; recovery takes over after a fault or a hang; crash dumps survive a
+  reset.
+- Host tools: `fb200 console`, `fb200 update app|recovery`, `fb200 crash --elf`.
+  Firmware tools: `build_images.sh`, `pack_images.py`, and `boot_dry_run.py`
+  (full-chain boot emulation that fails on unsafe early peripheral access).
+- Docs: `INSTALL.md`, `PARITY.md`, `ROADMAP_RESEARCH.md`, `AUDIO_PATH.md`,
+  `UI_AND_STORAGE.md`, `BOOTLOADER.md`, and a full `PROTOCOL.md` command set.
+
+### Better than stock
+
+- The display names the knob being turned and shows whether it has picked up.
+- Hold A and turn LEVEL/RATE/MOD to change drum level, tempo and rhythm.
+- Drums are included in USB recordings.
+- An empty user-IR slot bypasses the cab instead of silencing the pedal.
+- Drum hits start on time (the stock ignores the sample bank header).
+- The app's "enter updater" command never touches the vendor bootloader flag,
+  which the A+D recovery depends on.
+
+### Notes
+
+- Build with your own official firmware file. The repository ships no vendor code
+  or data, and the built images must not be redistributed.
+- DSP libraries: CMSIS-DSP v1.18.0 (pinned, checksummed). Toolchain: an Arm GNU
+  toolchain with newlib.
+
 ## [0.4.0] - 2026-09-27
 
 ### Added

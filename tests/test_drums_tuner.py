@@ -18,7 +18,7 @@ FW = ROOT / "firmware" / "audio"
 OUT = FW / "build" / "drums_tuner_host_test"
 sys.path.insert(0, str(Path(__file__).parent))
 
-import stock_emu  # noqa: E402
+import stock_emu
 
 pytestmark = pytest.mark.skipif(shutil.which("cc") is None, reason="host C compiler not installed")
 
@@ -78,7 +78,7 @@ def run_tuner(exe: Path, x: np.ndarray, a4: int = 440) -> list[dict]:
 
 def test_selftest_without_stock_data():
     exe = build("plain")
-    r = subprocess.run([str(exe), "selftest"], capture_output=True, text=True)
+    r = subprocess.run([str(exe), "selftest"], capture_output=True, text=True, check=False)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "drums tuner host tests OK" in r.stdout
 

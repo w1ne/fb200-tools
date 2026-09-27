@@ -23,7 +23,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from fb200.firmware import MrFile  # noqa: E402
+from fb200.firmware import MrFile
 
 RET = 0x1FFE0                 # unused ITCM word: return address for direct calls
 SP = 0x20057F00
@@ -53,8 +53,7 @@ def have_emulator() -> str | None:
 
 def _dp_hook_factory():
     import capstone
-    from unicorn.arm_const import (UC_ARM_REG_FPSCR, UC_ARM_REG_PC, UC_ARM_REG_S0,
-                                   UC_ARM_REG_XPSR)
+    from unicorn.arm_const import UC_ARM_REG_FPSCR, UC_ARM_REG_PC, UC_ARM_REG_S0, UC_ARM_REG_XPSR
     md = capstone.Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_THUMB | capstone.CS_MODE_MCLASS)
     cache: dict[bytes, tuple[str, str, int]] = {}
 
@@ -158,8 +157,14 @@ def _dp_hook_factory():
 
 class StockFirmware:
     def __init__(self, mr_path: Path | None = None):
-        from unicorn import (UC_ARCH_ARM, UC_HOOK_CODE, UC_HOOK_INSN_INVALID, UC_MODE_MCLASS,
-                             UC_MODE_THUMB, Uc)
+        from unicorn import (
+            UC_ARCH_ARM,
+            UC_HOOK_CODE,
+            UC_HOOK_INSN_INVALID,
+            UC_MODE_MCLASS,
+            UC_MODE_THUMB,
+            Uc,
+        )
         from unicorn.arm_const import UC_ARM_REG_C1_C0_2, UC_ARM_REG_SP, UC_CPU_ARM_CORTEX_M7
 
         self.mr = MrFile.from_path(mr_path or find_stock_mr())
@@ -243,5 +248,5 @@ class StockTuner(StockFirmware):
                 self.call(0x17A48, (self.cal,))
                 silent, _, _, note, dev = self.rd(self.NOTE_ST, "BBBBB")
                 f = self.rd(self.FEED_ST + 0x2C, "f")[0]
-                res.append(dict(sample=i, note=note, deviation=dev, freq=f, silent=silent))
+                res.append({"sample": i, "note": note, "deviation": dev, "freq": f, "silent": silent})
         return res

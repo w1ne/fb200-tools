@@ -1,150 +1,159 @@
 ![banner](images/banner.svg)
 
-# fb200-tools
+# fb200-tools: open firmware for the FLAMMA FB200
 
-Open-source Python library and CLI for the **FLAMMA FB200** (Mooer-based) bass
-multi-effects pedal. It talks to the pedal's vendor USB HID interface directly
-from macOS, Linux, or Windows: read device and firmware versions, list, import,
-delete, and back up IR (impulse response) slots, and convert WAV files into the
-pedal's IR format. Runtime code needs only the Python standard library;
-`hidapi` is required only when talking to real hardware. The USB HID protocol
-is documented in [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
+**Open-source replacement firmware and tools for the
+[FLAMMA FB200](https://www.flamma.shop/products/flamma-fb200-bass-guitar-intelligent-combined-multi-effects-pedal)
+bass multi-effects pedal.** It sounds like the stock firmware, keeps your presets and the
+official app working, and adds what the stock firmware lacks: USB updates without a
+button combo, a debug console, crash reports, better display feedback, and drums in
+your recordings.
 
-## Features
+![The FB200 running the open firmware](images/in-use.jpg)
 
-- `fb200 info` — product, application, firmware, Bluetooth, and hardware versions.
-- IR management: list all 9 slots, import WAV files, delete slots, and write a
-  backup manifest.
-- WAV → IR conversion matching the official editor: 44.1 kHz, channel 0,
-  1024 `float32` samples.
-- Firmware container tooling: `fw inspect`, `fw extract-block`, and
-  `fw patch-string` for same-length patches.
-- Safe flash client: `fw flash` (dry-run by default, explicit `--yes`,
-  `--no-jump` recovery).
-- `firmware/hello` — minimal custom firmware that boots and enumerates over USB
-  as a CDC-ACM device ([`firmware/hello/README.md`](firmware/hello/README.md)).
-- Mock transport so the full test suite runs without a pedal.
-- `fb200 probe` — raw frame research tool for protocol exploration.
-- Protocol documentation derived from the official app and verified on hardware.
+## Why
 
-## Status
+The FB200 is a good little bass pedal built around a 600 MHz Cortex-M7 (i.MX RT1052).
+Its firmware is closed and frozen. This project aims to:
 
-| Version | Status | Contents |
-|---------|--------|----------|
-| v0.1 | Done | device info, IR list/import/delete/backup, docs |
-| v0.2 | Done | firmware container tooling: `fw inspect`, `fw extract-block`, `fw patch-string`, plus format/analysis docs |
-| v0.3 | Done | flashing (`fw flash`), recovery docs, stock round-trip and a hardware-verified proof patch (firmware version string) |
-| v0.4 (current) | In progress | app-only `.mr` packer (`fw pack`) and `fb200-hello` custom firmware — boots on hardware (`docs/FIRMWARE_BRINGUP.md`) |
+- **match the stock firmware.** Every stock effect was ported and checked against an
+  emulation of the stock DSP code.
+- **then improve on it.** The plan: 48 kHz / 24-bit audio, longer cab IRs with WAV
+  import, a delay, a clean-blend drive for bass, a web editor, and NAM amp captures.
+  See [`docs/PARITY.md`](docs/PARITY.md) and
+  [`docs/ROADMAP_RESEARCH.md`](docs/ROADMAP_RESEARCH.md).
 
-## Install
+## Status (v0.5.0)
 
-Requires Python 3.10 or newer.
+Verified on a real pedal:
 
-Development (library, CLI, and tests):
+| Area | What works |
+| --- | --- |
+| **Sound** | Stock chain: noise gate → compressor → 10 amp models + 4-band tone stack → 10 cab IRs + 9 user-IR slots → 12 modulations → 5 reverbs. Parity against the stock DSP: amp and tone bit-exact, the rest within -105 dB. |
+| **Front panel** | 3-digit display, 16 knobs with LEDs, 4 footswitches with the stock actions (slot select, bank chords, stomp mode, tuner, save), 40 RGB LEDs |
+| **Presets** | Your stock presets load and save in the stock format and survive switching firmware |
+| **Drums & tuner** | Stock drum machine (40 rhythms, played from the samples already in your pedal's flash) and stock YIN tuner |
+| **USB** | Class-compliant audio interface (record and play back, 44.1 kHz). The stock USB identity and control protocol, so `fb200 info` and IR import work. |
+| **Bluetooth** | Module link, app protocol (presets, settings, IRs), Bluetooth audio in |
+| **Power** | Battery level, charger sense, status LED |
+| **Updates & recovery** | USB updates with no button combo. A resident recovery keeps the USB console after a crash or hang. Crash dumps survive a reset. |
 
-```bash
-git clone https://github.com/w1ne/fb200-tools
-cd fb200-tools
-python3 -m venv .venv
-.venv/bin/pip install -e ".[dev]"
-```
+**Better than stock so far:**
+- Updates over USB without holding A+D.
+- The display names the knob you turn (`GAn`, `CAb`, …) and marks knobs that have not
+  picked up yet.
+- Hold **A** and turn LEVEL / RATE / MOD to change drum level, tempo or rhythm live.
+- Drums are included in the USB recording.
+- Choosing an empty IR slot never silences the pedal.
+- Drum hits start on time (the stock plays each one up to 31 ms early).
 
-Hardware access additionally needs `hidapi`; from a clone:
+Still open: RGB LED layout, the stock's in-mode drum button roles, a 48 kHz option,
+and the "better" roadmap. The code runs on the stock hardware only.
 
-```bash
-.venv/bin/pip install -e ".[hid]"
-```
+## Flashing
 
-Use `.venv/bin/pip install -e ".[dev,hid]"` to get both. The package is not on
-PyPI yet; `pip install "fb200-tools[hid]"` will be the install command once it
-is published. On Linux, raw HID access may require a udev rule or permissions
-for the device.
+> Flashing custom firmware is **at your own risk**; read [`DISCLAIMER.md`](DISCLAIMER.md).
+> The vendor bootloader and your presets are never overwritten, and holding **A+D at
+> power-on** always gets you back to the vendor updater.
 
-On Windows use `.venv\Scripts\pip` and `.venv\Scripts\fb200`, or activate the
-virtual environment first (`source .venv/bin/activate` on macOS/Linux,
-`.venv\Scripts\activate` on Windows).
-
-## Usage
-
-After activating the venv (or prefixing commands with `.venv/bin/` on
-macOS/Linux), run:
+You need the **official FB200 firmware file (`.mr`)**. The build takes the vendor
+bootloader stub and the stock sound data from **your copy**, so this repository ships
+no vendor code or data. **Do not redistribute the images you build.** Full guide
+(toolchain, Linux permissions, recovery, back to stock): **[`docs/INSTALL.md`](docs/INSTALL.md)**.
 
 ```bash
-fb200 info                          # versions and USB identity
-fb200 ir list                       # all 9 slots: names or (empty)
-fb200 ir import 3 my-ircab.wav      # convert and upload to slot 3 (replaces it)
-fb200 ir import 3 my-ircab.wav --name "My IR"
-fb200 ir delete 3                   # erase a slot
-fb200 ir backup ./backup            # write manifest.json of slot names
+# 0. tools
+git clone https://github.com/w1ne/fb200-tools && cd fb200-tools
+python3 -m venv .venv && .venv/bin/pip install -e ".[hid]" unicorn
+
+# 1. build the images from your stock firmware file (needs an Arm GNU toolchain with newlib)
+PY_UNICORN=.venv/bin/python firmware/tools/build_images.sh ~/Downloads/FB200_V1.0.1.mr
+
+# 2. first install, once: hold A+D while plugging in USB, then
+.venv/bin/fb200 fw flash out/fb200-twostage.mr --yes --no-jump
+.venv/bin/fb200 update app out/fb200-app.slot
+
+# 3. every later update: no button combo
+.venv/bin/fb200 update app out/fb200-app.slot
 ```
 
-Slots are numbered 1–9. Importing into an occupied slot **replaces** its
-contents, and IR payloads cannot be downloaded back from the pedal, so there is
-no undo; `ir backup` backs up slot names only. For protocol research:
+**Back to stock** at any time: hold A+D while plugging in, then run
+`.venv/bin/fb200 fw flash FB200_V1.0.1.mr --yes --no-jump`.
+
+## Using the pedal
+
+The controls work as on the stock firmware:
+
+| Action | What it does |
+| --- | --- |
+| **A / B / C / D** | select slot A–D of the current bank (display `P<bank><slot>`) |
+| **C + D** / **A + B** | bank up / bank down |
+| **B + C** | stomp mode (`L…`): A = reverb, B = mod, C = amp+cab, D = comp on/off |
+| **hold A (1 s)** | save the current preset |
+| **hold B, then A long** | tuner (display: flat arrow, note, sharp arrow); any switch exits |
+| **hold C, then B long** | rhythm mode: A play/stop, B/C previous/next rhythm, D tap tempo |
+| **hold A + turn LEVEL / RATE / MOD** | drum level / tempo / rhythm, live |
+
+**Knobs**, left to right: MASTER, LEVEL (reverb), REVERB, MIX, RATE, MOD, CAB, VOL,
+BASS, MID, TREBLE, GAIN, AMP, LEVEL (comp), THRESH, GATE.
+
+After a preset loads, a knob takes over once it passes the preset's value. Until then
+its LED **blinks** and the display shows the value with a dot. The LED is off when that
+effect is off in the preset.
+
+**USB audio:** choose "FB200 Audio I/O" in your DAW. It records the processed sound
+plus drums, and plays computer audio through the pedal.
+
+## Host tools
+
+The `fb200` command also works with the stock firmware:
 
 ```bash
-fb200 probe --listen 2              # print raw HID reports for 2 seconds
-fb200 probe --send "aa55010000c8cf" # send a raw frame
+fb200 info                          # product, firmware, Bluetooth and hardware versions
+fb200 ir list                       # IR slots
+fb200 ir import 3 my-cab.wav        # convert and upload a WAV IR to slot 3
+fb200 console [cmd ...]             # open-firmware USB console (interactive without args)
+fb200 update app|recovery FILE      # open-firmware USB update
+fb200 crash --elf fb200-app.elf     # read and symbolize the last crash dump
+fb200 fw inspect|flash ...          # .mr container tools and the vendor updater client
 ```
 
-Firmware images and flashing:
-
-```bash
-fb200 fw inspect stock.mr                     # container fields, blocks, pages
-fb200 fw pack --template stock.mr app.bin -o hello.mr   # app-only image
-fb200 fw patch-string stock.mr \
-  --find "FB200 Audio" --replace "FB200 Tools" -o patched.mr
-fb200 fw flash patched.mr                     # dry run: plan only, nothing written
-fb200 fw flash patched.mr --yes               # erase, write and jump back
-fb200 fw flash stock.mr --yes --no-jump       # recover a pedal already in update mode
-```
-
-![fb200-tools protocol stack: the CLI and library layers (`pedal.py`/`updater.py` request/response and flash orchestration, `protocol.py` frames `AA 55 | len u16le | fn | data | CRC16`, `transport.py` HID reports of 64 B whose first byte is the valid length) down to the pedal over USB](images/protocol-stack.svg)
-
-## Safety
-
-Flashing firmware is opt-in: dry-run by default, writing only with an explicit
-`--yes`, validating the image's `FB200` product tag, and saving patches to a
-new file unless told otherwise. Flashing carries a real risk of rendering the
-pedal temporarily or permanently unusable — use at your own risk. See
-[`DISCLAIMER.md`](DISCLAIMER.md).
-
-![FB200 .mr firmware container layout: a 128-byte header carrying the Mooer_TAG magic, the FB200 product tag, SEND_CMD/REC_CMD, the block count, UPDATE_ADDR and VERSION; then block 0 (200,704-byte application, fn=0x04) and block 1 (3,286,016-byte models, fn=0x06), each preceded by its own 512-byte tag whose START_PAGE is sent as u16 big-endian in write frames; page size 512 B](images/firmware-layout.svg)
+Install for development: `.venv/bin/pip install -e ".[dev,hid]"`, then run the host
+tests with `.venv/bin/pytest -m "not hardware"`.
 
 ## Documentation
 
-- [`docs/PROTOCOL.md`](docs/PROTOCOL.md) — USB identities, HID report framing,
-  CRC16, command set, IR format, and the firmware update mode.
-- [`docs/FIRMWARE_FORMAT.md`](docs/FIRMWARE_FORMAT.md) — the `.mr` container.
-- [`docs/UPDATE_AND_RECOVERY.md`](docs/UPDATE_AND_RECOVERY.md) — the update flow,
-  risks, recovery, and hardware validation results.
-- [`docs/PATCHING.md`](docs/PATCHING.md) — rules for safe same-length patches
-  and the proof patch walkthrough.
-- [`docs/RESEARCH.md`](docs/RESEARCH.md) — how the protocol and firmware format
-  were reverse-engineered.
-- [`docs/HARDWARE.md`](docs/HARDWARE.md) — USB topology and observation commands.
-- [`firmware/hello/README.md`](firmware/hello/README.md) — custom firmware:
-  build, pack, flash, verification, and recovery.
-- [`DISCLAIMER.md`](DISCLAIMER.md) — risk and affiliation notice.
+| Document | Contents |
+| --- | --- |
+| [`docs/INSTALL.md`](docs/INSTALL.md) | building, flashing, updating, recovery, back to stock |
+| [`docs/PARITY.md`](docs/PARITY.md) | stock feature inventory, status, roadmap, parity tests |
+| [`docs/ROADMAP_RESEARCH.md`](docs/ROADMAP_RESEARCH.md) | what "better than stock" means: research with sources |
+| [`docs/BOOTLOADER.md`](docs/BOOTLOADER.md) | boot chain, two-stage boot, flash layout, dead ends |
+| [`docs/AUDIO_PATH.md`](docs/AUDIO_PATH.md) | codec, SAI, clocks, input path |
+| [`docs/UI_AND_STORAGE.md`](docs/UI_AND_STORAGE.md) | display, knobs, LEDs, Bluetooth, preset and settings storage |
+| [`docs/PROTOCOL.md`](docs/PROTOCOL.md) | USB/BLE app protocol, full command set |
+| [`docs/FIRMWARE_FORMAT.md`](docs/FIRMWARE_FORMAT.md), [`docs/FIRMWARE_BRINGUP.md`](docs/FIRMWARE_BRINGUP.md) | the `.mr` container and vendor boot contract |
+| [`docs/HARDWARE.md`](docs/HARDWARE.md), [`docs/pcb/`](docs/pcb/) | hardware notes and PCB photos |
 
 ## Credits
 
-- [wattsline/Flamma-FF20](https://github.com/wattsline/Flamma-FF20) — protocol
-  research for the sibling Flamma FF20; cross-checked framing and CRC.
-- [ThijsWithaar/MooerManager](https://github.com/ThijsWithaar/MooerManager) —
-  USB control of Mooer pedals.
-- [shpala/MooerLooperManager](https://github.com/shpala/MooerLooperManager) —
-  manager for Mooer GL100/GL200 loopers.
-- [utajum/mooer-drummer-x2](https://github.com/utajum/mooer-drummer-x2) —
-  reverse-engineered Mooer Drummer X2 HID protocol.
+- [wattsline/Flamma-FF20](https://github.com/wattsline/Flamma-FF20): protocol research for
+  the sibling Flamma FF20.
+- [ThijsWithaar/MooerManager](https://github.com/ThijsWithaar/MooerManager),
+  [shpala/MooerLooperManager](https://github.com/shpala/MooerLooperManager),
+  [utajum/mooer-drummer-x2](https://github.com/utajum/mooer-drummer-x2): Mooer protocol work.
+- Built on [TinyUSB](https://github.com/hathach/tinyusb), the
+  [MCUXpresso SDK](https://github.com/nxp-mcuxpresso/mcuxsdk-core) and
+  [CMSIS-DSP](https://github.com/ARM-software/CMSIS-DSP), fetched at pinned, checksummed
+  versions.
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+MIT (see [`LICENSE`](LICENSE)). Images are original works, licensed with the project.
 
-All images are original works, licensed with the project (MIT).
-
-This project is an independent, community reverse-engineering effort. It is not
-affiliated with, endorsed by, or supported by FLAMMA Innovation or MOOER Audio.
-All product names and trademarks belong to their respective owners and are used
-here only to describe interoperability.
+This is an independent, community reverse-engineering effort. It is not affiliated with,
+endorsed by, or supported by FLAMMA Innovation or MOOER Audio. All product names and
+trademarks belong to their owners and are used only to describe interoperability. The
+repository contains no vendor firmware images, code, or asset data (samples, models,
+IRs). A few codec register values and filter constants recorded during the reverse
+engineering are included for interoperability.

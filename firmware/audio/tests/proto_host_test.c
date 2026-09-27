@@ -31,6 +31,7 @@ void knob_led(int led, bool on) { (void)led; (void)on; }
 uint16_t knob_value(int k) { (void)k; return 0; }
 bool knob_changed(int k) { (void)k; return false; }
 fsw_event_t fsw_event(int *sw) { (void)sw; return FSW_NONE; }
+bool fsw_down(int sw) { (void)sw; return false; }
 /* engine: drum machine and tuner (ui.c's rhythm/tuner modes) */
 static drums_t drums;
 drums_t *engine_drums(void) { return &drums; }

@@ -8,5 +8,9 @@ FLAMMA Innovation or MOOER Audio.
   permanently unusable. Use at your own risk.
 - This repository does not distribute vendor firmware, vendor applications, or
   vendor assets. Obtain official firmware through official channels.
+- The open-firmware images you build with `firmware/tools/build_images.sh`
+  contain parts of your own copy of the official firmware (the bootloader stub
+  and the stock sound data). Keep them for your own pedal: do not redistribute
+  them.
 - All product names and trademarks belong to their respective owners and are
   used here only to describe interoperability.

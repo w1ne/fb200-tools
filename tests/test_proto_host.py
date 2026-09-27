@@ -241,7 +241,7 @@ def test_sync_dump_on_connect(h):
     out = h.send(0x94, t="b")
     assert [fn for _, fn, _ in out] == [0xA1, 0xB0, 0xB7, 0xBA, 0xBB, 0xB5, 0x83, 0xC9]
     assert all(t == "b" for t, _, _ in out)
-    d = dict((fn, p) for _, fn, p in out)
+    d = {fn: p for _, fn, p in out}
     assert d[0xA1][0] == 0 and d[0xA1][1:] == h.edit()
     assert len(d[0xB0]) == 13 and d[0xB0][10] == 1 and d[0xB0][12] == 100
     assert d[0xBA] == bytes([0, 0, 0, 100, 110, 0])

@@ -30,7 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from fb200.firmware import MrFile  # noqa: E402
+from fb200.firmware import MrFile
 
 N_PATTERNS = 90
 N_RHYTHMS = 40
