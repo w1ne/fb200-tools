@@ -35,6 +35,7 @@ def harness_bin() -> Path:
         ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-Wno-missing-field-initializers",
          "-I", str(FW / "src"), str(FW / "tests" / "proto_host_test.c"),
          str(FW / "src" / "proto" / "proto.c"), str(FW / "src" / "ui" / "ui.c"),
+         str(FW / "src" / "ui" / "lightbar.c"),
          "-o", str(OUT)],
         check=True,
     )
@@ -460,6 +461,153 @@ def test_knob_leds_off_in_tuner_mode(h):
     tap(h, "a")                                                # leave the tuner
     h.cmd("tick 10")
     assert h.cmd("leds")[0][5 + 14] == "1"
+
+
+# ------------------------------------------------------ footswitch light rings
+# LEDs 0-9 are in the D dome, 10-19 C, 20-29 B, 30-39 A (camera, UI_AND_STORAGE §3).
+RING_FIRST = {"a": 30, "b": 20, "c": 10, "d": 0}
+OFF = (0, 0, 0)
+RED = (0x3F, 0, 0)          # the stock sends every byte >> 2 (0x17d54)
+
+
+def rings(h) -> tuple[dict[str, tuple[int, int, int]], int]:
+    """The colour (r, g, b) on the wire of each ring (all 10 LEDs equal), and the frame count."""
+    _, px, n = h.cmd("rgb")[0].split()
+    leds = [tuple(bytes.fromhex(px[i * 6:i * 6 + 6])) for i in range(40)]
+    out = {}
+    for sw, first in RING_FIRST.items():
+        ring = leds[first:first + 10]
+        assert len(set(ring)) == 1, f"ring {sw} is not one colour: {ring}"
+        out[sw] = ring[0]
+    return out, int(n)
+
+
+def ring_colours(h) -> list[tuple[int, int, int]]:
+    return [rings(h)[0][sw] for sw in "abcd"]
+
+
+def set_light(h, colour: int, level: int) -> None:
+    """B0 from the app: [11] = S+0x24+slot (colour), [12] = S+0x28+slot (level)."""
+    s = h.settings()
+    h.send(0xB0, bytes([s[0x16], s[0x19], *s[0x1A:0x1F], *s[0x2C:0x2F], s[0x17], colour, level]))
+
+
+def test_light_ring_preset_mode_shows_the_loaded_slot(h):
+    h.cmd("tick 20")
+    assert ring_colours(h) == [RED, OFF, OFF, OFF]             # default colour 0, level 100
+    tap(h, "c")
+    h.cmd("tick 20")
+    assert ring_colours(h) == [OFF, OFF, RED, OFF]
+    tap(h, "a", "b")                                           # bank browse: the loaded slot stays
+    h.cmd("tick 20")
+    assert ring_colours(h) == [OFF, OFF, RED, OFF]
+
+
+@pytest.mark.parametrize("index, rgb", [
+    (0, 0xFF0000), (1, 0xFF3300), (2, 0xFFFF00), (3, 0x00FF00), (4, 0x00FFFF),
+    (5, 0x0000FF), (6, 0xFF00FF), (7, 0xFF0330), (8, 0xFFFFFF), (9, 0x420000), (72, 0xFFFFFF),
+])
+def test_light_ring_colours_from_the_app(h, index, rgb):
+    set_light(h, index, 100)
+    h.cmd("tick 20")
+    want = tuple(((rgb >> sh) & 0xFF) >> 2 for sh in (16, 8, 0))
+    assert ring_colours(h) == [want, OFF, OFF, OFF]
+
+
+@pytest.mark.parametrize("level, want", [(100, 0x3F), (50, 0x29), (0, 0x13), (250, 0x3F)])
+def test_light_ring_level_scales_30_to_100_percent(h, level, want):
+    # stock 0x17908: byte * (u8)(30 + level * 0.7) / 100, then >> 2
+    set_light(h, 8, level)
+    h.cmd("tick 20")
+    assert ring_colours(h)[0] == (want, want, want)
+
+
+def test_light_ring_colour_is_per_slot(h):
+    set_light(h, 5, 100)                                       # slot A blue
+    tap(h, "b")
+    set_light(h, 3, 100)                                       # slot B green
+    h.cmd("tick 20")
+    assert ring_colours(h) == [OFF, (0, 0x3F, 0), OFF, OFF]
+    tap(h, "a")
+    h.cmd("tick 20")
+    assert ring_colours(h) == [(0, 0, 0x3F), OFF, OFF, OFF]
+
+
+def test_light_rings_live_mode_show_the_modules(h):
+    tap(h, "b", "c")                                           # live mode; amp + cab on, rest off
+    h.cmd("tick 20")
+    assert ring_colours(h) == [OFF, OFF, RED, OFF]
+    for sw in "abd":
+        tap(h, sw)
+    h.cmd("tick 20")
+    # stock colours (0x20004a2c..38): A reverb purple, B mod orange, C amp red, D comp green
+    assert ring_colours(h) == [(0x20, 0, 0x20), (0x3F, 0x19, 0), RED, (0, 0x3F, 0)]
+    tap(h, "c")                                                # amp and cab off
+    h.cmd("tick 20")
+    assert ring_colours(h)[2] == OFF
+
+
+def test_light_rings_off_in_tuner_mode(h):
+    h.cmd("tick 20")
+    h.send(0xB8, bytes([5, 0, 1, 1]))
+    h.cmd("tick 20")
+    assert ring_colours(h) == [OFF] * 4
+
+
+def test_light_rings_rhythm_mode(h):
+    h.send(0xC9, b"\x01")
+    h.send(0xBA, bytes([0, 0, 0, 100, 120, 0]))                # 120 BPM: a beat is 500 ms
+    h.cmd("tick 20")                                           # a beat starts here
+    h.cmd("tick 100")
+    assert ring_colours(h) == [OFF] * 4                        # first half of the beat: off
+    h.cmd("tick 200")
+    assert ring_colours(h) == [OFF, OFF, RED, OFF]             # second half: C red
+    h.cmd("tick 220")
+    assert ring_colours(h)[2] == OFF                           # next beat
+    h.cmd("fsw a press")
+    h.cmd("tick 20")
+    assert ring_colours(h)[0] == RED                           # A lit while held
+    h.cmd("fsw a release")
+    h.cmd("fsw b press")
+    h.cmd("tick 20")
+    assert ring_colours(h)[:2] == [OFF, RED]
+    h.cmd("fsw b release")
+    tap(h, "d")                                                # play
+    h.cmd("tick 20")
+    assert ring_colours(h)[3] == RED
+    tap(h, "d")                                                # stop
+    h.cmd("tick 20")
+    assert ring_colours(h)[3] == OFF
+
+
+def test_save_blinks_the_ring_for_1_s(h):
+    h.cmd("tick 20")
+    h.cmd("fsw c press")
+    h.cmd("fsw c long")                                        # saved now; the blink starts
+    h.cmd("fsw c release")
+    assert h.cmd("index") == ["IDX 2"]
+    seen = []
+    for _ in range(11):
+        h.cmd("tick 100")
+        seen.append(ring_colours(h)[2])
+    # stock 0x67e0: off 0-200 ms, on 200-400, off, on 600-800, off, then the normal ring
+    assert seen == [OFF, RED, RED, OFF, OFF, RED, RED, OFF, OFF, RED, RED]
+    assert all(c == OFF for c in ring_colours(h)[:2])
+
+
+def test_light_ring_frames_only_on_change_and_at_most_every_20_ms(h):
+    h.cmd("tick 20")
+    _, n = rings(h)
+    for _ in range(10):
+        h.cmd("tick 20")
+    assert rings(h)[1] == n                                    # nothing changed: no DMA frame
+    tap(h, "b")
+    assert rings(h)[1] == n + 1                                # a change goes out at once ...
+    tap(h, "c")
+    h.cmd("tick 5")
+    assert rings(h)[1] == n + 1 and ring_colours(h)[1] == RED  # ... but not within 20 ms
+    h.cmd("tick 15")
+    assert rings(h)[1] == n + 2 and ring_colours(h)[2] == RED
 
 
 # ---------------------------------------------------------------- IR slots

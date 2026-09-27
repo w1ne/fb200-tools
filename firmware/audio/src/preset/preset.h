@@ -33,7 +33,8 @@ enum {
 /* Global settings offsets. */
 enum { S_PRESET = 0x16, S_BT = 0x17, S_MASTER = 0x18, S_IN_GAIN = 0x1a, S_STOMP = 0x1f,
        S_RHYTHM = 0x20, S_SLOT = 0x21, S_BANK = 0x22, S_TUNER_CAL = 0x2c, S_TUNER = 0x2d,
-       S_TUNER_MUTE = 0x2e };
+       S_TUNER_MUTE = 0x2e,
+       S_LIGHT_COLOUR = 0x24, S_LIGHT_LEVEL = 0x28 };  /* + slot: light-ring colour 0..9, level 0..100 */
 
 typedef struct { uint8_t b[PRESET_SIZE]; } preset_t;
 typedef struct { uint8_t b[SETTINGS_SIZE]; } settings_t;
