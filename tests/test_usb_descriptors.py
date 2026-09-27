@@ -76,10 +76,11 @@ def test_config_descriptor_layout():
     assert entries[0][0] == CONFIG
 
     # Interfaces: CDC 0/1, audio AC 2, playback AS 3 (alt 0+1), capture AS 4
-    # (alt 0+1).
+    # (alt 0+1), vendor HID 5 (the stock app protocol, docs/PROTOCOL.md).
     ifaces = [e for t, e, _, _ in entries if t == INTERFACE]
-    assert sorted(e[2] for e in ifaces) == [0, 1, 2, 3, 3, 4, 4]
-    assert sorted(e[3] for e in ifaces) == [0, 0, 0, 0, 0, 1, 1]
+    assert sorted(e[2] for e in ifaces) == [0, 1, 2, 3, 3, 4, 4, 5]
+    assert sorted(e[3] for e in ifaces) == [0, 0, 0, 0, 0, 0, 1, 1]
+    assert [e[5] for e in ifaces if e[2] == 5] == [0x03]      # HID class
 
     # One audio IAD (class 1) covering the three audio interfaces; TinyUSB's
     # CDC macro emits its own IAD (class 2).
@@ -87,9 +88,9 @@ def test_config_descriptor_layout():
     assert len(audio_iads) == 1
     assert audio_iads[0][2] == 2 and audio_iads[0][3] == 3
 
-    # Endpoints: CDC notif/out/in + audio out/in/int.
+    # Endpoints: CDC notif/out/in + audio out/in/int + HID out/in.
     eps = sorted(e[2] for t, e, _, _ in entries if t == ENDPOINT)
-    assert eps == [0x02, 0x03, 0x81, 0x82, 0x83, 0x84]
+    assert eps == [0x02, 0x03, 0x05, 0x81, 0x82, 0x83, 0x84, 0x85]
 
     # The CS_AC header's wTotalLength must equal the header plus every AC
     # entity (clock source, terminals, feature unit).

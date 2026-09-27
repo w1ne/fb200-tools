@@ -139,7 +139,8 @@ endif
 STOCK_MR    ?= ../../fb200-stock.mr
 PY_UNICORN  ?= python3
 STOCK_DSP_C := build/stock_dsp_data.c
-STOCK_STATE := $(if $(wildcard $(STOCK_MR)),on,off)
+HAVE_UNICORN := $(shell $(PY_UNICORN) -c "import unicorn" 2>/dev/null && echo yes)
+STOCK_STATE := $(if $(and $(wildcard $(STOCK_MR)),$(HAVE_UNICORN)),on,off)
 STOCK_OBJS  := $(patsubst %,$(TARGET)/%.o,src/dsp/amp.c src/dsp/tone.c src/dsp/cab.c src/dsp/drums.c)
 STOCK_DRUMS_C := build/stock_drums_data.c
 ifneq ($(VARIANT),recovery)
@@ -147,7 +148,7 @@ ifeq ($(STOCK_STATE),on)
 SRC_C  += $(STOCK_DSP_C) $(STOCK_DRUMS_C)
 CFLAGS += -DFB200_STOCK_DSP=1 -DFB200_STOCK_DRUMS
 else
-$(info NOTE: $(STOCK_MR) not found: building without the stock amp/cab data (amp passes audio through, cab is flat, drums silent))
+$(info NOTE: no stock data ($(if $(wildcard $(STOCK_MR)),'$(PY_UNICORN)' cannot import unicorn - set PY_UNICORN,$(STOCK_MR) not found)): amp passes audio through, cab is flat, drums silent)
 endif
 endif
 # Rebuild the modules when the data appears or goes away (FB200_STOCK_DSP).
