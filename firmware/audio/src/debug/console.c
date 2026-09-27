@@ -49,6 +49,7 @@ static int mem_ok(uint32_t addr)
     return (addr < 0x400000u) ||                       /* ITCM/DTCM */
            (addr >= 0x20000000u && addr < 0x20300000u) ||   /* DTCM/OCRAM */
            (addr >= 0x400F8000u && addr < 0x400F9000u) ||   /* SRC (always on) */
+           (addr >= 0x401F4000u && addr < 0x401F4A00u) ||   /* OCOTP fuse shadows */
            (addr >= 0x401B8000u && addr < 0x401C8000u) ||   /* GPIO1-4 */
            (addr >= 0x60000000u && addr < 0x60800000u);     /* flash */
 }
@@ -86,7 +87,7 @@ static void cmd_help(void)
 {
     log_printf("commands: help | stats | src | hb on|off | scan | dump [bus addr] |\r\n"
                "          peek <addr> [len] | dumpmem <addr> <len> | poke <addr> <val> |\r\n"
-               "          crc <addr> <len> | fwinfo | fwbegin <len> <crc32> | reset\r\n");
+               "          crc <addr> <len> | fwinfo | fwtest | fwbegin <len> <crc32> |\r\n          crumbs | rom | reset\r\n");
 }
 
 static void cmd_crc(const char *a1, const char *a2)
@@ -192,7 +193,14 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "poke")) cmd_poke(argv[1], argv[2]);
     else if (streq(argv[0], "crc")) cmd_crc(argv[1], argv[2]);
     else if (streq(argv[0], "fwinfo")) fw_info();
+    else if (streq(argv[0], "fwtest")) fw_test();
+    else if (streq(argv[0], "crumbs")) crumbs_print();
     else if (streq(argv[0], "fwbegin")) cmd_fwbegin(argv[1], argv[2]);
+    else if (streq(argv[0], "rom")) {
+        log_printf("entering the ROM serial downloader (USB 1fc9:0135)\r\n");
+        cdc_log_task();
+        rom_serial_downloader();
+    }
     else if (streq(argv[0], "reset") || streq(argv[0], "reboot")) {
         log_printf("rebooting\r\n");
         cdc_log_task();

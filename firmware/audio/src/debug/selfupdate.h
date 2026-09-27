@@ -2,8 +2,7 @@
 #define FB200_SELFUPDATE_H
 #include <stdint.h>
 /* USB self-update: rewrites the application region (block 0, flash
- * 0x60010000..0x60041000) from the console, through the i.MX RT1062 ROM
- * FlexSPI NOR driver. The vendor bootloader (0x60000000..0x60010000) and the
+ * 0x60010000..0x60041000) from the console, through the FlexSPI with plain SPI-NOR IP commands (see selfupdate.c). The vendor bootloader (0x60000000..0x60010000) and the
  * model library are never touched, so A+D stays the recovery path.
  *
  * Protocol (console):
@@ -16,4 +15,9 @@ void fw_begin(uint32_t len, uint32_t crc);
 int fw_active(void);
 void fw_rx_task(void);   /* call instead of the line reader while active */
 void fw_info(void);
+void fw_test(void);          /* non-destructive: WREN must set WEL */
+void crumbs_print(void);     /* fault/ROM-entry breadcrumbs kept in SNVS */
+/* Enter the RT1062 mask-ROM serial downloader (USB HID 1FC9:0135). Needs no
+ * flash and no vendor bootloader; the always-available update path. */
+__attribute__((noreturn)) void rom_serial_downloader(void);
 #endif

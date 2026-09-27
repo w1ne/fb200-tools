@@ -36,7 +36,8 @@ TUSB_INC  := \
   -I $(MCUX_CORE)/drivers/lpuart \
   -I $(MCUX_CORE)/drivers/ocotp \
   -I $(MCUX_CORE)/drivers/lpi2c \
-  -I $(MCU_DIR)/drivers/romapi
+  -I $(MCU_DIR)/drivers/romapi \
+  -I $(MCUX_CORE)/drivers/flexspi
 TUSB_DEFS := \
   -DCFG_TUSB_MCU=OPT_MCU_MIMXRT10XX \
   -DCPU_MIMXRT1062DVL6A \
@@ -54,14 +55,12 @@ SRC_C := \
   src/system_clock.c src/usb_descriptors.c src/compat/stubs.c \
   src/dsp/dsp.c src/dsp/math.c src/dsp/gain.c src/dsp/testgen.c \
   src/debug/log_fmt.c src/debug/cdc_log.c src/debug/console.c \
-  src/debug/selfupdate.c \
+  src/debug/selfupdate.c src/debug/romboot.c \
   src/audio/i2c_probe.c \
-  src/audio/usb_audio.c src/audio/engine.c \
   $(TUSB_DIR)/src/tusb.c \
   $(TUSB_DIR)/src/common/tusb_fifo.c \
   $(TUSB_DIR)/src/device/usbd.c \
   $(TUSB_DIR)/src/class/cdc/cdc_device.c \
-  $(TUSB_DIR)/src/class/audio/audio_device.c \
   $(TUSB_DIR)/src/portable/chipidea/ci_hs/dcd_ci_hs.c \
   $(TUSB_DIR)/hw/bsp/board.c \
   $(TUSB_DIR)/hw/bsp/imxrt/family.c \
@@ -74,7 +73,8 @@ SRC_C := \
   $(MCUX_CORE)/drivers/ocotp/fsl_ocotp.c \
   $(MCUX_CORE)/drivers/lpi2c/fsl_lpi2c.c \
   $(MCU_DIR)/drivers/fsl_clock.c \
-  $(MCU_DIR)/drivers/romapi/fsl_romapi.c
+  $(MCU_DIR)/drivers/romapi/fsl_romapi.c \
+  $(MCUX_CORE)/drivers/flexspi/fsl_flexspi.c
 SRC_S := src/stage2.S
 OBJS  := $(patsubst %,$(TARGET)/%.o,$(SRC_C) $(SRC_S))
 

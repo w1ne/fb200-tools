@@ -4,16 +4,23 @@
  * loader reaches stage2 at ITCM 0x4d6, not through this vector.
  * SysTick and the USB OTG IRQs resolve to the BSP handlers
  * (hw/bsp/imxrt/family.c) when those are linked; weak aliases keep the table
- * valid if they are ever dropped. Every other entry spins in a known handler
- * instead of faulting on an unexpected IRQ. */
+ * valid if they are ever dropped. Every other entry enters the ROM serial
+ * downloader (src/debug/romboot.c). */
 #include <stdint.h>
 #include "fsl_device_registers.h"
 
 extern uint32_t _estack;
-void Default_Handler(void)
+/* Faults and unexpected IRQs record what happened (src/debug/romboot.c,
+ * console `crumbs`) and hand the chip to the ROM serial downloader, so a
+ * crash stays recoverable over USB without A+D. */
+__attribute__((naked)) void Default_Handler(void)
 {
-    for (;;) {
-    }
+    __asm volatile(
+        "tst lr, #4\n"
+        "ite eq\n"
+        "mrseq r0, msp\n"
+        "mrsne r0, psp\n"
+        "b fault_record\n");
 }
 
 void SysTick_Handler(void) __attribute__((weak, alias("Default_Handler")));
