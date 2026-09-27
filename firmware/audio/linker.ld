@@ -28,6 +28,15 @@ SECTIONS
     __blob_end__ = .;
   } > ITCM
 
+  /* Recovery only: the app launcher, staged at ITCM 0x1F000 from block 0
+   * offset 0xF000 (src/debug/recovery.c). The app's blob must stay below. */
+  .copier 0x1F000 : AT(0x6001F000) {
+    __copier_start__ = .;
+    KEEP(*(.copier))
+    . = ALIGN(4);
+    __copier_end__ = .;
+  } > ITCM
+
   .bss (NOLOAD) : {
     . = ALIGN(4);
     __bss_start__ = .;

@@ -1,17 +1,21 @@
 /* fb200-audio console. Commands (see `help`):
  *   help | stats | hb on|off | scan | dump [bus addr] | peek <addr> [len]
- *   poke <addr> <val> | crc <addr> <len> | fwinfo | fwbegin <len> <crc32>
- *   reset | reboot   (fwbegin: USB self-update, see selfupdate.h)
+ *   poke <addr> <val> | crc <addr> <len> | fwinfo | fwtest | crumbs
+ *   fwbegin|fwrec <len> <crc32> (USB self-update, see selfupdate.h)
+ *   recovery | boot (two-stage boot, see recovery.h) | crash | hang (app only)
+ *   reset | reboot
  * Addresses accept 0x.. hex or decimal. peek/poke are limited to RAM/flash
  * (peripheral access can stall a clock-gated block). */
 #include <stdint.h>
 #include <string.h>
+#include "fsl_device_registers.h"
 #include "tusb.h"
 #include "cdc_log.h"
 #include "console.h"
 #include "fsl_iomuxc.h"
 #include "audio/i2c_probe.h"
 #include "selfupdate.h"
+#include "recovery.h"
 
 extern int g_bss_writable;
 
@@ -87,7 +91,7 @@ static void cmd_help(void)
 {
     log_printf("commands: help | stats | src | hb on|off | scan | dump [bus addr] |\r\n"
                "          peek <addr> [len] | dumpmem <addr> <len> | poke <addr> <val> |\r\n"
-               "          crc <addr> <len> | fwinfo | fwtest | fwbegin <len> <crc32> |\r\n          crumbs | rom | reset\r\n");
+               "          crc <addr> <len> | fwinfo | fwtest | fwbegin|fwrec <len> <crc32> |\r\n          crumbs | recovery | boot | reset\r\n");
 }
 
 static void cmd_crc(const char *a1, const char *a2)
@@ -103,13 +107,13 @@ static void cmd_crc(const char *a1, const char *a2)
                (unsigned)fw_crc32((const uint8_t *)addr, len));
 }
 
-static void cmd_fwbegin(const char *a1, const char *a2)
+static void cmd_fwbegin(int recovery, const char *a1, const char *a2)
 {
     int ok1, ok2;
     uint32_t len = parse_num(a1, &ok1);
     uint32_t crc = parse_num(a2, &ok2);
     if (!ok1 || !ok2) { log_printf("usage: fwbegin <len> <crc32>\r\n"); return; }
-    fw_begin(len, crc);
+    fw_begin(recovery, len, crc);
 }
 
 static void cmd_stats(void)
@@ -195,12 +199,40 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "fwinfo")) fw_info();
     else if (streq(argv[0], "fwtest")) fw_test();
     else if (streq(argv[0], "crumbs")) crumbs_print();
-    else if (streq(argv[0], "fwbegin")) cmd_fwbegin(argv[1], argv[2]);
-    else if (streq(argv[0], "rom")) {
-        log_printf("entering the ROM serial downloader (USB 1fc9:0135)\r\n");
+    else if (streq(argv[0], "fwrec")) cmd_fwbegin(1, argv[1], argv[2]);
+    else if (streq(argv[0], "recovery")) {
+#ifdef FB200_RECOVERY
+        log_printf("already in recovery (`boot` starts the app)\r\n");
+#else
+        log_printf("rebooting into recovery\r\n");
         cdc_log_task();
-        rom_serial_downloader();
+        recovery_request();
+#endif
     }
+#ifndef FB200_RECOVERY
+    /* Recovery tests: a fault and a hang must both end in recovery. */
+    else if (streq(argv[0], "crash")) { log_printf("crash: udf\r\n"); cdc_log_task(); __builtin_trap(); }
+    else if (streq(argv[0], "hang")) {
+        log_printf("hang: irqs off, no watchdog feed\r\n");
+        cdc_log_task();
+        __disable_irq();
+        for (;;) {
+        }
+    }
+#endif
+#ifdef FB200_RECOVERY
+    else if (streq(argv[0], "boot")) {
+        const char *why;
+        if (!slot_valid(&why)) log_printf("boot refused: %s\r\n", why);
+        else {
+            log_printf("starting the app\r\n");
+            extern uint32_t tusb_time_millis_api(void);
+            uint32_t t0 = tusb_time_millis_api();
+            while (tusb_time_millis_api() - t0 < 300u) { tud_task(); cdc_log_task(); }
+            recovery_launch_app();
+        }
+    }
+#endif
     else if (streq(argv[0], "reset") || streq(argv[0], "reboot")) {
         log_printf("rebooting\r\n");
         cdc_log_task();

@@ -11,6 +11,15 @@ int g_bss_writable = 1;
 
 #define GPR(n) (*(volatile uint32_t *)(0x400AC000u + (n)))
 
+/* Where this image's vector table sits in flash: block 0 for recovery (the
+ * vendor loader boots it), the app slot for the app (recovery's copier has
+ * already put it in ITCM; copying again is harmless). */
+#ifdef FB200_RECOVERY
+#define VEC_SRC 0x60010000u
+#else
+#define VEC_SRC 0x60020100u   /* SLOT_VECTORS, src/debug/recovery.h */
+#endif
+
 __attribute__((used, noreturn))
 void stage2_main(void)
 {
@@ -23,12 +32,12 @@ void stage2_main(void)
     *(volatile uint32_t *)0xE000ED88u |= (3u << 20) | (3u << 22);   /* CPACR: FPU on */
     __asm volatile ("dsb 0xF" ::: "memory");
 
-    uint32_t sp = *(volatile uint32_t *)0x60010000u;   /* image[0] */
+    uint32_t sp = *(volatile uint32_t *)VEC_SRC;   /* image[0] */
     __asm volatile ("msr msp, %0" :: "r" (sp) : "memory");
 
-    /* Copy the vector table (block 0 offsets 0..0x400) to ITCM 0x0. */
+    /* Copy the vector table to ITCM 0x0. */
     volatile uint32_t *dst = (volatile uint32_t *)0x0u;
-    const volatile uint32_t *src = (const volatile uint32_t *)0x60010000u;
+    const volatile uint32_t *src = (const volatile uint32_t *)VEC_SRC;
     for (unsigned i = 0; i < 256u; i++) {
         dst[i] = src[i];
     }

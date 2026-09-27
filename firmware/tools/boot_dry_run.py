@@ -13,7 +13,9 @@ run it with a Python that has it:
     python firmware/tools/boot_dry_run.py image.mr --elf firmware/audio/build/fb200-audio.elf
 
 Symbols read from the ELF (via arm-none-eabi-nm): stage2, stage2_main,
-app_main.
+app_main. With --app-elf (two-stage image, docs/BOOTLOADER.md §4) the ELF is
+the recovery build and the run continues through recovery's boot decision and
+copier until the app's own app_main.
 """
 
 from __future__ import annotations
@@ -54,6 +56,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("image", type=Path, help="packed .mr to dry-run")
     parser.add_argument("--elf", type=Path, required=True, help="firmware ELF for symbols")
+    parser.add_argument("--app-elf", type=Path,
+                        help="two-stage image: follow recovery into this app build")
     parser.add_argument("--max-instructions", type=int, default=4_000_000)
     args = parser.parse_args()
 
@@ -69,6 +73,10 @@ def main() -> int:
     mr = MrFile.from_path(args.image)
     syms = elf_symbols(args.elf)
     stage2, stage2_main, app_main = syms["stage2"], syms["stage2_main"], syms["app_main"]
+    copier = syms.get("copier")
+    app_app_main = elf_symbols(args.app_elf)["app_main"] if args.app_elf else None
+    if args.app_elf and copier is None:
+        raise SystemExit("--app-elf needs a recovery ELF (no copier symbol)")
 
     uc = Uc(UC_ARCH_ARM, UC_MODE_THUMB + UC_MODE_MCLASS)
     for base, size in [
@@ -90,10 +98,17 @@ def main() -> int:
             hits.add("stage2")
         elif address == stage2_main:
             hits.add("stage2_main")
-        elif address == app_main:
-            hits.add("app_main")
+        elif address == copier:
+            hits.add("copier")
+        elif "copier" in hits and address == app_app_main:
+            hits.add("app app_main")
             reached_app[0] = True
             uc_.emu_stop()
+        elif address == app_main and "app_main" not in hits:
+            hits.add("app_main")
+            if app_app_main is None:
+                reached_app[0] = True
+                uc_.emu_stop()
         if count[0] > args.max_instructions:
             uc_.emu_stop()
 
@@ -107,7 +122,10 @@ def main() -> int:
 
     pc = uc.reg_read(UC_ARM_REG_PC)
     print(f"instructions: {count[0]}, final PC: {pc:#010x}")
-    for name in ("stage2", "stage2_main", "app_main"):
+    names = ["stage2", "stage2_main", "app_main"]
+    if app_app_main is not None:
+        names += ["copier", "app app_main"]
+    for name in names:
         print(f"  reached {name}: {name in hits}")
     if error:
         print(f"emulation stopped with: {error}")

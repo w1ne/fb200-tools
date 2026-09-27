@@ -7,6 +7,7 @@
 #include "debug/cdc_log.h"
 #include "debug/console.h"
 #include "audio/i2c_probe.h"
+#include "debug/recovery.h"
 
 extern int g_bss_writable;
 
@@ -22,11 +23,24 @@ __attribute__((noreturn)) void console_reboot(void)
     __builtin_unreachable();
 }
 
+#ifdef FB200_RECOVERY
+#define VARIANT "recovery"
+#else
+#define VARIANT "app"
+#endif
+
 void app_main(void)
 {
     cdc_log_init();
     console_init();
-    log_printf("fb200-audio 0.5.0-dev\r\n");
+#ifdef FB200_RECOVERY
+    /* Launches the app (never returns) unless something says stay. */
+    const char *stay = recovery_boot();
+#endif
+    log_printf("fb200-audio 0.6.0-dev " VARIANT "\r\n");
+#ifdef FB200_RECOVERY
+    log_printf("recovery: staying because %s\r\n", stay);
+#endif
     log_printf("bss_writable=%d - type 'help'\r\n", g_bss_writable);
     board_init();
     tusb_init();
@@ -35,6 +49,7 @@ void app_main(void)
 
     uint32_t loops = 0;
     while (1) {
+        wdog_feed();
         tud_task();
         cdc_log_task();
         console_task();

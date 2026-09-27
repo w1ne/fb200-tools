@@ -16,10 +16,15 @@
 #include "tusb.h"
 #include "cdc_log.h"
 #include "selfupdate.h"
+#include "recovery.h"
 
 #define FLASH_AHB    0x60000000u
-#define FW_OFFSET    0x00010000u   /* block 0, see docs/BOOTLOADER.md */
-#define FW_LIMIT     0x00041000u   /* model library starts here */
+/* Regions (flash offsets, docs/BOOTLOADER.md §4): the app slot, and the
+ * recovery image (block 0 start, which also holds the vendor loader). */
+#define APP_OFFSET   0x00020000u
+#define APP_LIMIT    0x00041000u   /* model library starts here */
+#define REC_OFFSET   0x00010000u
+#define REC_LIMIT    0x00020000u
 #define FCB_TAG      0x42464346u   /* "FCFB" */
 #define FCB_LUT      0x80u         /* FCB offset of the lookup table */
 #define SECTOR       4096u
@@ -34,7 +39,7 @@
 extern uint32_t tusb_time_millis_api(void);
 
 static uint32_t page_buf[PAGE / 4];
-static uint32_t fw_len, fw_crc, fw_rx, page_fill, last_rx_ms;
+static uint32_t fw_off, fw_len, fw_crc, fw_rx, page_fill, last_rx_ms;
 static int active;
 static int lut_ready;
 
@@ -135,9 +140,9 @@ void fw_info(void)
     uint32_t pads = 0, bits = 0, sr = 0;
     int fcb = fcb_read_seq(&pads, &bits);
     int st = lut_init() && read_status(&sr);
-    log_printf("fw: fcb=%s cmd-pads=%u addr=%u status=%s sr=%02x region 0x%08x..0x%08x\r\n",
+    log_printf("fw: fcb=%s cmd-pads=%u addr=%u status=%s sr=%02x app 0x%08x rec 0x%08x\r\n",
                fcb ? "ok" : "BAD", (unsigned)pads, (unsigned)bits, st ? "ok" : "FAILED",
-               (unsigned)sr, (unsigned)(FLASH_AHB + FW_OFFSET), (unsigned)(FLASH_AHB + FW_LIMIT));
+               (unsigned)sr, (unsigned)(FLASH_AHB + APP_OFFSET), (unsigned)(FLASH_AHB + REC_OFFSET));
 }
 
 /* Non-destructive probe: write-enable must set WEL, then write-disable. */
@@ -150,11 +155,12 @@ void fw_test(void)
     /* WEL stays set until the next erase/program; harmless. */
 }
 
-void fw_begin(uint32_t len, uint32_t crc)
+void fw_begin(int recovery, uint32_t len, uint32_t crc)
 {
-    if (len == 0u || len > FW_LIMIT - FW_OFFSET) {
-        log_printf("fw: bad length %u (max %u)\r\n", (unsigned)len,
-                   (unsigned)(FW_LIMIT - FW_OFFSET));
+    uint32_t base = recovery ? REC_OFFSET : APP_OFFSET;
+    uint32_t limit = recovery ? REC_LIMIT : APP_LIMIT;
+    if (len == 0u || len > limit - base) {
+        log_printf("fw: bad length %u (max %u)\r\n", (unsigned)len, (unsigned)(limit - base));
         return;
     }
     uint32_t sr;
@@ -164,11 +170,12 @@ void fw_begin(uint32_t len, uint32_t crc)
         return;
     }
     if (!write_enable()) { log_printf("fw: write-enable FAILED\r\n"); return; }
-    uint32_t end = FW_OFFSET + ((len + SECTOR - 1u) / SECTOR) * SECTOR;
-    log_printf("fw: erasing 0x%08x..0x%08x\r\n", (unsigned)(FLASH_AHB + FW_OFFSET),
+    uint32_t end = base + ((len + SECTOR - 1u) / SECTOR) * SECTOR;
+    log_printf("fw: erasing 0x%08x..0x%08x\r\n", (unsigned)(FLASH_AHB + base),
                (unsigned)(FLASH_AHB + end));
     cdc_log_task();
-    for (uint32_t a = FW_OFFSET; a < end; a += SECTOR) {
+    for (uint32_t a = base; a < end; a += SECTOR) {
+        wdog_feed();
         if (!write_enable() || ip(SEQ_ERASE, a, kFLEXSPI_Command, NULL, 0) != kStatus_Success ||
             !wait_idle(2000u)) {
             log_printf("fw: erase FAILED at 0x%08x\r\n", (unsigned)a);
@@ -177,7 +184,8 @@ void fw_begin(uint32_t len, uint32_t crc)
         tud_task();
         cdc_log_task();
     }
-    refresh_ahb(FW_OFFSET, end - FW_OFFSET);
+    refresh_ahb(base, end - base);
+    fw_off = base;
     fw_len = len;
     fw_crc = crc;
     fw_rx = 0;
@@ -191,7 +199,7 @@ int fw_active(void) { return active; }
 
 static int program_page(void)
 {
-    uint32_t off = FW_OFFSET + ((fw_rx - page_fill) / PAGE) * PAGE;
+    uint32_t off = fw_off + ((fw_rx - page_fill) / PAGE) * PAGE;
     if (page_fill < PAGE) memset((uint8_t *)page_buf + page_fill, 0xFF, PAGE - page_fill);
     page_fill = 0;
     if (!write_enable() ||
@@ -206,8 +214,8 @@ static int program_page(void)
 static void finish(void)
 {
     active = 0;
-    refresh_ahb(FW_OFFSET, fw_len);
-    uint32_t got = fw_crc32((const uint8_t *)(FLASH_AHB + FW_OFFSET), fw_len);
+    refresh_ahb(fw_off, fw_len);
+    uint32_t got = fw_crc32((const uint8_t *)(FLASH_AHB + fw_off), fw_len);
     log_printf("fw done crc=%08x %s\r\n", (unsigned)got, got == fw_crc ? "ok" : "BAD");
 }
 

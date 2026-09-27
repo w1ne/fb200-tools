@@ -2,7 +2,10 @@
 # (linker.ld, src/startup.c, src/vectors.c); TinyUSB, its imxrt BSP and the
 # MCUXpresso SDK driver subset are compiled directly from the pinned
 # .deps/tinyusb tree, never from vendored copies.
-TARGET       := build/fb200-audio
+# VARIANT=recovery builds the resident recovery image (block 0); the default
+# builds the app for the slot. See docs/BOOTLOADER.md §4.
+VARIANT      ?= app
+TARGET       := build/fb200-$(VARIANT)
 TUSB_DIR     := .deps/tinyusb
 MCUX_CORE    := $(TUSB_DIR)/hw/mcu/nxp/mcuxsdk-core
 MCUX_DEVICES := $(TUSB_DIR)/hw/mcu/nxp/mcux-devices-rt
@@ -36,7 +39,6 @@ TUSB_INC  := \
   -I $(MCUX_CORE)/drivers/lpuart \
   -I $(MCUX_CORE)/drivers/ocotp \
   -I $(MCUX_CORE)/drivers/lpi2c \
-  -I $(MCU_DIR)/drivers/romapi \
   -I $(MCUX_CORE)/drivers/flexspi
 TUSB_DEFS := \
   -DCFG_TUSB_MCU=OPT_MCU_MIMXRT10XX \
@@ -47,6 +49,7 @@ TUSB_DEFS := \
 CFLAGS    := $(CPUFLAGS) -O2 -g3 -ffreestanding -fno-builtin -fno-common \
              -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables \
              -Wall -Wextra -Wno-unused-parameter -std=gnu11 \
+             $(if $(filter recovery,$(VARIANT)),-DFB200_RECOVERY) \
              $(TUSB_INC) $(TUSB_DEFS) -I src -I src/compat -I board -I . -MMD -MP
 LDFLAGS   := $(CPUFLAGS) -nostdlib -T linker.ld -Wl,-Map=$(TARGET).map,--cref
 
@@ -55,7 +58,7 @@ SRC_C := \
   src/system_clock.c src/usb_descriptors.c src/compat/stubs.c \
   src/dsp/dsp.c src/dsp/math.c src/dsp/gain.c src/dsp/testgen.c \
   src/debug/log_fmt.c src/debug/cdc_log.c src/debug/console.c \
-  src/debug/selfupdate.c src/debug/romboot.c \
+  src/debug/selfupdate.c src/debug/recovery.c \
   src/audio/i2c_probe.c \
   $(TUSB_DIR)/src/tusb.c \
   $(TUSB_DIR)/src/common/tusb_fifo.c \
@@ -73,7 +76,6 @@ SRC_C := \
   $(MCUX_CORE)/drivers/ocotp/fsl_ocotp.c \
   $(MCUX_CORE)/drivers/lpi2c/fsl_lpi2c.c \
   $(MCU_DIR)/drivers/fsl_clock.c \
-  $(MCU_DIR)/drivers/romapi/fsl_romapi.c \
   $(MCUX_CORE)/drivers/flexspi/fsl_flexspi.c
 SRC_S := src/stage2.S
 OBJS  := $(patsubst %,$(TARGET)/%.o,$(SRC_C) $(SRC_S))
@@ -86,15 +88,16 @@ $(OBJS): | deps
 
 all: build
 
-build: deps $(TARGET).vectors.bin $(TARGET).blob.bin
+build: deps $(TARGET).vectors.bin $(TARGET).blob.bin $(TARGET).copier.bin
 
 $(TARGET).elf: $(OBJS) linker.ld
 	$(CC) $(OBJS) $(LDFLAGS) -lgcc -o $@
 
 # .vectors goes to block 0 offset 0; .blob to offset 0x7d4 (LMA in linker.ld).
-$(TARGET).vectors.bin $(TARGET).blob.bin: $(TARGET).elf
+$(TARGET).vectors.bin $(TARGET).blob.bin $(TARGET).copier.bin: $(TARGET).elf
 	$(OBJCOPY) -O binary -j .vectors $< $(TARGET).vectors.bin
 	$(OBJCOPY) -O binary -j .blob $< $(TARGET).blob.bin
+	$(OBJCOPY) -O binary -j .copier $< $(TARGET).copier.bin
 
 $(TARGET)/%.c.o: %.c
 	@mkdir -p $(dir $@)
