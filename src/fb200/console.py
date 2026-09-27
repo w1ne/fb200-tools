@@ -14,8 +14,12 @@ import sys
 import time
 import zlib
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from fb200.errors import CommunicationError
+
+if TYPE_CHECKING:
+    from typing import Self  # 3.11+; annotations are not evaluated at runtime
 
 LOADER_OFF, LOADER_END = 0x400, 0x784   # vendor stub + loader code in block 0
 FLASH_BLOCK0 = 0x60010000
@@ -46,7 +50,7 @@ class Console:
     def close(self) -> None:
         os.close(self.fd)
 
-    def __enter__(self) -> Console:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *exc) -> None:
