@@ -12,11 +12,11 @@
 #define CFG_TUD_CDC_EP_BUFSIZE  64
 #define CFG_TUSB_MEM_ALIGN      __attribute__((aligned(4)))
 
-/* ---- UAC2 audio: stereo playback (RX) + stereo capture (TX), 48 kHz/16-bit */
+/* ---- UAC2 audio: stereo playback (RX) + stereo capture (TX), 44.1 kHz/16-bit */
 #define CFG_TUD_AUDIO           1
 #define CFG_TUD_AUDIO_ENABLE_INTERRUPT_EP 1
 #define CFG_TUD_AUDIO_FUNC_1_N_FORMATS 1
-#define CFG_TUD_AUDIO_FUNC_1_MAX_SAMPLE_RATE 48000
+#define CFG_TUD_AUDIO_FUNC_1_MAX_SAMPLE_RATE 44100   /* = AUDIO_FS */
 #define CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_TX 2
 #define CFG_TUD_AUDIO_FUNC_1_N_CHANNELS_RX 2
 #define CFG_TUD_AUDIO_FUNC_1_FORMAT_1_N_BYTES_PER_SAMPLE_TX 2

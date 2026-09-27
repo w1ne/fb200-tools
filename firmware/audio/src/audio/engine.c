@@ -9,6 +9,7 @@
  * the real chain (EQ, amp sim, ...) lands in later milestones. */
 #include <string.h>
 #include "audio/engine.h"
+#include "audio/audio_config.h"
 
 
 #ifndef ENGINE_HOST_TEST
@@ -95,7 +96,7 @@ void engine_init(void)
     usb_audio_init();
     sai_audio_init();
     gain_init(&s_gain, 1.0f);
-    testgen_init(&s_testgen, 48000.0f);
+    testgen_init(&s_testgen, (float)AUDIO_FS);
     memset(&s_stats, 0, sizeof(s_stats));
     g_meter_peak[0] = g_meter_peak[1] = 0.0f;
     s_gain_db = 0.0f;

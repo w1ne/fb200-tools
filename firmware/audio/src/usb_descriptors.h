@@ -36,7 +36,7 @@ enum {
 #define EPNUM_AUDIO_INT 0x84
 
 /* UAC2 function: stereo playback (host -> pedal) + stereo capture
- * (pedal -> host), 48 kHz, 16-bit, one format, no feedback endpoint
+ * (pedal -> host), 44.1 kHz, 16-bit, one format, no feedback endpoint
  * (capture is declared adaptive; the engine absorbs drift). */
 #define TUD_AUDIO20_FB200_DESC_LEN (TUD_AUDIO20_DESC_IAD_LEN \
     + TUD_AUDIO20_DESC_STD_AC_LEN \

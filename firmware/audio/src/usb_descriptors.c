@@ -1,5 +1,7 @@
 #include "tusb.h"
 #include "usb_descriptors.h"
+#include "audio/audio_config.h"
+_Static_assert(CFG_TUD_AUDIO_FUNC_1_MAX_SAMPLE_RATE == AUDIO_FS, "USB rate != AUDIO_FS");
 #include "board_config.h"
 
 static const tusb_desc_device_t desc_device TU_ATTR_ALIGNED(4) = {

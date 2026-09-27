@@ -4,6 +4,7 @@
 #include "tusb.h"
 #include "usb_descriptors.h"
 #include "audio/usb_audio.h"
+#include "audio/audio_config.h"
 #include "audio/drift.h"
 
 #define RING_FRAMES 1024
@@ -21,7 +22,7 @@ static uint32_t cnt_overflow, cnt_underflow;
  * and the feature unit's mute/volume at attach; if any request stalls it
  * drops the whole device (seen on macOS 2026-09-27: interfaces present, no
  * audio device). Channel 0 = master, 1..2 = L/R. Volume in 1/256 dB. */
-#define SAMPLE_RATE     48000
+#define SAMPLE_RATE     AUDIO_FS
 #define VOL_MIN_DB256   (-60 * 256)
 #define VOL_MAX_DB256   0
 #define VOL_RES_DB256   256

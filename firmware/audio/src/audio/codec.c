@@ -14,8 +14,8 @@
 /* The stock firmware's codec init, replayed as data: 76 writes in order,
  * no delays (recovered from the stock image: codec_init at ITCM 0x19f34,
  * table at DTCM 0x20007834; see docs/AUDIO_PATH.md). Only R1C differs: the
- * stock runs 32-bit I2S words, our SAI 16-bit. The rates fit 48 kHz too:
- * R03=0050 -> ADC/DAC clock MCLK/2 = 6.144 MHz, R2B/R2C -> OSR 128.
+ * stock runs 32-bit I2S words, our SAI 16-bit. Same rate as the stock:
+ * R03=0050 -> ADC/DAC clock MCLK/2 = 5.6448 MHz, R2B/R2C -> OSR 128.
  *
  * Input path (NAU88L21 datasheet / Linux nau8821): R1D=0000 drives ADCOUT
  * (the default 8010 tri-states it), R6B=0000 connects the mic inputs,
