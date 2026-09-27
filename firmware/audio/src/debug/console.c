@@ -14,9 +14,12 @@
 #include "audio/usb_audio.h"
 #include "audio/codec.h"
 #include "audio/sai.h"
+#include "audio/engine.h"
 #include "selfupdate.h"
 
 extern int g_bss_writable;
+
+static int streq(const char *a, const char *b);
 
 static char line[96];
 static size_t line_len;
@@ -87,7 +90,9 @@ static void cmd_src(void)
 
 static void cmd_help(void)
 {
-    log_printf("commands: help | stats | usb | sai | codec | creg <reg> [val] | src |\r\n"
+    log_printf("commands: help | stats | usb | sai | codec | creg <reg> [val] |\r\n"
+               "          gain [db] | testgen off|sine|white|impulse [freq] | mute [on|off] |\r\n"
+               "          meters on|off | x (TX underrun check) | src |\r\n"
                "          hb on|off | scan | dump [bus addr] | peek <addr> [len] |\r\n"
                "          dumpmem <addr> <len> | poke <addr> <val> | crc <addr> <len> |\r\n"
                "          fwinfo | fwbegin <len> <crc32> | reset\r\n");
@@ -117,8 +122,17 @@ static void cmd_fwbegin(const char *a1, const char *a2)
 
 static void cmd_stats(void)
 {
+    engine_stats_t es;
+    engine_get_stats(&es);
     log_printf("bss_writable=%d heartbeat=%d line_len=%u\r\n",
                g_bss_writable, heartbeat_on, (unsigned)line_len);
+    log_printf("engine: gain=%d dB mute=%d drops=%lu inserts=%lu dma_errs=%lu\r\n",
+               (int)engine_get_gain_db(), engine_get_mute() ? 1 : 0,
+               (unsigned long)es.fifo_drops, (unsigned long)es.fifo_inserts,
+               (unsigned long)es.dma_errors);
+    log_printf("meters: peak L=%d R=%d (x1000)\r\n",
+               (int)(g_meter_peak[0] * 1000.0f),
+               (int)(g_meter_peak[1] * 1000.0f));
 }
 
 static void cmd_usb(void)
@@ -157,6 +171,60 @@ static void cmd_creg(const char *a1, const char *a2)
             log_printf("creg %02lx: ERR\r\n", (unsigned long)reg);
         }
     }
+}
+
+static void cmd_gain(const char *a1)
+{
+    if (a1) {
+        int ok;
+        long db = (long)parse_num(a1, &ok);
+        if (!ok) { log_printf("usage: gain [db]\r\n"); return; }
+        engine_set_gain_db((float)db);
+    } else {
+        float db = engine_get_gain_db();
+        if (db > -3.0f) db = -6.0f;
+        else if (db > -9.0f) db = -12.0f;
+        else db = 0.0f;
+        engine_set_gain_db(db);
+    }
+    log_printf("gain %d dB\r\n", (int)engine_get_gain_db());
+}
+
+static void cmd_testgen(const char *a1, const char *a2)
+{
+    if (!a1) { log_printf("usage: testgen off|sine|white|impulse [freq]\r\n"); return; }
+    int mode = 0;
+    if (streq(a1, "sine")) mode = 1;
+    else if (streq(a1, "white")) mode = 2;
+    else if (streq(a1, "impulse")) mode = 3;
+    int ok = 0;
+    float freq = a2 ? (float)parse_num(a2, &ok) : 1000.0f;
+    if (!ok) freq = 1000.0f;
+    engine_set_testgen(mode, 0.5f, freq);
+    log_printf("testgen %s %d Hz\r\n", a1, (int)freq);
+}
+
+static void cmd_mute(const char *a1)
+{
+    bool on = !engine_get_mute();
+    if (a1) {
+        if (streq(a1, "on")) on = true;
+        else if (streq(a1, "off")) on = false;
+    }
+    engine_set_mute(on);
+    log_printf("mute %s\r\n", on ? "on" : "off");
+}
+
+static void cmd_meters(const char *a1)
+{
+    engine_set_meters(!a1 || streq(a1, "on"));
+    log_printf("meters %s\r\n", (!a1 || streq(a1, "on")) ? "on" : "off");
+}
+
+static void cmd_x(void)
+{
+    engine_drop_tx(1500); /* ~2 s of TX blocks: underrun check */
+    log_printf("x: TX refill paused for ~2 s\r\n");
 }
 
 static void cmd_sai(void)
@@ -259,6 +327,11 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "usb")) cmd_usb();
     else if (streq(argv[0], "codec")) cmd_codec();
     else if (streq(argv[0], "sai")) cmd_sai();
+    else if (streq(argv[0], "gain") || streq(argv[0], "g")) cmd_gain(argv[1]);
+    else if (streq(argv[0], "testgen") || streq(argv[0], "t")) cmd_testgen(argv[1], argv[2]);
+    else if (streq(argv[0], "mute") || streq(argv[0], "m")) cmd_mute(argv[1]);
+    else if (streq(argv[0], "meters")) cmd_meters(argv[1]);
+    else if (streq(argv[0], "x")) cmd_x();
     else if (streq(argv[0], "creg")) cmd_creg(argv[1], argv[2]);
     else if (streq(argv[0], "hb")) {
         heartbeat_on = (argc > 1 && streq(argv[1], "on"));

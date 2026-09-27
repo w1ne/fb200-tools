@@ -4,6 +4,7 @@
 #include "tusb.h"
 #include "usb_descriptors.h"
 #include "audio/usb_audio.h"
+#include "audio/drift.h"
 
 #define RING_FRAMES 1024
 #define TMP_FRAMES 64
@@ -156,6 +157,18 @@ void usb_audio_push(const float *src, size_t frames)
         int16_t frame[2] = {(int16_t)(l * 32767.0f), (int16_t)(r * 32767.0f)};
         cap_push(frame);
     }
+}
+
+size_t usb_audio_pull16(int16_t *dst, size_t frames, int16_t last[2],
+                        uint32_t *inserts)
+{
+    return drift_fill(play_ring, RING_FRAMES, &play_tail, play_head, dst,
+                      frames, last, inserts);
+}
+
+uint32_t usb_audio_trim(uint32_t max_fill, uint32_t *drops)
+{
+    return drift_trim(RING_FRAMES, play_head, &play_tail, max_fill, drops);
 }
 
 void usb_audio_stats(uint32_t *play_fill, uint32_t *cap_fill, uint32_t *overflow,

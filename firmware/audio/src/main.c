@@ -35,7 +35,11 @@ void app_main(void)
     tusb_init();
     i2c_probe_init();
     engine_init();
-    log_printf("codec init: %s\r\n", codec_init() ? "ok" : "FAILED");
+    bool codec_ok = codec_init();
+    log_printf("codec init: %s\r\n", codec_ok ? "ok" : "FAILED");
+    if (!codec_ok) {
+        engine_set_mute(true); /* start muted when the codec did not answer */
+    }
     log_printf("ready\r\n");
 
     uint32_t loops = 0;
