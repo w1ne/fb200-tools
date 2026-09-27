@@ -220,6 +220,7 @@ void proto_notify_saved(void)
     send_preset_from_flash(notify_mask, 0x97, i);
     uint8_t b = (uint8_t)i;
     send(notify_mask, 0x98, &b, 1);
+    proto_notify_settings();         /* stock 0x67e0: 97, 98, B0 */
 }
 
 /* ---- module writes (fn 0x80..0x86) -------------------------------------- */

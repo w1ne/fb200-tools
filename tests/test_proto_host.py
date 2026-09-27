@@ -282,6 +282,84 @@ def test_bootloader_and_factory_reset(h):
                                                                  ("u", 0xB2, b"\x01")]
 
 
+# ---------------------------------------------------------------- front panel
+
+def tap(h, *sws: str) -> list[str]:
+    """Press the switches together, then release them (a single press or a chord)."""
+    out = []
+    for sw in sws:
+        out += h.cmd(f"fsw {sw} press")
+    for sw in sws:
+        out += h.cmd(f"fsw {sw} release")
+    return out
+
+
+def hold(h, sw: str) -> list[str]:
+    """Hold one switch past the 1 s long press, then release it."""
+    return h.cmd(f"fsw {sw} press") + h.cmd(f"fsw {sw} long") + h.cmd(f"fsw {sw} release")
+
+
+def disp(h) -> str:
+    return h.cmd("disp")[0][5:]
+
+
+def edited(h, name: bytes) -> bytes:
+    """Put an edited preset (only in the edit buffer) on the pedal."""
+    e = bytearray(h.edit())
+    e[:20] = name.ljust(20, b"\0")
+    h.send(0x97, b"\xff" + bytes(e))
+    return bytes(e)
+
+
+def test_hold_any_switch_saves_to_that_slot(h):
+    e = edited(h, b"Edited")
+    out = frames(hold(h, "c"))
+    assert [(t, fn) for t, fn, _ in out] == [("b", 0x97), ("b", 0x98), ("b", 0xB0)]
+    assert out[0][2] == bytes([2]) + e and out[1][2] == bytes([2])
+    assert h.flash(PRESET_FLASH + 2 * 0x200, 256) == e
+    assert h.cmd("index") == ["IDX 2"] and h.edit() == e      # not reloaded
+    assert disp(h) == "SAV" and h.settings()[0x16] == 2 and h.settings()[0x21] == 2
+    assert h.flash(PRESET_FLASH, 256)[:9] == b"Preset 00"      # the old slot is untouched
+
+
+def test_hold_saves_in_live_mode_without_toggling(h):
+    tap(h, "b", "c")                                           # live mode
+    assert disp(h) == "L0A"
+    e = edited(h, b"Live Save")
+    hold(h, "d")
+    assert h.flash(PRESET_FLASH + 3 * 0x200, 256) == e
+    assert h.edit() == e                                       # D did not toggle the comp
+    assert h.cmd("index") == ["IDX 3"]
+
+
+def test_bank_chord_keeps_the_edits_and_saves_to_the_shown_bank(h):
+    e = edited(h, b"Save As")
+    assert frames(tap(h, "c", "d")) == []                      # browse: nothing loaded
+    assert disp(h) == "P1A" and h.edit() == e and h.cmd("index") == ["IDX 0"]
+    tap(h, "c", "d")
+    assert disp(h) == "P2A"
+    tap(h, "a", "b")
+    hold(h, "b")                                               # bank 1, slot B
+    assert h.flash(PRESET_FLASH + 5 * 0x200, 256) == e and h.cmd("index") == ["IDX 5"]
+    assert h.flash(PRESET_FLASH, 256)[:9] == b"Preset 00"
+
+
+def test_bank_browse_loads_from_the_shown_bank_or_times_out(h):
+    tap(h, "a", "b")                                           # bank 0 -> 9
+    h.cmd("tick 150")
+    assert disp(h) == "   "                                    # the stock flashes the bank
+    h.cmd("tick 150")
+    assert disp(h) == "P9A"
+    tap(h, "b")
+    assert h.cmd("index") == ["IDX 37"] and h.edit()[:9] == b"Preset 37"
+    tap(h, "c", "d")                                           # 9 -> 0, not loaded
+    h.cmd("tick 1000")
+    h.cmd("tick 1000")                                         # stock: ~1.7 s
+    assert disp(h) == "P9b" and h.cmd("index") == ["IDX 37"]
+    tap(h, "a")
+    assert h.cmd("index") == ["IDX 36"]
+
+
 # ---------------------------------------------------------------- IR slots
 
 def test_ir_import_list_query_delete_with_the_client(h):

@@ -8,6 +8,9 @@
  *   index                 print the current preset index
  *   notify <mask>         set the notification mask
  *   select <n>            front-panel preset change + proto_notify_preset()
+ *   fsw a-d press|release|long   queue a footswitch event, run ui_task
+ *   tick <ms>             advance the clock by ms, run ui_task
+ *   disp | drums | leds   print the display text / drum state / knob LEDs
  *
  * Every command's output ends with "." on its own line. */
 #include <stdarg.h>
@@ -25,13 +28,26 @@
 static uint8_t flash[FLASH_SIZE];
 
 /* ---- stubs for the UI's hardware dependencies ---- */
+static char disp[16];
+static bool led_on[16];
+static bool sw_down[4];
+static struct { fsw_event_t ev; int sw; } evq[8];
+static unsigned evq_n;
+static uint32_t clock_ms = 1000;
 void log_printf(const char *fmt, ...) { (void)fmt; }
-void display_text(const char *s) { (void)s; }
-void knob_led(int led, bool on) { (void)led; (void)on; }
+void display_text(const char *s) { snprintf(disp, sizeof disp, "%s", s); }
+void knob_led(int led, bool on) { if (led >= 0 && led < 16) led_on[led] = on; }
 uint16_t knob_value(int k) { (void)k; return 0; }
 bool knob_changed(int k) { (void)k; return false; }
-fsw_event_t fsw_event(int *sw) { (void)sw; return FSW_NONE; }
-bool fsw_down(int sw) { (void)sw; return false; }
+fsw_event_t fsw_event(int *sw)
+{
+    if (!evq_n) return FSW_NONE;
+    fsw_event_t ev = evq[0].ev;
+    *sw = evq[0].sw;
+    memmove(evq, evq + 1, --evq_n * sizeof evq[0]);
+    return ev;
+}
+bool fsw_down(int sw) { return sw >= 0 && sw < 4 && sw_down[sw]; }
 /* engine: drum machine and tuner (ui.c's rhythm/tuner modes) */
 static drums_t drums;
 drums_t *engine_drums(void) { return &drums; }
@@ -42,7 +58,7 @@ void drums_stop(drums_t *d) { d->on = 0; }
 void drums_set_rhythm(drums_t *d, unsigned r) { d->rhythm = (uint8_t)r; }
 void drums_set_level(drums_t *d, unsigned l) { d->level = (uint8_t)l; }
 void drums_set_tempo(drums_t *d, unsigned bpm) { d->bpm = (uint16_t)bpm; }
-void drums_tap(drums_t *d, uint32_t now_ms) { (void)d; (void)now_ms; }
+void drums_tap(drums_t *d, uint32_t now_ms) { d->last_tap_ms = now_ms; }
 
 /* ---- preset layer over the fake flash ---- */
 void preset_read(unsigned index, preset_t *out)
@@ -165,6 +181,27 @@ int main(void)
             proto_notify_preset();
         } else if (!strcmp(cmd, "rev")) {
             printf("REV %u\n", ui_revision());
+        } else if (!strcmp(cmd, "fsw")) {
+            char what[16] = {0};
+            sscanf(line, "%*s %*s %15s", what);
+            int sw = a[0] - 'a';
+            fsw_event_t ev = !strcmp(what, "press") ? FSW_PRESS : !strcmp(what, "long") ? FSW_LONG : FSW_RELEASE;
+            if (ev == FSW_PRESS) sw_down[sw] = true;
+            if (ev == FSW_RELEASE) sw_down[sw] = false;
+            evq[evq_n].ev = ev;
+            evq[evq_n++].sw = sw;
+            ui_task(clock_ms);
+        } else if (!strcmp(cmd, "tick")) {
+            clock_ms += (uint32_t)atoi(a);
+            ui_task(clock_ms);
+        } else if (!strcmp(cmd, "disp")) {
+            printf("DISP %s\n", disp);
+        } else if (!strcmp(cmd, "drums")) {
+            printf("DRUMS %u %u %u %u %u\n", drums.on, drums.rhythm, drums.level, drums.bpm, (unsigned)drums.last_tap_ms);
+        } else if (!strcmp(cmd, "leds")) {
+            printf("LEDS ");
+            for (int i = 0; i < 16; i++) printf("%d", led_on[i]);
+            printf("\n");
         }
         printf(".\n");
         fflush(stdout);

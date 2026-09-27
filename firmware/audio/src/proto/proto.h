@@ -59,7 +59,7 @@ void proto_notify_settings(void);        /* 0xB0 settings block (tuner toggle et
 void proto_notify_rhythm(void);          /* 0xBA rhythm block */
 void proto_notify_rhythm_mode(void);     /* 0xC9 [settings+0x20] */
 void proto_notify_battery(void);         /* 0xBB [percent, charging] */
-void proto_notify_saved(void);           /* 0x97 [index][preset] + 0x98 (long-A save) */
+void proto_notify_saved(void);           /* 0x97 [index][preset] + 0x98 + 0xB0 (hold save) */
 
 /* Rhythm settings block (F:0x81000, 6 bytes: on, ?, pattern 0..39, volume,
  * tempo u16 LE; default 0,0,0,100,110). */

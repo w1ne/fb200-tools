@@ -49,7 +49,16 @@ static const uint8_t kProtoModule[M_NONE] = {1, 0, 2, 3, 4, 6};
 
 static preset_t edit;
 static settings_t settings;
-static unsigned bank, slot;
+static unsigned bank, slot;       /* the loaded preset */
+/* Bank browsing (stock 0x1bc0c, 0x19af4): a bank chord only moves the shown
+ * bank; the edit buffer stays, so a save can go to another bank. A-D then
+ * load from the shown bank, a hold saves to it. In preset mode the display
+ * flashes and the browse ends after BROWSE_MS without a chord. */
+#define BROWSE_MS 1666u           /* stock: 1666 ticks of its 1 kHz display tick */
+#define BROWSE_FLASH_MS 266u      /* stock: shown for 133 ms, blank for 133 ms */
+static unsigned view_bank;
+static bool browsing;
+static uint32_t browse_ms;
 static bool stomp, caught[KNOB_COUNT];
 static uint8_t down_mask, peak_mask;
 static bool long_used;
@@ -87,7 +96,7 @@ static void show_rhythm(void)
 static void show_preset(void)
 {
     if (rhythm_mode) { show_rhythm(); return; }
-    char t[4] = {stomp ? 'L' : 'P', (char)('0' + bank), "AbCd"[slot], 0};
+    char t[4] = {stomp ? 'L' : 'P', (char)('0' + view_bank), "AbCd"[slot], 0};
     /* notifications for front-panel changes are sent by the callers: remote
      * (app) changes are answered by the protocol itself */
     display_text(t);
@@ -95,8 +104,9 @@ static void show_preset(void)
 
 static void load(unsigned b, unsigned s)
 {
-    bank = b % 10u;
+    bank = view_bank = b % 10u;
     slot = s & 3u;
+    browsing = false;
     preset_read(bank * 4u + slot, &edit);
     for (int k = 0; k < KNOB_COUNT; k++) caught[k] = (kKnob[k].field == 0xFF);   /* master is global */
     settings.b[S_BANK] = (uint8_t)bank;
@@ -134,14 +144,29 @@ void ui_init(void)
 
 void ui_select(unsigned index) { load(index / 4u, index % 4u); }
 
-int ui_save(void)
+/* Stock save (0x9f12 and the B/C/D copies, write in 0x67e0): the edit
+ * buffer goes to slot s of bank b, which becomes the current preset; the
+ * edit buffer is not reloaded. */
+static int save_to(unsigned b, unsigned s)
 {
-    int r = preset_write(bank * 4u + slot, &edit);
+    int r = preset_write(b * 4u + s, &edit);
+    if (r == 0) {
+        bank = view_bank = b;
+        slot = s;
+        browsing = false;
+        settings.b[S_BANK] = (uint8_t)bank;
+        settings.b[S_SLOT] = (uint8_t)slot;
+        settings.b[S_PRESET] = (uint8_t)(bank * 4u + slot);
+        settings_dirty = true;
+        revision++;
+    }
     display_text(r == 0 ? "SAV" : "ERR");
     overlay_until = 0;
-    log_printf("save %u%c: %s\r\n", bank, "AbCd"[slot], r == 0 ? "ok" : "FAILED");
+    log_printf("save %u%c: %s\r\n", b, "AbCd"[s], r == 0 ? "ok" : "FAILED");
     return r;
 }
+
+int ui_save(void) { return save_to(bank, slot); }
 
 static void toggle_module(int m)
 {
@@ -178,16 +203,22 @@ static void action_single(int sw)
         return;
     }
     if (rhythm_mode) { rhythm_single(sw); return; }
-    if (!stomp) { load(bank, (unsigned)sw); proto_notify_preset(); return; }
+    if (!stomp) { load(view_bank, (unsigned)sw); proto_notify_preset(); return; }
     static const int kStomp[4] = {M_REV, M_MOD, M_AMP, M_COMP};   /* A B C D */
     toggle_module(kStomp[sw]);
 }
 
 static void action_chord(uint8_t mask)
 {
-    if (mask == ((1u << SW_C) | (1u << SW_D))) { load(bank + 1u, slot); proto_notify_preset(); }
-    else if (mask == ((1u << SW_A) | (1u << SW_B))) { load(bank + 9u, slot); proto_notify_preset(); }
-    else if (mask == ((1u << SW_B) | (1u << SW_C))) {
+    if (tuner_mode || rhythm_mode) return;   /* stock: chords only in preset/live mode */
+    if (mask == ((1u << SW_C) | (1u << SW_D)) || mask == ((1u << SW_A) | (1u << SW_B))) {
+        view_bank = (view_bank + (mask & (1u << SW_D) ? 1u : 9u)) % 10u;
+        browsing = true;
+        browse_ms = s_now;
+        show_preset();
+    } else if (mask == ((1u << SW_B) | (1u << SW_C))) {
+        view_bank = bank;                    /* stock: leaves the browse */
+        browsing = false;
         stomp = !stomp;
         settings.b[S_STOMP] = stomp;
         settings_dirty = true;
@@ -221,10 +252,11 @@ static void footswitches(uint32_t now)
                 settings.b[S_RHYTHM] = rhythm_mode;
                 proto_notify_rhythm_mode();
                 show_preset();
-            } else if (peak_mask == (1u << SW_A) && !stomp && !rhythm_mode && !tuner_mode &&
-                       !modifier_used) {
+            } else if (peak_mask == (1u << sw) && !rhythm_mode && !tuner_mode && !modifier_used) {
+                /* stock: hold any switch 1 s = save to that slot of the
+                 * shown bank, in preset and live mode */
                 long_used = true;
-                if (ui_save() == 0) proto_notify_saved();
+                if (save_to(view_bank, (unsigned)sw) == 0) proto_notify_saved();
                 overlay_until = now + 1000u;
             }
         } else if (ev == FSW_RELEASE) {
@@ -368,6 +400,17 @@ void ui_task(uint32_t now_ms)
         overlay_until = 0;
         shown_knob = -1;
         show_preset();
+    }
+    if (browsing && !stomp) {
+        static bool blank;
+        if (now_ms - browse_ms > BROWSE_MS) {
+            view_bank = bank;
+            browsing = blank = false;
+            if (!overlay_until) show_preset();
+        } else if (!overlay_until) {
+            bool b = (now_ms - browse_ms) % BROWSE_FLASH_MS >= BROWSE_FLASH_MS / 2u;
+            if (b != blank) { blank = b; if (b) display_text("   "); else show_preset(); }
+        }
     }
     if (rhythm_dirty && now_ms - rhythm_dirty_ms > 3000u) {
         uint8_t r[RHYTHM_SIZE];
