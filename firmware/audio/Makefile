@@ -56,7 +56,7 @@ SRC_C := \
   src/debug/log_fmt.c src/debug/cdc_log.c src/debug/console.c \
   src/debug/selfupdate.c \
   src/audio/i2c_probe.c \
-  src/audio/usb_audio.c src/audio/engine.c \
+  src/audio/usb_audio.c src/audio/engine.c src/audio/codec.c \
   $(TUSB_DIR)/src/tusb.c \
   $(TUSB_DIR)/src/common/tusb_fifo.c \
   $(TUSB_DIR)/src/device/usbd.c \

@@ -9,6 +9,7 @@
 #include "audio/i2c_probe.h"
 #include "audio/engine.h"
 #include "audio/usb_audio.h"
+#include "audio/codec.h"
 
 extern int g_bss_writable;
 
@@ -34,6 +35,7 @@ void app_main(void)
     tusb_init();
     i2c_probe_init();
     engine_init();
+    log_printf("codec init: %s\r\n", codec_init() ? "ok" : "FAILED");
     log_printf("ready\r\n");
 
     uint32_t loops = 0;

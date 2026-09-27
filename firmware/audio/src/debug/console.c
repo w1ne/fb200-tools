@@ -12,6 +12,7 @@
 #include "fsl_iomuxc.h"
 #include "audio/i2c_probe.h"
 #include "audio/usb_audio.h"
+#include "audio/codec.h"
 #include "selfupdate.h"
 
 extern int g_bss_writable;
@@ -85,9 +86,10 @@ static void cmd_src(void)
 
 static void cmd_help(void)
 {
-    log_printf("commands: help | stats | usb | src | hb on|off | scan | dump [bus addr] |\r\n"
-               "          peek <addr> [len] | dumpmem <addr> <len> | poke <addr> <val> |\r\n"
-               "          crc <addr> <len> | fwinfo | fwbegin <len> <crc32> | reset\r\n");
+    log_printf("commands: help | stats | usb | codec | creg <reg> [val] | src |\r\n"
+               "          hb on|off | scan | dump [bus addr] | peek <addr> [len] |\r\n"
+               "          dumpmem <addr> <len> | poke <addr> <val> | crc <addr> <len> |\r\n"
+               "          fwinfo | fwbegin <len> <crc32> | reset\r\n");
 }
 
 static void cmd_crc(const char *a1, const char *a2)
@@ -126,6 +128,59 @@ static void cmd_usb(void)
     log_printf("usb: spk_alt=%u mic_alt=%u play_fill=%lu cap_fill=%lu ovf=%lu unf=%lu\r\n",
                (unsigned)spk_alt, (unsigned)mic_alt, (unsigned long)pf,
                (unsigned long)cf, (unsigned long)ovf, (unsigned long)unf);
+}
+
+/* NAU88L21 register access: `creg <reg> [val]` (16-bit register, 16-bit data). */
+static void cmd_creg(const char *a1, const char *a2)
+{
+    int ok;
+    uint32_t reg = parse_num(a1, &ok);
+    if (!ok || reg > 0xFF) {
+        log_printf("usage: creg <reg> [val]\r\n");
+        return;
+    }
+    if (a2) {
+        uint32_t val = parse_num(a2, &ok);
+        if (!ok || val > 0xFFFF) {
+            log_printf("bad val\r\n");
+            return;
+        }
+        log_printf("creg %02lx <- %04lx: %s\r\n", (unsigned long)reg,
+                   (unsigned long)val,
+                   codec_write((uint16_t)reg, (uint16_t)val) ? "ok" : "NAK");
+    } else {
+        uint16_t v = 0;
+        if (codec_read((uint16_t)reg, &v)) {
+            log_printf("creg %02lx = %04x\r\n", (unsigned long)reg, v);
+        } else {
+            log_printf("creg %02lx: ERR\r\n", (unsigned long)reg);
+        }
+    }
+}
+
+static void cmd_codec(void)
+{
+    uint16_t id = 0;
+    if (codec_read(0x58, &id)) {
+        log_printf("codec id reg58 = %04x\r\n", id);
+    } else {
+        log_printf("codec id reg58: ERR\r\n");
+    }
+    static const uint16_t regs[] = {0x00, 0x01, 0x03, 0x1C, 0x1D, 0x2B,
+                                    0x2C, 0x31, 0x34, 0x35, 0x4B, 0x66,
+                                    0x73, 0x76, 0x7F, 0x80};
+    for (size_t i = 0; i < sizeof(regs) / sizeof(regs[0]); i++) {
+        uint16_t v = 0;
+        if (codec_read(regs[i], &v)) {
+            log_printf(" %02x=%04x", regs[i], v);
+        } else {
+            log_printf(" %02x=ERR", regs[i]);
+        }
+        if ((i & 3) == 3) {
+            log_printf("\r\n");
+        }
+    }
+    log_printf("\r\ncodec init: %s\r\n", codec_init() ? "ok" : "FAILED");
 }
 
 static void cmd_peek(const char *a1, const char *a2)
@@ -192,6 +247,8 @@ static void dispatch(char *cmd)
     if (streq(argv[0], "help")) cmd_help();
     else if (streq(argv[0], "stats")) cmd_stats();
     else if (streq(argv[0], "usb")) cmd_usb();
+    else if (streq(argv[0], "codec")) cmd_codec();
+    else if (streq(argv[0], "creg")) cmd_creg(argv[1], argv[2]);
     else if (streq(argv[0], "hb")) {
         heartbeat_on = (argc > 1 && streq(argv[1], "on"));
         log_printf("heartbeat %s\r\n", heartbeat_on ? "on" : "off");
