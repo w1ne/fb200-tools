@@ -14,4 +14,5 @@ uint32_t ui_revision(void);               /* bumps on every edit/preset change *
 void ui_select(unsigned index);           /* console / remote */
 int ui_save(void);                        /* write the edit buffer to its slot */
 void ui_set_log(bool on);                 /* log footswitch and knob events */
+void ui_flush_settings(void);             /* write unsaved settings now (power fail) */
 #endif

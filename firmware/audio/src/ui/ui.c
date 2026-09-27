@@ -207,6 +207,15 @@ void ui_task(uint32_t now_ms)
     }
 }
 
+void ui_flush_settings(void)
+{
+    if (settings_dirty) {
+        settings_write(&settings);
+        settings_dirty = false;
+        settings_dirty_ms = 0;
+    }
+}
+
 const preset_t *ui_edit_preset(void) { return &edit; }
 unsigned ui_preset_index(void) { return bank * 4u + slot; }
 uint8_t ui_master(void) { return settings.b[S_MASTER]; }

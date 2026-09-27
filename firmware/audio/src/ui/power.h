@@ -3,9 +3,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 /* Battery, charger and supply monitoring with the stock status LED
- * (docs/UI_AND_STORAGE.md §3). Measure-and-indicate only: the stock's
- * power-fail action (save settings, flip the B1_10/B1_15 latch pair) is not
- * replicated yet. */
+ * (docs/UI_AND_STORAGE.md §3), and the stock power-fail action: save the
+ * settings and flip the B1_10/B1_15 latch pair when the supply sense drops. */
 typedef struct {
     uint16_t battery_raw;   /* ADC1 IN9, AD_B1_04 */
     uint16_t supply_raw;    /* ADC1 IN7, AD_B1_02 (stock power-fail sense) */
@@ -17,4 +16,5 @@ typedef struct {
 void power_init(void);
 void power_task(uint32_t now_ms);
 const power_state_t *power_state(void);
+void power_fail_changed(bool low);
 #endif

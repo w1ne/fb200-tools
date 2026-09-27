@@ -2,6 +2,7 @@
 #include "ui/pads.h"
 #include "ui/controls.h"
 #include "fsl_gpio.h"
+#include "ui/ui.h"
 
 #define ANALOG_CFG 0x00B0u
 #define LED_CFG    0x10B0u
@@ -47,8 +48,10 @@ void power_task(uint32_t now_ms)
     uint8_t lvl = 0;
     while (lvl < 4 && st.battery_raw < kLevel[lvl]) lvl++;
     st.level = (uint8_t)(4u - lvl);
+    bool was_low = st.supply_low;
     if (st.supply_raw < SUPPLY_FAIL) st.supply_low = true;
     else if (st.supply_raw > SUPPLY_OK) st.supply_low = false;
+    if (st.supply_low != was_low) power_fail_changed(st.supply_low);
 
     blink = !blink;
     if (st.charging) status_led(1, 1, 1);
@@ -58,3 +61,19 @@ void power_task(uint32_t now_ms)
 }
 
 const power_state_t *power_state(void) { return &st; }
+
+/* The stock power-fail path (ITCM 0x19534): the supply sense on ADC1 IN7
+ * drops when the power switch is turned off; the stock then saves its
+ * settings and flips the GPIO_B1_10 / B1_15 pair (the power latch), and
+ * flips it back if the sense recovers (e.g. USB still connected). */
+void power_fail_changed(bool low)
+{
+    if (low) {
+        ui_flush_settings();
+        GPIO_PinWrite(GPIO2, 31u, 1u);   /* B1_15 */
+        GPIO_PinWrite(GPIO2, 26u, 0u);   /* B1_10 */
+    } else {
+        GPIO_PinWrite(GPIO2, 31u, 0u);   /* running state, see frontend.c */
+        GPIO_PinWrite(GPIO2, 26u, 1u);
+    }
+}
