@@ -9,10 +9,10 @@ list; evidence for the stock side is in `FIRMWARE_ANALYSIS.md`,
 | # | Feature | Evidence |
 | --- | --- | --- |
 | 1 | Amp/cab model library: 20 entries (10 amps + 10 cabs), float32 tables at flash `0x60041000`; one-second entries = cab IRs at 44.1 kHz | `FIRMWARE_ANALYSIS.md` §2 |
-| 2 | Presets with names (`Fat BassX`, `Tri Chorus`, ...), stored in flash | `FIRMWARE_ANALYSIS.md` §1.4 |
+| 2 | 40 presets (10 banks x 4) of 256 B at F:0x71000 + i x 0x200, global settings at F:0x80000, 9 user IR slots; stock data is still on the pedal (verified) | `UI_AND_STORAGE.md` §5 |
 | 3 | USB audio, UAC1, 44.1 kHz, playback + capture | USB descriptors in the stock image |
 | 4 | Bluetooth module over UART (AT command set, `AT+BDFB200 Audio`, module `V1.0.0`) | `FIRMWARE_ANALYSIS.md` §1.3, `HARDWARE.md` §4 |
-| 5 | LCD display + 4 footswitches (A-D) + buttons | stock display init (emulation stalls there); buttons on GPIO3_IO12 / GPIO2_IO24 |
+| 5 | 3-digit 14-segment LED display, 4 footswitches (active low), 16 knobs (2x 74HC4051 -> ADC1), 16 knob LEDs, 40 RGB LEDs (WS2812 on FlexIO2), status LED | `UI_AND_STORAGE.md` §1-3 (no LCD) |
 | 6 | Firmware update: USB DFU `0483:5703` + `.mr` container | `FIRMWARE_BRINGUP.md`, `UPDATE_AND_RECOVERY.md` |
 | 7 | Device info protocol over USB (version strings, BT version, hw rev) | `PROTOCOL.md` |
 | 8 | Headphone out (class-G) + instrument input (codec PGA) | `AUDIO_PATH.md` |
@@ -32,7 +32,7 @@ list; evidence for the stock side is in `FIRMWARE_ANALYSIS.md`,
 | DSP framework | chain, smoothing, gain, testgen, no-libm math shims; host tests |
 | Amp/cab models + effects | MISSING (the big one) |
 | Presets (storage + UI) | MISSING |
-| Display UI | MISSING (needs RE of the LCD controller/pins) |
+| Display UI | MISSING; hardware fully mapped (`UI_AND_STORAGE.md`) |
 | Bluetooth (AT + audio) | MISSING (needs UART RE + BT audio path RE) |
 | Tuner / looper / drum machine | MISSING (verify stock first) |
 | MIDI | MISSING (verify stock first) |

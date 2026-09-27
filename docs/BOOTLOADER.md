@@ -17,7 +17,8 @@ replaces it.
 | `0x60002400` | Bootloader main: the **same self-loading loader format** as the app (table + LZ decompressor + memcpy + memset) |
 | `0x60008000`+ | Update/DFU code (USB descriptors for `0483:5703` at `0x6000AF40`), executed after the loader runs |
 | `0x60010000` | Application image (the `.mr` block 0) |
-| `0x60041000` | Model library (block 1) |
+| `0x60071000`.. | Presets, settings, IRs (see `UI_AND_STORAGE.md` §5) |
+| `0x600D0000` | Model library (block 1; verified on the pedal: count 20) |
 | `0x60086000` | Handover flag byte (see below) |
 
 Note: the bootloader configures FlexRAM with `0xFFEAAAA9`; the stock
