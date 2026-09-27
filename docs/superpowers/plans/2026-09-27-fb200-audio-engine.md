@@ -319,13 +319,17 @@ int main(void) {
     gain_init(&g, 0.5f);
     dsp_chain_t chain = {0};
     dsp_chain_add(&chain, gain_process, &g);
-    for (int k = 0; k < 100; k++) dsp_chain_run(&chain, &b, DSP_BLOCK);
+    for (int k = 0; k < 100; k++) {
+        fill(&b, 1.0f);                     /* fresh input each block */
+        dsp_chain_run(&chain, &b, DSP_BLOCK);
+    }
     assert(fabsf(b.data[0][0] - 0.5f) < 1e-3f);
     assert(fabsf(b.data[1][DSP_BLOCK - 1] - 0.5f) < 1e-3f);
 
     /* gain smoothing: no step larger than 1% of the delta per sample */
     fill(&b, 1.0f);
     gain_set(&g, 1.0f);
+    dsp_chain_run(&chain, &b, DSP_BLOCK);
     float prev = 0.5f;
     for (int i = 0; i < DSP_BLOCK; i++) {
         float now = b.data[0][i];
@@ -527,8 +531,12 @@ float dsp_sinf(float x)
     const float pi = 3.14159265358979f;
     while (x > pi) x -= 2.0f * pi;
     while (x < -pi) x += 2.0f * pi;
+    /* reduce to [-pi/2, pi/2] for a well-conditioned degree-9 series
+     * (max |error| ~4e-6 over [-2pi, 2pi]) */
+    if (x > pi * 0.5f) x = pi - x;
+    else if (x < -pi * 0.5f) x = -pi - x;
     float x2 = x * x;
-    return x * (1.0f + x2 * (-0.16666667f + x2 * (0.00833333f + x2 * (-0.00019841f + x2 * 0.00000276f))));
+    return x * (1.0f + x2 * (-0.1666666667f + x2 * (0.0083333333f + x2 * (-0.0001984127f + x2 * 0.0000027557f))));
 }
 
 /* 2^x via exponent split + degree-4 polynomial */
@@ -537,7 +545,9 @@ float dsp_exp2f(float x)
     int e = (int)x;
     float f = x - (float)e;
     if (f < 0.0f) { f += 1.0f; e -= 1; }
-    float p = 1.0f + f * (0.6931472f + f * (0.2402265f + f * (0.0555041f + f * 0.0096181f)));
+    /* Taylor of 2^f to f^6: max relative error ~8e-6 on [0,1) */
+    float p = 1.0f + f * (0.6931472f + f * (0.2402265f + f * (0.0555041f +
+              f * (0.0096181f + f * (0.0013334f + f * 0.0001540f)))));
     union { float f; uint32_t u; } v;
     v.u = (uint32_t)(e + 127) << 23;
     return p * v.f;
