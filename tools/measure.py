@@ -200,6 +200,7 @@ def firmware_banner() -> str:
     """Read the CDC banner (best effort) for the firmware identity."""
     try:
         import glob
+
         import serial
 
         for tty in sorted(glob.glob("/dev/tty.usbmodem*")):
@@ -207,14 +208,14 @@ def firmware_banner() -> str:
                 continue
             with serial.Serial(tty, 115200, timeout=0.3) as s:
                 return s.read(256).decode(errors="replace").strip().splitlines()[0]
-    except Exception:
+    except (ImportError, OSError, IndexError):
         pass
     return "unknown"
 
 
 def write_section(results: dict, device: str | None, fs: int, note: str) -> Path:
     out = ROOT / "docs" / "MEASUREMENTS.md"
-    stamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    stamp = _dt.datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z")
     lines = [
         f"\n## {stamp} - {device or 'default device'} @ {fs} Hz\n",
         f"firmware: `{firmware_banner()}`  ",
