@@ -13,6 +13,7 @@
 #include "audio/i2c_probe.h"
 #include "audio/usb_audio.h"
 #include "audio/codec.h"
+#include "audio/sai.h"
 #include "selfupdate.h"
 
 extern int g_bss_writable;
@@ -86,7 +87,7 @@ static void cmd_src(void)
 
 static void cmd_help(void)
 {
-    log_printf("commands: help | stats | usb | codec | creg <reg> [val] | src |\r\n"
+    log_printf("commands: help | stats | usb | sai | codec | creg <reg> [val] | src |\r\n"
                "          hb on|off | scan | dump [bus addr] | peek <addr> [len] |\r\n"
                "          dumpmem <addr> <len> | poke <addr> <val> | crc <addr> <len> |\r\n"
                "          fwinfo | fwbegin <len> <crc32> | reset\r\n");
@@ -156,6 +157,15 @@ static void cmd_creg(const char *a1, const char *a2)
             log_printf("creg %02lx: ERR\r\n", (unsigned long)reg);
         }
     }
+}
+
+static void cmd_sai(void)
+{
+    uint32_t rxf, txf, rxb, txb, over, under;
+    sai_stats(&rxf, &txf, &rxb, &txb, &over, &under);
+    log_printf("sai: rx_fill=%lu tx_fill=%lu rx_blocks=%lu tx_blocks=%lu ovf=%lu unf=%lu\r\n",
+               (unsigned long)rxf, (unsigned long)txf, (unsigned long)rxb,
+               (unsigned long)txb, (unsigned long)over, (unsigned long)under);
 }
 
 static void cmd_codec(void)
@@ -248,6 +258,7 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "stats")) cmd_stats();
     else if (streq(argv[0], "usb")) cmd_usb();
     else if (streq(argv[0], "codec")) cmd_codec();
+    else if (streq(argv[0], "sai")) cmd_sai();
     else if (streq(argv[0], "creg")) cmd_creg(argv[1], argv[2]);
     else if (streq(argv[0], "hb")) {
         heartbeat_on = (argc > 1 && streq(argv[1], "on"));
