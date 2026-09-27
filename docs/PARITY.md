@@ -30,7 +30,8 @@ list; evidence for the stock side is in `FIRMWARE_ANALYSIS.md`,
 | SAI1 + eDMA audio path | DONE (ping-pong, drift, meters, faults); hardware bring-up pending |
 | LED | scan + status implemented; pin identification pending hardware |
 | DSP framework | chain, smoothing, gain, testgen, no-libm math shims; host tests |
-| Amp/cab models + effects | MISSING (the big one) |
+| Amp/cab models | stock amp + tone stack + cab ported (`src/dsp/amp.c`, `tone.c`, `cab.c`), bit-exact with the emulated stock (`tests/test_stock_dsp_parity.py`); data extracted from the user's own stock `.mr` at build time; not wired into the engine yet |
+| Effects | MISSING |
 | Presets (storage + UI) | MISSING |
 | Display UI | MISSING; hardware fully mapped (`UI_AND_STORAGE.md`) |
 | Bluetooth (AT + audio) | MISSING (needs UART RE + BT audio path RE) |
