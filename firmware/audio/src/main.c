@@ -16,6 +16,7 @@ extern int g_bss_writable;
  * the bootloader decides what to do from the reset source. */
 __attribute__((noreturn)) void console_reboot(void)
 {
+    crumb_clear();   /* a deliberate reset is not a hang */
     tud_disconnect();
     for (volatile uint32_t i = 0; i < 4000000u; i++) {
     }
@@ -37,7 +38,7 @@ void app_main(void)
     /* Launches the app (never returns) unless something says stay. */
     const char *stay = recovery_boot();
 #endif
-    log_printf("fb200-audio 0.6.0-dev " VARIANT "\r\n");
+    log_printf("fb200-audio 0.6.2-dev " VARIANT "\r\n");
 #ifdef FB200_RECOVERY
     log_printf("recovery: staying because %s\r\n", stay);
 #endif
@@ -45,6 +46,9 @@ void app_main(void)
     board_init();
     tusb_init();
     i2c_probe_init();
+#ifndef FB200_RECOVERY
+    crumb_alive();
+#endif
     log_printf("ready\r\n");
 
     uint32_t loops = 0;

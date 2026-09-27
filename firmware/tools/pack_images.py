@@ -44,6 +44,17 @@ APP_ITCM_LIMIT = 0x1F000         # copier lives above
 STOCK_ENTRY0 = bytes.fromhex("d407016000040000c8db0100a0040160")
 
 
+# Every image must keep its USB update commands, or the next update needs A+D.
+# (A console edit once dropped `fwbegin` from both stages; caught on hardware.)
+REQUIRED_COMMANDS = (b"fwbegin\0", b"fwrec\0")
+
+
+def require_update_commands(name: str, blob: bytes) -> None:
+    missing = [c.rstrip(b"\0").decode() for c in REQUIRED_COMMANDS if c not in blob]
+    if missing:
+        raise SystemExit(f"{name} blob lacks console command(s) {missing}; refusing")
+
+
 def build_recovery(stock_block0: bytes, vectors: bytes, blob: bytes, copier: bytes) -> bytes:
     if len(vectors) != 0x400:
         raise SystemExit("recovery vectors must be 0x400 bytes")
@@ -99,6 +110,8 @@ def main() -> int:
     def part(prefix: Path, kind: str) -> bytes:
         return Path(f"{prefix}.{kind}.bin").read_bytes()
 
+    require_update_commands("recovery", part(args.recovery, "blob"))
+    require_update_commands("app", part(args.app, "blob"))
     rec = build_recovery(b0, part(args.recovery, "vectors"), part(args.recovery, "blob"),
                          part(args.recovery, "copier"))
     slot = build_slot(part(args.app, "vectors"), part(args.app, "blob"))

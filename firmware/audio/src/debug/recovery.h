@@ -27,6 +27,8 @@ typedef struct {
 
 void wdog_feed(void);
 void crumbs_print(void);
+void crumb_alive(void);   /* app: mark running (see recovery.c) */
+void crumb_clear(void);   /* before a deliberate reset */
 void recovery_request(void) __attribute__((noreturn));   /* app -> recovery */
 const char *recovery_boot(void);   /* recovery: returns the stay reason or launches the app */
 void recovery_launch_app(int usb_up) __attribute__((noreturn));   /* 1 = console running */
