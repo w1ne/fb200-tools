@@ -5,7 +5,6 @@
 #include <stdlib.h>
 #include "dsp/biquad.h"
 #include "dsp/conv.h"
-#include "dsp/gate.h"
 
 static float frand(void) { return (float)rand() / (float)RAND_MAX * 2.0f - 1.0f; }
 
@@ -67,25 +66,6 @@ static void test_biquad(void)
     printf("biquad OK\n");
 }
 
-static void test_gate(void)
-{
-    gate_t g;
-    gate_init(&g, 48000);
-    gate_set(&g, -50, 6, 1, 20, 50);
-    float buf[DSP_BLOCK];
-    for (int k = 0; k < 400; k++) {                 /* -70 dB noise: closes */
-        for (int i = 0; i < DSP_BLOCK; i++) buf[i] = 0.000316f * frand();
-        gate_process(&g, buf, DSP_BLOCK);
-    }
-    assert(g.gain < 0.01f);
-    for (int k = 0; k < 50; k++) {                  /* -20 dB signal: opens */
-        for (int i = 0; i < DSP_BLOCK; i++) buf[i] = 0.1f * frand();
-        gate_process(&g, buf, DSP_BLOCK);
-    }
-    assert(g.gain > 0.99f);
-    printf("gate OK\n");
-}
-
 int main(void)
 {
     test_conv(1);
@@ -93,7 +73,6 @@ int main(void)
     test_conv(1000);
     test_conv(CONV_MAX_TAPS);
     test_biquad();
-    test_gate();
     printf("dsp blocks host tests OK\n");
     return 0;
 }

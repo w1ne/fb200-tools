@@ -1,48 +1,53 @@
 #include "gate.h"
-#include "math.h"
-
-static float ms_coeff(float fs, float ms)
-{
-    /* one-pole coefficient reaching ~63% in `ms`: 1 - e^(-1/(fs*t)) */
-    float n = fs * ms * 0.001f;
-    return n < 1.0f ? 1.0f : 1.0f - dsp_exp2f(-1.44269504f / n);
-}
 
 void gate_init(gate_t *g, float fs)
 {
-    g->fs = fs;
-    g->env = 0.0f;
-    g->gain = 1.0f;
-    g->open = 1;
-    g->hold_left = 0;
-    gate_set(g, -60.0f, 6.0f, 1.0f, 50.0f, 100.0f);
+    *g = (gate_t){0};
+    detector_init(&g->det, fs);
+    double k = 44100.0 / fs;
+    g->up = 0.00015 * k;
+    g->down = 5e-05 * k;
+    g->a = 0.1 * k;                     /* follower: new = a ctl + b old */
+    g->b = 1.0 - g->a;
+    if (fs == 44100.0f) g->b = 0.9;     /* the stock literal, bit for bit */
+    dsp_knob_init(&g->thr, 0.01f, 0.99f);
 }
 
-void gate_set(gate_t *g, float threshold_db, float hysteresis_db, float attack_ms,
-              float hold_ms, float release_ms)
+void gate_set_params(gate_t *g, unsigned threshold)
 {
-    g->open_lin = dsp_db_to_gain(threshold_db);
-    g->close_lin = dsp_db_to_gain(threshold_db - hysteresis_db);
-    g->att_coeff = ms_coeff(g->fs, attack_ms);
-    g->rel_coeff = ms_coeff(g->fs, release_ms);
-    g->env_rel = ms_coeff(g->fs, 10.0f);
-    g->hold = (unsigned)(g->fs * hold_ms * 0.001f);
+    dsp_knob_set(&g->thr, (float)threshold * 0.01f);
+}
+
+static float gate_step(gate_t *g, float x)
+{
+    float t = dsp_knob_next(&g->thr);
+
+    detector_step(&g->det, x);                       /* the chain's step */
+    float env = detector_step(&g->det, x);           /* the gate's own step */
+
+    float T = (float)((double)(t * t) * 0.01 + 1e-05);
+    float w = t >= 0.1f ? 1.0f : t * 10.0f;
+    float d = (float)((double)env - (double)T * 0.4);
+    float T3 = T * 3.0f;
+    if (d < 0.0f) d = 0.0f;
+    if (d > T3) d = T3;
+
+    if (g->ctl < d) {
+        g->ctl = (float)((double)g->ctl + g->up);
+        if (g->ctl > d) g->ctl = d;
+    }
+    if (g->ctl > d) {
+        g->ctl = (float)((double)g->ctl - g->down);
+        if (g->ctl < d) g->ctl = d;
+    }
+    if (g->ctl > T3) g->ctl = T3;
+
+    g->smooth = (float)((double)g->ctl * g->a + (double)g->smooth * g->b);
+    float gain = g->smooth >= g->ctl ? g->smooth : g->ctl;
+    return (gain * w / T3 + (1.0f - w)) * x;
 }
 
 void gate_process(gate_t *g, float *x, unsigned n)
 {
-    for (unsigned i = 0; i < n; i++) {
-        float a = x[i] < 0.0f ? -x[i] : x[i];
-        g->env = a > g->env ? a : g->env + g->env_rel * (a - g->env);
-        if (g->env >= g->open_lin) {
-            g->open = 1;
-            g->hold_left = g->hold;
-        } else if (g->env < g->close_lin) {
-            if (g->hold_left) g->hold_left--;
-            else g->open = 0;
-        }
-        float target = g->open ? 1.0f : 0.0f;
-        g->gain += (g->open ? g->att_coeff : g->rel_coeff) * (target - g->gain);
-        x[i] *= g->gain;
-    }
+    for (unsigned i = 0; i < n; i++) x[i] = gate_step(g, x[i]);
 }
