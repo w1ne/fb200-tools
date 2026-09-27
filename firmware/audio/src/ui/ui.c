@@ -10,6 +10,7 @@ enum { SW_A, SW_B, SW_C, SW_D };
 enum { M_GATE, M_COMP, M_AMP, M_CAB, M_MOD, M_REV, M_NONE };
 
 typedef struct {
+    const char *name;    /* 3-character display name */
     int8_t led;          /* knob LED index, -1 none */
     uint8_t module;
     uint8_t field;       /* preset offset; 0xFF = master volume (settings) */
@@ -24,22 +25,22 @@ typedef struct {
  * THRESH k0, GATE k3. The channel assignment recovered from the stock code
  * (ITCM 0x5a60) was wrong; its knob-LED pairing was right. */
 static const knob_map_t kKnob[KNOB_COUNT] = {
-    [15] = {14, M_NONE, 0xFF, 0},             /* MASTER (global setting) */
-    [14] = {13, M_REV, P_REV_LEVEL, 0},       /* LEVEL (reverb) */
-    [12] = {15, M_REV, P_REV_TYPE, 5, 0},     /* REVERB type 0..4 */
-    [11] = {9, M_MOD, P_MOD_P2, 0},           /* MIX */
-    [8] = {4, M_MOD, P_MOD_P1, 0},            /* RATE */
-    [9] = {10, M_MOD, P_MOD_TYPE, 12, 0},     /* MOD type 0..11 */
-    [13] = {5, M_CAB, P_CAB_TYPE, 19, 1},     /* CAB 1..19 (11+ = user IR) */
-    [10] = {12, M_AMP, P_AMP_VOLUME, 0},      /* VOL */
-    [4] = {0, M_AMP, P_AMP_BASS, 0},          /* BASS */
-    [6] = {1, M_AMP, P_AMP_MID, 0},           /* MID */
-    [7] = {2, M_AMP, P_AMP_TREBLE, 0},        /* TREBLE */
-    [5] = {11, M_AMP, P_AMP_GAIN, 0},         /* GAIN */
-    [2] = {3, M_AMP, P_AMP_MODEL, 10, 1},     /* AMP model 1..10 */
-    [1] = {6, M_COMP, P_COMP_LEVEL, 0},       /* LEVEL (compressor) */
-    [0] = {7, M_COMP, P_COMP_THRESH, 0},      /* THRESH */
-    [3] = {8, M_GATE, P_GATE_THRESH, 0},      /* GATE (label confirmed) */
+    [15] = {"OUt", 14, M_NONE, 0xFF, 0},             /* MASTER (global setting) */
+    [14] = {"rLE", 13, M_REV, P_REV_LEVEL, 0},       /* LEVEL (reverb) */
+    [12] = {"rEU", 15, M_REV, P_REV_TYPE, 5, 0},     /* REVERB type 0..4 */
+    [11] = {"nIH", 9, M_MOD, P_MOD_P2, 0},           /* MIX */
+    [8] = {"rAt", 4, M_MOD, P_MOD_P1, 0},            /* RATE */
+    [9] = {"nOd", 10, M_MOD, P_MOD_TYPE, 12, 0},     /* MOD type 0..11 */
+    [13] = {"CAb", 5, M_CAB, P_CAB_TYPE, 19, 1},     /* CAB 1..19 (11+ = user IR) */
+    [10] = {"UOL", 12, M_AMP, P_AMP_VOLUME, 0},      /* VOL */
+    [4] = {"bAS", 0, M_AMP, P_AMP_BASS, 0},          /* BASS */
+    [6] = {"nid", 1, M_AMP, P_AMP_MID, 0},           /* MID */
+    [7] = {"trE", 2, M_AMP, P_AMP_TREBLE, 0},        /* TREBLE */
+    [5] = {"GAn", 11, M_AMP, P_AMP_GAIN, 0},         /* GAIN */
+    [2] = {"AnP", 3, M_AMP, P_AMP_MODEL, 10, 1},     /* AMP model 1..10 */
+    [1] = {"CLE", 6, M_COMP, P_COMP_LEVEL, 0},       /* LEVEL (compressor) */
+    [0] = {"tHr", 7, M_COMP, P_COMP_THRESH, 0},      /* THRESH */
+    [3] = {"GAt", 8, M_GATE, P_GATE_THRESH, 0},      /* GATE (label confirmed) */
 };
 static const uint8_t kModuleEnable[M_NONE] = {P_GATE_EN, P_COMP_EN, P_AMP_EN, P_CAB_EN,
                                               P_MOD_EN, P_REV_EN};
@@ -234,6 +235,25 @@ static void footswitches(uint32_t now)
     }
 }
 
+/* Display feedback (better than the stock's bare number): the knob's name
+ * for NAME_MS when a different knob is touched, then its value; a dot
+ * after the value while the knob has not picked up the stored value yet. */
+#define NAME_MS 600u
+static int shown_knob = -1;
+static uint32_t name_until;
+
+static void show_value(int k, uint16_t v, bool picked)
+{
+    char t[5];
+    t[0] = v >= 100 ? '1' : ' ';
+    t[1] = v >= 10 ? (char)('0' + (v / 10u) % 10u) : ' ';
+    t[2] = (char)('0' + v % 10u);
+    t[3] = picked ? 0 : '.';
+    t[4] = 0;
+    (void)k;
+    display_text(t);
+}
+
 static void knobs(uint32_t now)
 {
     for (int k = 0; k < KNOB_COUNT; k++) {
@@ -246,20 +266,27 @@ static void knobs(uint32_t now)
              * (+-2 % on level knobs; exact on selectors, where a tolerance
              * would jump the loaded model/type to the knob position) */
             int d = (int)v - (int)s, tol = kKnob[k].types ? 0 : 2;
-            if (d < -tol || d > tol) continue;
-            caught[k] = true;
+            if (d >= -tol && d <= tol) caught[k] = true;
         }
-        if (v == s) continue;
-        if (kKnob[k].field == 0xFF) { settings.b[S_MASTER] = (uint8_t)v; settings_dirty = true; proto_notify_settings(); }
-        else { pset(&edit, kKnob[k].field, v); proto_notify_module(kProtoModule[kKnob[k].module]); }
-        revision++;
-        char t[5];
-        t[0] = v >= 100 ? '1' : ' ';
-        t[1] = v >= 10 ? (char)('0' + (v / 10u) % 10u) : ' ';
-        t[2] = (char)('0' + v % 10u);
-        t[3] = 0;
-        display_text(t);
-        overlay_until = now + 1000u;
+        if (caught[k] && v != s) {
+            if (kKnob[k].field == 0xFF) { settings.b[S_MASTER] = (uint8_t)v; settings_dirty = true; proto_notify_settings(); }
+            else { pset(&edit, kKnob[k].field, v); proto_notify_module(kProtoModule[kKnob[k].module]); }
+            revision++;
+        }
+        if (tuner_mode) continue;
+        if (k != shown_knob) {
+            shown_knob = k;
+            name_until = now + NAME_MS;
+            display_text(kKnob[k].name);
+        } else if ((int32_t)(now - name_until) >= 0) {
+            show_value(k, v, caught[k]);
+        }
+        overlay_until = now + 1500u;
+    }
+    /* name shown and the knob stopped: switch to its value */
+    if (shown_knob >= 0 && name_until && (int32_t)(now - name_until) >= 0) {
+        name_until = 0;
+        show_value(shown_knob, knob_units(shown_knob), caught[shown_knob]);
     }
 }
 
@@ -298,7 +325,11 @@ void ui_task(uint32_t now_ms)
     footswitches(now_ms);
     knobs(now_ms);
     leds(now_ms);
-    if (overlay_until && (int32_t)(now_ms - overlay_until) >= 0) { overlay_until = 0; show_preset(); }
+    if (overlay_until && (int32_t)(now_ms - overlay_until) >= 0) {
+        overlay_until = 0;
+        shown_knob = -1;
+        show_preset();
+    }
     /* settings are few and rarely change: persist 3 s after the first
      * unsaved change (the stock saves them on power fail) */
     if (settings_dirty) {

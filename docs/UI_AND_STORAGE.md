@@ -56,6 +56,11 @@ drop min/max, average; change threshold 48 counts. The notes said the
 stock inverts (4095 - v); on the pedal that turned every knob the wrong
 way (user report), so our firmware uses the raw reading.
 
+Our display feedback (better than the stock's bare 0-100): touching a knob
+shows its name for 0.6 s (OUt, rLE, rEU, nIH, rAt, nOd, CAb, UOL, bAS, nid,
+trE, GAn, AnP, CLE, tHr, GAt), then its value; a dot after the value means
+the knob has not picked up the preset value yet (it is not acting).
+
 **Measured on the pedal** (the user turned every knob left to right and read
 the panel labels; the channel table recovered from the stock code was
 wrong, its knob-LED pairing right):

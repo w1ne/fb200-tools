@@ -20,7 +20,16 @@
 static uint32_t glyph(char c)
 {
     switch (c) {
-    case '0': case 'O': case 'o': return SA | SB | SC | SD | SE | SF;
+    case '0': case 'O': return SA | SB | SC | SD | SE | SF;
+    case 'o': return SC | SD | SE | SG1 | SG2;
+    case 'H': case 'h': return SB | SC | SE | SF | SG1 | SG2;
+    case 'N': case 'n': return SC | SE | SG1 | SG2;
+    case 'r': return SE | SG1;
+    case 'T': case 't': return SD | SE | SF | SG1 | SG2;
+    case 'U': return SB | SC | SD | SE | SF;
+    case 'u': return SC | SD | SE;
+    case 'S': case 's': return SA | SC | SD | SF | SG1 | SG2;
+    case 'Y': case 'y': return SB | SC | SD | SF | SG1 | SG2;
     case '1': return SB | SC;
     case '2': return SA | SB | SD | SE | SG1 | SG2;
     case '3': return SA | SB | SC | SD | SG1 | SG2;
@@ -40,7 +49,7 @@ static uint32_t glyph(char c)
     case 'I': case 'i': return SA | SD | SMID;
     case 'L': case 'l': return SD | SE | SF;
     case 'P': case 'p': return SA | SB | SE | SF | SG1 | SG2;
-    case 'R': case 'r': return SA | SB | SE | SF | SG1 | SG2 | SDIAG;
+    case 'R': return SA | SB | SE | SF | SG1 | SG2 | SDIAG;
     case '-': return SG1 | SG2;
     default: return 0;
     }

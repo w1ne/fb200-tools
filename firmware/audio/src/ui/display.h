@@ -3,7 +3,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 /* 3-digit 14-segment LED display, multiplexed from the main loop
- * (docs/UI_AND_STORAGE.md §1). Characters: 0-9, A b C d E F G I L O P R -,
+ * (docs/UI_AND_STORAGE.md §1). Characters: 0-9, A b C d E F G H I L n o O P
+ * r R S t U u Y -,
  * space; a '.' after a character lights its decimal point. */
 void display_init(void);
 void display_text(const char *s);
