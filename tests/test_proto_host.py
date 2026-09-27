@@ -273,7 +273,8 @@ def test_settings_block_and_hooks(h):
 
 def test_bootloader_and_factory_reset(h):
     lines = h.feed(pack_frame(0xC1))
-    assert "HOOK bootloader" in lines and h.flash(0x86000, 1) == b"\x00"
+    # never the vendor bootloader flag: A+D recovery depends on it
+    assert "HOOK bootloader" in lines and h.flash(0x86000, 1) != b"\x00"
     assert frames(lines) == [("u", 0xC2, b"\x01")]
     lines = h.feed(pack_frame(0xB2), "b")
     assert "HOOK factory_reset" in lines

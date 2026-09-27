@@ -17,6 +17,7 @@
 #include "proto/proto.h"
 #include "preset/preset.h"
 #include "ui/ui.h"
+#include "audio/engine.h"
 #include "ui/controls.h"
 #include "ui/display.h"
 
@@ -30,6 +31,17 @@ void knob_led(int led, bool on) { (void)led; (void)on; }
 uint16_t knob_value(int k) { (void)k; return 0; }
 bool knob_changed(int k) { (void)k; return false; }
 fsw_event_t fsw_event(int *sw) { (void)sw; return FSW_NONE; }
+/* engine: drum machine and tuner (ui.c's rhythm/tuner modes) */
+static drums_t drums;
+drums_t *engine_drums(void) { return &drums; }
+void engine_set_tuner(bool on) { (void)on; }
+bool engine_tuner_poll(tuner_result_t *out) { (void)out; return false; }
+void drums_start(drums_t *d) { d->on = 1; }
+void drums_stop(drums_t *d) { d->on = 0; }
+void drums_set_rhythm(drums_t *d, unsigned r) { d->rhythm = (uint8_t)r; }
+void drums_set_level(drums_t *d, unsigned l) { d->level = (uint8_t)l; }
+void drums_set_tempo(drums_t *d, unsigned bpm) { d->bpm = (uint16_t)bpm; }
+void drums_tap(drums_t *d, uint32_t now_ms) { (void)d; (void)now_ms; }
 
 /* ---- preset layer over the fake flash ---- */
 void preset_read(unsigned index, preset_t *out)
@@ -44,6 +56,7 @@ int preset_write(unsigned index, const preset_t *p)
 }
 void settings_read(settings_t *out) { memcpy(out, flash + SETTINGS_FLASH, sizeof *out); }
 int settings_write(const settings_t *s) { memcpy(flash + SETTINGS_FLASH, s, sizeof *s); return 0; }
+void rhythm_settings_read(uint8_t out[RHYTHM_SIZE]) { memcpy(out, flash + RHYTHM_FLASH, RHYTHM_SIZE); }
 
 /* ---- proto platform hooks ---- */
 void proto_flash_read(uint32_t off, void *dst, uint32_t n) { memcpy(dst, flash + off, n); }

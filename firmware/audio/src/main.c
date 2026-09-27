@@ -19,6 +19,7 @@
 #include "ui/ui.h"
 #include "ui/rgb.h"
 #include "bt/bt.h"
+#include "proto/proto.h"
 
 extern int g_bss_writable;
 extern uint32_t tusb_time_millis_api(void);
@@ -76,6 +77,7 @@ void app_main(void)
     rgb_init();
     bt_init();
     ui_init();
+    proto_port_init();   /* after ui_init: it reads the edit buffer */
     if (!codec_ok) {
         engine_set_mute(true); /* start muted when the codec did not answer */
     }

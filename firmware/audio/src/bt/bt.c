@@ -14,6 +14,9 @@ static uint8_t tx_buf[256];
 static volatile int tx_busy;
 static uint8_t log_buf[128];
 static size_t log_len;
+static const char *const kInit[] = {"AT+TM", "AT+CN00", "AT+B501", "AT+B401"};
+static uint8_t q[2048];            /* app frames waiting for the UART */
+static uint32_t q_head, q_tail;
 static int step = -1;               /* AT start-up step, -1 = not started */
 static uint32_t next_ms;
 static uint32_t rx_total;
@@ -67,9 +70,27 @@ int bt_at(const char *cmd)
     return bt_send(b, n);
 }
 
+/* Queue bytes for the module (app frames); bt_task sends them in 70-byte
+ * chunks, like the stock, whenever the UART is idle. */
+int bt_queue(const uint8_t *data, size_t n)
+{
+    uint32_t used = (q_head - q_tail) % sizeof q;
+    if (n >= sizeof q - used) return -1;
+    for (size_t i = 0; i < n; i++) { q[q_head] = data[i]; q_head = (q_head + 1u) % sizeof q; }
+    return 0;
+}
+
+static void pump_queue(void)
+{
+    if (tx_busy || q_head == q_tail || step < (int)(sizeof kInit / sizeof kInit[0])) return;
+    uint8_t chunk[70];
+    size_t n = 0;
+    while (n < sizeof chunk && q_tail != q_head) { chunk[n++] = q[q_tail]; q_tail = (q_tail + 1u) % sizeof q; }
+    (void)bt_send(chunk, n);
+}
+
 /* The stock start-up sequence (ITCM 0x1b630), minus the renames (the module
  * keeps its name): AT+TM, then AT+CN00, AT+B501, AT+B401, 150 ms apart. */
-static const char *const kInit[] = {"AT+TM", "AT+CN00", "AT+B501", "AT+B401"};
 
 void bt_task(uint32_t now_ms)
 {
@@ -89,6 +110,7 @@ void bt_task(uint32_t now_ms)
             bt_rx_frame_bytes(buf, got);
         }
     }
+    pump_queue();
     if (step >= 0 && step < (int)(sizeof kInit / sizeof kInit[0]) && (int32_t)(now_ms - next_ms) >= 0) {
         if (next_ms == 0) { next_ms = now_ms + 500u; return; }   /* let the module boot */
         if (bt_at(kInit[step]) == 0) { step++; next_ms = now_ms + 150u; }

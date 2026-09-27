@@ -41,6 +41,7 @@ typedef enum { PROTO_USB = 1, PROTO_BLE = 2 } proto_transport_t;
 typedef void (*proto_send_fn)(const uint8_t *frame, uint32_t len);
 
 void proto_init(void);                                   /* loads the IR/aux state from flash */
+void proto_port_init(void);                              /* target: senders + proto_init */
 void proto_set_sender(proto_transport_t t, proto_send_fn fn);
 void proto_feed(proto_transport_t t, const uint8_t *data, uint32_t n);
 /* Unsolicited notifications go to this mask (stock: BLE only). */

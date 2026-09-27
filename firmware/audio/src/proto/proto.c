@@ -587,9 +587,12 @@ static void dispatch(uint8_t src, uint8_t fn, const uint8_t *p, uint32_t n)
             proto_flash_write(RHYTHM_FLASH, rhythm, 6);
         }
         break;
-    case 0xC1: case 0xC4: {           /* enter the vendor updater */
-        uint8_t z = 0, one = 1;
-        proto_flash_write(UPDATE_FLAG_FLASH, &z, 1);
+    case 0xC1: case 0xC4: {           /* "enter the updater" */
+        /* The stock writes 0x00 to the vendor bootloader's flag at
+         * F:0x86000 here. We never touch that byte: the vendor bootloader
+         * gates the A+D update mode on it, and A+D is the last-resort
+         * recovery. Our firmware updates through its own USB recovery. */
+        uint8_t one = 1;
         send(PROTO_USB, 0xC2, &one, 1);
         proto_hook_bootloader();
         break;

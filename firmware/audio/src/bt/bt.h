@@ -9,6 +9,7 @@ void bt_init(void);
 void bt_task(uint32_t now_ms);
 int bt_send(const uint8_t *data, size_t n);     /* non-blocking; -1 while busy/full */
 int bt_at(const char *cmd);                     /* sends cmd + "\r\n" */
+int bt_queue(const uint8_t *data, size_t n);    /* app frames, sent in 70-byte chunks */
 void bt_status(void);                           /* console dump */
 /* Received bytes that are not AT replies go here (app protocol). Weak: the
  * protocol layer overrides it. */

@@ -254,6 +254,9 @@ static uint32_t sector_buf[SECTOR / 4];
 int flash_store(uint32_t offset, const void *data, uint32_t len)
 {
     uint32_t sector = offset & ~(SECTOR - 1u);
+    /* Never the vendor bootloader's update-flag sector (F:0x86000): the
+     * A+D recovery depends on it. */
+    if (sector == 0x00086000u) return -1;
     if (offset < STORE_BASE || offset + len > STORE_LIMIT || len == 0u ||
         offset + len > sector + SECTOR || active) {
         return -1;

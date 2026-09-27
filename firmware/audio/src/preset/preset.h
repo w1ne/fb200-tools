@@ -12,6 +12,8 @@
 #define PRESET_SIZE 0x100u
 #define SETTINGS_FLASH 0x00080000u
 #define SETTINGS_SIZE 0x31u
+#define RHYTHM_FLASH 0x00081000u     /* on, ?, rhythm, level, bpm u16 */
+#define RHYTHM_SIZE 6u
 
 /* Field offsets inside a preset record. */
 enum {
@@ -49,4 +51,5 @@ void preset_read(unsigned index, preset_t *out);         /* from flash */
 int preset_write(unsigned index, const preset_t *p);      /* 0 on success */
 void settings_read(settings_t *out);
 int settings_write(const settings_t *s);
+void rhythm_settings_read(uint8_t out[RHYTHM_SIZE]);
 #endif

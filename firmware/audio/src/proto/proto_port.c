@@ -34,3 +34,42 @@ void proto_battery(uint8_t *percent, uint8_t *charging)
     *percent = (uint8_t)(s->level * 25u);   /* stock: level 0..4 x 25 */
     *charging = s->charging;
 }
+
+/* ---- transports and actions on the target ---- */
+#include "bt/bt.h"
+#include "debug/recovery.h"
+
+void bt_rx_frame_bytes(const uint8_t *data, size_t n) { proto_feed(PROTO_BLE, data, (uint32_t)n); }
+
+static void ble_send(const uint8_t *frame, uint32_t len) { (void)bt_queue(frame, len); }
+
+void proto_port_init(void)
+{
+    proto_set_sender(PROTO_BLE, ble_send);
+    proto_init();
+}
+
+/* 0xC1/0xC4: our updates go through the USB recovery, not the vendor DFU. */
+void proto_hook_bootloader(void) { recovery_request(); }
+
+void proto_hook_bt_enable(bool on)
+{
+    (void)bt_at(on ? "AT+B501" : "AT+B500");
+    (void)bt_at("AT+CZ");
+}
+
+void proto_hook_bt_name(const uint8_t name[20])
+{
+    size_t len = 0;
+    while (len < 20 && name[len]) len++;
+    char cmd[40];
+    memcpy(cmd, "AT+BD", 5);
+    memcpy(cmd + 5, name, len);
+    memcpy(cmd + 5 + len, " Audio", 7);
+    (void)bt_at(cmd);
+    memcpy(cmd, "AT+BM", 5);
+    memcpy(cmd + 5, name, len);
+    cmd[5 + len] = 0;
+    (void)bt_at(cmd);
+    (void)bt_at("AT+CZ");
+}

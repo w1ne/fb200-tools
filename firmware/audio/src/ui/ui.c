@@ -4,6 +4,7 @@
 #include "ui/display.h"
 #include "debug/cdc_log.h"
 #include "audio/engine.h"
+#include "proto/proto.h"
 
 enum { SW_A, SW_B, SW_C, SW_D };
 enum { M_GATE, M_COMP, M_AMP, M_CAB, M_MOD, M_REV, M_NONE };
@@ -29,6 +30,8 @@ static const knob_map_t kKnob[KNOB_COUNT] = {
 };
 static const uint8_t kModuleEnable[M_NONE] = {P_GATE_EN, P_COMP_EN, P_AMP_EN, P_CAB_EN,
                                               P_MOD_EN, P_REV_EN};
+/* app protocol module index (fn 0x80 + i): comp, gate, amp, cab, mod, delay, rev */
+static const uint8_t kProtoModule[M_NONE] = {1, 0, 2, 3, 4, 6};
 
 static preset_t edit;
 static settings_t settings;
@@ -68,6 +71,8 @@ static void show_preset(void)
 {
     if (rhythm_mode) { show_rhythm(); return; }
     char t[4] = {stomp ? 'L' : 'P', (char)('0' + bank), "AbCd"[slot], 0};
+    /* notifications for front-panel changes are sent by the callers: remote
+     * (app) changes are answered by the protocol itself */
     display_text(t);
 }
 
@@ -92,7 +97,8 @@ static void load(unsigned b, unsigned s)
 /* Stock rhythm settings at F:0x81000: on, -, rhythm, level, bpm (u16 LE). */
 static void rhythm_settings_load(void)
 {
-    const volatile uint8_t *r = (const volatile uint8_t *)(0x60000000u + 0x81000u);
+    uint8_t r[RHYTHM_SIZE];
+    rhythm_settings_read(r);
     drums_t *d = engine_drums();
     if (r[2] < DRUMS_RHYTHMS) drums_set_rhythm(d, r[2]);
     if (r[3] <= 100u) drums_set_level(d, r[3]);
@@ -126,6 +132,8 @@ static void toggle_module(int m)
     pset(&edit, off, pget(&edit, off) ? 0 : 1);
     if (m == M_AMP) pset(&edit, P_CAB_EN, pget(&edit, P_AMP_EN));   /* stock: C = amp + cab */
     revision++;
+    proto_notify_module(kProtoModule[m]);
+    if (m == M_AMP) proto_notify_module(kProtoModule[M_CAB]);
 }
 
 /* Rhythm mode buttons (our mapping; the stock in-mode roles are not known):
@@ -142,17 +150,24 @@ static void rhythm_single(int sw)
 
 static void action_single(int sw)
 {
-    if (tuner_mode) { tuner_mode = false; engine_set_tuner(false); show_preset(); return; }
+    if (tuner_mode) {
+        tuner_mode = false;
+        engine_set_tuner(false);
+        settings.b[S_TUNER] = 0;
+        proto_notify_settings();
+        show_preset();
+        return;
+    }
     if (rhythm_mode) { rhythm_single(sw); return; }
-    if (!stomp) { load(bank, (unsigned)sw); return; }
+    if (!stomp) { load(bank, (unsigned)sw); proto_notify_preset(); return; }
     static const int kStomp[4] = {M_REV, M_MOD, M_AMP, M_COMP};   /* A B C D */
     toggle_module(kStomp[sw]);
 }
 
 static void action_chord(uint8_t mask)
 {
-    if (mask == ((1u << SW_C) | (1u << SW_D))) load(bank + 1u, slot);
-    else if (mask == ((1u << SW_A) | (1u << SW_B))) load(bank + 9u, slot);
+    if (mask == ((1u << SW_C) | (1u << SW_D))) { load(bank + 1u, slot); proto_notify_preset(); }
+    else if (mask == ((1u << SW_A) | (1u << SW_B))) { load(bank + 9u, slot); proto_notify_preset(); }
     else if (mask == ((1u << SW_B) | (1u << SW_C))) {
         stomp = !stomp;
         settings.b[S_STOMP] = stomp;
@@ -177,15 +192,19 @@ static void footswitches(uint32_t now)
                 long_used = true;
                 tuner_mode = !tuner_mode;
                 engine_set_tuner(tuner_mode);
+                settings.b[S_TUNER] = tuner_mode;
+                proto_notify_settings();
                 if (tuner_mode) display_text(" - ");
                 else show_preset();
             } else if (sw == SW_B && (down_mask & (1u << SW_C))) {   /* C held + B long */
                 long_used = true;
                 rhythm_mode = !rhythm_mode;
+                settings.b[S_RHYTHM] = rhythm_mode;
+                proto_notify_rhythm_mode();
                 show_preset();
             } else if (peak_mask == (1u << SW_A) && !stomp && !rhythm_mode && !tuner_mode) {
                 long_used = true;
-                ui_save();
+                if (ui_save() == 0) proto_notify_saved();
                 overlay_until = now + 1000u;
             }
         } else if (ev == FSW_RELEASE) {
@@ -218,8 +237,8 @@ static void knobs(uint32_t now)
             caught[k] = true;
         }
         if (v == s) continue;
-        if (kKnob[k].field == 0xFF) { settings.b[S_MASTER] = (uint8_t)v; settings_dirty = true; }
-        else pset(&edit, kKnob[k].field, v);
+        if (kKnob[k].field == 0xFF) { settings.b[S_MASTER] = (uint8_t)v; settings_dirty = true; proto_notify_settings(); }
+        else { pset(&edit, kKnob[k].field, v); proto_notify_module(kProtoModule[kKnob[k].module]); }
         revision++;
         char t[5];
         t[0] = v >= 100 ? '1' : ' ';
