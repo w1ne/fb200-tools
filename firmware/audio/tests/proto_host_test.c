@@ -57,6 +57,7 @@ int preset_write(unsigned index, const preset_t *p)
 void settings_read(settings_t *out) { memcpy(out, flash + SETTINGS_FLASH, sizeof *out); }
 int settings_write(const settings_t *s) { memcpy(flash + SETTINGS_FLASH, s, sizeof *s); return 0; }
 void rhythm_settings_read(uint8_t out[RHYTHM_SIZE]) { memcpy(out, flash + RHYTHM_FLASH, RHYTHM_SIZE); }
+int rhythm_settings_write(const uint8_t in[RHYTHM_SIZE]) { memcpy(flash + RHYTHM_FLASH, in, RHYTHM_SIZE); return 0; }
 
 /* ---- proto platform hooks ---- */
 void proto_flash_read(uint32_t off, void *dst, uint32_t n) { memcpy(dst, flash + off, n); }

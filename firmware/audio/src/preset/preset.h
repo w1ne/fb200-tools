@@ -52,4 +52,5 @@ int preset_write(unsigned index, const preset_t *p);      /* 0 on success */
 void settings_read(settings_t *out);
 int settings_write(const settings_t *s);
 void rhythm_settings_read(uint8_t out[RHYTHM_SIZE]);
+int rhythm_settings_write(const uint8_t in[RHYTHM_SIZE]);
 #endif

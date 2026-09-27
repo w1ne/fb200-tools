@@ -30,3 +30,8 @@ void rhythm_settings_read(uint8_t out[RHYTHM_SIZE])
 {
     memcpy(out, (const void *)(FLASH_AHB + RHYTHM_FLASH), RHYTHM_SIZE);
 }
+
+int rhythm_settings_write(const uint8_t in[RHYTHM_SIZE])
+{
+    return flash_store(RHYTHM_FLASH, in, RHYTHM_SIZE);
+}

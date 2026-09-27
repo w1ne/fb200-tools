@@ -57,6 +57,8 @@ static uint32_t overlay_until, revision, settings_dirty_ms;
 static bool settings_dirty;
 static bool ui_log;
 static bool tuner_mode, rhythm_mode;
+static bool rhythm_dirty;
+static uint32_t rhythm_dirty_ms;
 static uint32_t s_now;
 
 void ui_set_log(bool on) { ui_log = on; }
@@ -159,6 +161,8 @@ static void rhythm_single(int sw)
     else if (sw == SW_B) drums_set_rhythm(d, (d->rhythm + DRUMS_RHYTHMS - 1u) % DRUMS_RHYTHMS);
     else if (sw == SW_C) drums_set_rhythm(d, (d->rhythm + 1u) % DRUMS_RHYTHMS);
     else drums_tap(d, s_now);
+    rhythm_dirty = true;
+    rhythm_dirty_ms = s_now;
     show_rhythm();
 }
 
@@ -245,7 +249,7 @@ static uint32_t name_until;
 static void show_value(int k, uint16_t v, bool picked)
 {
     char t[5];
-    t[0] = v >= 100 ? '1' : ' ';
+    t[0] = v >= 100 ? (char)('0' + (v / 100u) % 10u) : ' ';
     t[1] = v >= 10 ? (char)('0' + (v / 10u) % 10u) : ' ';
     t[2] = (char)('0' + v % 10u);
     t[3] = picked ? 0 : '.';
@@ -261,6 +265,25 @@ static void knobs(uint32_t now)
         uint16_t v = knob_units(k), s = stored(k);
         if (ui_log) log_printf("knob k%d = %u (raw %u, stored %u%s)\r\n", k, v,
                                (unsigned)knob_value(k), s, caught[k] ? "" : ", not caught");
+        if (rhythm_mode && (k == 14 || k == 8)) {
+            /* rhythm mode (better than stock, which needs the app): LEVEL =
+             * drum level 0..100, RATE = tempo 40..260 BPM, acting at once */
+            drums_t *d = engine_drums();
+            uint16_t shown;
+            const char *name;
+            if (k == 14) { drums_set_level(d, v); shown = d->level; name = "dLE"; }
+            else {
+                drums_set_tempo(d, DRUMS_BPM_MIN + v * (DRUMS_BPM_MAX - DRUMS_BPM_MIN) / 100u);
+                shown = d->bpm;
+                name = "bPn";
+            }
+            rhythm_dirty = true;
+            rhythm_dirty_ms = now;
+            if (k != shown_knob) { shown_knob = k; name_until = now + NAME_MS; display_text(name); }
+            else if ((int32_t)(now - name_until) >= 0) show_value(k, shown, true);
+            overlay_until = now + 1500u;
+            continue;
+        }
         if (!caught[k]) {
             /* pickup: act only once the knob reaches the stored value
              * (+-2 % on level knobs; exact on selectors, where a tolerance
@@ -286,7 +309,12 @@ static void knobs(uint32_t now)
     /* name shown and the knob stopped: switch to its value */
     if (shown_knob >= 0 && name_until && (int32_t)(now - name_until) >= 0) {
         name_until = 0;
-        show_value(shown_knob, knob_units(shown_knob), caught[shown_knob]);
+        if (rhythm_mode && (shown_knob == 14 || shown_knob == 8)) {
+            drums_t *d = engine_drums();
+            show_value(shown_knob, shown_knob == 14 ? d->level : d->bpm, true);
+        } else {
+            show_value(shown_knob, knob_units(shown_knob), caught[shown_knob]);
+        }
     }
 }
 
@@ -329,6 +357,18 @@ void ui_task(uint32_t now_ms)
         overlay_until = 0;
         shown_knob = -1;
         show_preset();
+    }
+    if (rhythm_dirty && now_ms - rhythm_dirty_ms > 3000u) {
+        uint8_t r[RHYTHM_SIZE];
+        drums_t *d = engine_drums();
+        rhythm_settings_read(r);
+        r[2] = d->rhythm;
+        r[3] = d->level;
+        r[4] = (uint8_t)d->bpm;
+        r[5] = (uint8_t)(d->bpm >> 8);
+        (void)rhythm_settings_write(r);
+        rhythm_dirty = false;
+        proto_notify_rhythm();
     }
     /* settings are few and rarely change: persist 3 s after the first
      * unsaved change (the stock saves them on power fail) */
