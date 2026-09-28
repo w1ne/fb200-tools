@@ -216,7 +216,7 @@ static void print_dec(const char *pre, float x, int decimals, int plus)
 static void cmd_eq(int argc, char **argv)
 {
     eq_t *e = engine_eq();
-    int ok = 1, ok2 = 1, ok3 = 1;
+    int ok = 1, ok2 = 1, ok3 = 1, ok4 = 1;
     if (argc > 1 && (streq(argv[1], "on") || streq(argv[1], "off"))) {
         eq_set_on(e, streq(argv[1], "on"));
     } else if (argc > 2 && (streq(argv[1], "hpf") || streq(argv[1], "lpf"))) {
@@ -226,8 +226,8 @@ static void cmd_eq(int argc, char **argv)
     } else if (argc > 3) {
         uint32_t b = parse_num(argv[1], &ok);
         float hz = parse_dec(argv[2], &ok2), g = parse_dec(argv[3], &ok3), q = EQ_Q_DEF;
-        if (argc > 4) q = parse_dec(argv[4], &ok);
-        ok = ok && ok2 && ok3 && b >= 1u && b <= EQ_BANDS;
+        if (argc > 4) q = parse_dec(argv[4], &ok4);
+        ok = ok && ok2 && ok3 && ok4 && b >= 1u && b <= EQ_BANDS;
         if (ok) eq_set_band(e, b - 1u, hz, g, q);
     } else if (argc > 1) {
         ok = 0;
