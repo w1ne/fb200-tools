@@ -8,9 +8,11 @@ checked against each other."""
 
 from __future__ import annotations
 
+import functools
 import shutil
 import struct
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -20,7 +22,6 @@ from fb200.protocol import crc16, iter_reports, pack_frame
 
 ROOT = Path(__file__).resolve().parents[1]
 FW = ROOT / "firmware" / "audio"
-OUT = FW / "build" / "proto_host_test"
 
 pytestmark = pytest.mark.skipif(shutil.which("cc") is None, reason="host C compiler not installed")
 
@@ -28,18 +29,24 @@ PRESET_FLASH = 0x71000
 SETTINGS_FLASH = 0x80000
 
 
-@pytest.fixture(scope="module")
-def harness_bin() -> Path:
-    OUT.parent.mkdir(parents=True, exist_ok=True)
+@functools.cache
+def build() -> Path:
+    """Once per process, in its own dir: parallel workers (pytest -n) do not collide."""
+    exe = Path(tempfile.mkdtemp(prefix="proto_host_")) / "proto_host_test"
     subprocess.run(
         ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-Wno-missing-field-initializers",
          "-I", str(FW / "src"), str(FW / "tests" / "proto_host_test.c"),
          str(FW / "src" / "proto" / "proto.c"), str(FW / "src" / "ui" / "ui.c"),
          str(FW / "src" / "ui" / "lightbar.c"),
-         "-o", str(OUT)],
+         "-o", str(exe)],
         check=True,
     )
-    return OUT
+    return exe
+
+
+@pytest.fixture(scope="module")
+def harness_bin() -> Path:
+    return build()
 
 
 class Harness:
