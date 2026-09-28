@@ -219,6 +219,28 @@ def test_rename_preset(h):
     assert out[1][2][0] == 3 and out[1][2][1:8] == b"Renamed"
 
 
+def test_app_edits_keep_our_eq_bytes(h):
+    """Our EQ lives at P+0xc4..0xdd (preset.h P_EQ_MARK). No app edit of a
+    module (0x80..0x86, every field at its maximum, type changes that load
+    defaults), of the module order (0xA0) or of the name (0x99) touches it,
+    so a saved EQ survives the app. Firmware-side: the stock handlers write
+    the same ranges (PROTOCOL.md 5.3)."""
+    from test_eq_preset import eq_record
+    rec = eq_record()
+    p = bytearray(h.flash(PRESET_FLASH + 4 * 0x200, 256))
+    p[0xC4:0xC4 + len(rec)] = rec
+    h.send(0x97, bytes([4]) + bytes(p))
+    for fn, words in ((0x80, 6), (0x81, 3), (0x82, 8), (0x83, 6), (0x84, 7), (0x85, 5), (0x86, 6)):
+        h.send(fn, struct.pack(f"<{words}H", *([0xFFFF] * words)))
+        h.send(fn, struct.pack(f"<{words}H", 1, 2, *([7] * (words - 2))))
+    h.send(0xA0, bytes(range(7)))
+    h.send(0x99, bytes([4]) + b"EQ kept".ljust(20, b"\0"))
+    e = h.edit()
+    assert e[0xC4:0xC4 + len(rec)] == rec
+    assert e[0xDE:] == bytes(0x100 - 0xDE)
+    assert h.flash(PRESET_FLASH + 4 * 0x200 + 0xC4, len(rec)) == rec
+
+
 def test_module_writes_clamps_and_defaults(h):
     h.send(0x98, bytes([0]))
     e = h.edit()

@@ -83,6 +83,14 @@ void eq_set_hpf(eq_t *e, float hz);
 void eq_set_lpf(eq_t *e, float hz);
 /* band 0..EQ_BANDS-1; returns -1 for a bad band */
 int eq_set_band(eq_t *e, unsigned band, float hz, float gain_db, float q);
+/* The settings as bytes (the preset, preset.h P_EQ_DATA), EQ_REC bytes:
+ *   [0] on, [1] HPF Hz (0 = off), [2..3] LPF Hz u16 LE (0 = off),
+ *   then per band [4 + 4 b]: Hz u16 LE, gain s8 in 1/8 dB, Q u8 x 50.
+ * eq_load clamps like the setters and glides like them; NULL = off with
+ * the default settings (eq_init). eq_save rounds to that grid. */
+#define EQ_REC (4 + 4 * EQ_BANDS)
+void eq_load(eq_t *e, const uint8_t *rec);
+void eq_save(const eq_t *e, uint8_t rec[EQ_REC]);
 /* in place, any n (the glide steps once per call) */
 void eq_process(eq_t *e, float *x, unsigned n);
 
