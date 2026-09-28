@@ -8,24 +8,32 @@
  *   out = x + mix * y                     (the dry signal stays at unity)
  *
  * Knobs 0..100 like the stock modules: fb (x 0.95 max), mix (x 1.0 max).
- * time in ms, 20..1000. lowcut 0 = off, else a 12 dB/oct high-pass at
+ * time in ms, 20..DELAY_MS_MAX. lowcut 0 = off, else a 12 dB/oct high-pass at
  * 20 * 25^(k/100) Hz (20..500 Hz; 63 = 150 Hz). tone 100 = off, else a
  * 6 dB/oct low-pass at 1000 * 10^(k/100) Hz (1..10 kHz).
  *
  * The line is int16 (x 16384: +-2.0 full scale, truncated toward zero, so a
- * tail always dies out to exact zeros): 1 s at 48 kHz = 96 kB. That does not
- * fit in DTCM: the caller gives the line (the engine's is in OCRAM, linker.ld
- * .ocram); delay_t itself (~110 B) stays in DTCM. */
+ * tail always dies out to exact zeros): 2 B per sample, 88 kB for 1 s at
+ * 44.1 kHz. It does not fit in DTCM: the caller gives the line (the
+ * engine's is in OCRAM, linker.ld .ocram); delay_t itself (~110 B) stays in
+ * DTCM.
+ *
+ * DELAY_MS_MAX is set by RAM: OCRAM is 32 kB (linker.ld), shared with the
+ * engine's user IR staging (2 kB) and EQ (508 B), which leaves 342 ms. The
+ * designed range was 1000 ms (v0.8.0 declared a 96 kB line in OCRAM that the
+ * pedal does not have). Raise it when more RAM is found; the link fails if
+ * the line does not fit. A preset keeps its stored time (format unchanged)
+ * and plays it clamped to DELAY_MS_MAX. */
 #include <stdint.h>
 #include "dsp.h"
 
-#define DELAY_FS_MAX 48000
-#define DELAY_MS_MIN 20u
-#define DELAY_MS_MAX 1000u
+#define DELAY_FS_MAX 44100u      /* = AUDIO_FS (audio_config.h) */
+#define DELAY_MS_MIN 20
+#define DELAY_MS_MAX 342          /* RAM-bound, see above (no suffix: printed with STR) */
 #define DELAY_LEN (DELAY_FS_MAX * DELAY_MS_MAX / 1000u + 4u)   /* samples */
 #define DELAY_SCALE 16384.0f
 /* settings for a preset that never had our delay (console `delay on`) */
-#define DELAY_DEF_MS 350u
+#define DELAY_DEF_MS 300u        /* <= DELAY_MS_MAX */
 #define DELAY_DEF_FB 30u
 #define DELAY_DEF_MIX 35u
 #define DELAY_DEF_LOWCUT 63u      /* 150 Hz */
@@ -48,7 +56,7 @@ typedef struct {
 /* fs <= DELAY_FS_MAX; line = int16_t[DELAY_LEN], cleared here */
 void delay_init(delay_t *dl, float fs, int16_t *line);
 void delay_clear(delay_t *dl);            /* silence the line and filters, snap the knobs */
-/* time in ms (clamped to 20..1000), knobs 0..100 (see above) */
+/* time in ms (clamped to DELAY_MS_MIN..DELAY_MS_MAX), knobs 0..100 (see above) */
 void delay_set_params(delay_t *dl, unsigned time_ms, unsigned fb, unsigned mix, unsigned lowcut,
                       unsigned tone);
 /* in place; n <= DSP_BLOCK (the filter states are flushed once per call) */

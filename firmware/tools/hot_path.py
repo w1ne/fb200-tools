@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Hot-path check for the FB200 app: nothing the audio path can reach runs
-from OCRAM (docs/FIRMWARE_BRINGUP.md, "Hot and cold code").
+outside ITCM (docs/FIRMWARE_BRINGUP.md, "Hot and cold code").
+
+Today all app code is in ITCM, so the check passes trivially; it is the
+tool for moving cold code out of ITCM (e.g. to flash XIP). Such a build
+marks its cold const data with __cold_start__/__cold_end__ (linker.ld).
 
     hot_path.py build/fb200-app.elf [--cross arm-none-eabi-]
 
@@ -14,13 +18,13 @@ Hot roots:
     drivers call them from their ISRs.
 From the roots, direct calls and tail calls (bl/b to another function) are
 followed, through linker veneers. Every reachable function must be in ITCM,
-and none may load the address of cold const data (.ocramtext).
+and none may load the address of cold const data (__cold_start__..).
 Function pointers kept in data tables (console commands, usbd's driver
 table) are not followed: those tables are cold, except usbd's audio entries
 (the audiod_* root above).
 
 Exit status 1 and a list of the offending call chains if a hot function is
-in OCRAM.
+outside ITCM.
 """
 
 from __future__ import annotations
@@ -31,7 +35,6 @@ import subprocess
 from pathlib import Path
 
 ITCM = range(0x20000)
-OCRAM = range(0x20200000, 0x20280000)
 HOT_ENTRY = ("engine_task", "usb_audio_task")
 HOT_PATTERN = re.compile(r"^audiod_")
 
@@ -93,7 +96,7 @@ class Image:
             self.calls.setdefault(v, set()).add(tgt)
         self.vectors = self._vectors(elf, cross)
         syms = {parts[-1]: int(parts[0], 16) for parts in map(str.split, nm.splitlines())}
-        self.cold = range(syms.get("__ocramtext_start__", 0), syms.get("__ocramtext_end__", 0))
+        self.cold = range(syms.get("__cold_start__", 0), syms.get("__cold_end__", 0))
 
     def owner(self, addr: int) -> int | None:
         if addr in self.funcs:
@@ -141,9 +144,12 @@ def reachable(img: Image, roots: dict[int, str]) -> dict[int, int | None]:
     return parent
 
 
-def check(elf: Path, cross: str = "arm-none-eabi-") -> list[str]:
-    """Returns one line per hot function outside ITCM (empty = pass)."""
+def check(elf: Path, cross: str = "arm-none-eabi-",
+          pretend_cold: frozenset[str] = frozenset()) -> list[str]:
+    """Returns one line per hot function outside ITCM (empty = pass).
+    pretend_cold: function names to treat as outside ITCM (negative control)."""
     img = Image(elf, cross)
+    cold_funcs = {a for a, n in img.funcs.items() if n in pretend_cold}
     roots = hot_roots(img)
     for n in HOT_ENTRY:
         if n not in img.funcs.values():
@@ -151,7 +157,7 @@ def check(elf: Path, cross: str = "arm-none-eabi-") -> list[str]:
     parent = reachable(img, roots)
     bad = []
     for f in sorted(parent):
-        if f in ITCM or "veneer" in img.name(f):
+        if (f in ITCM and f not in cold_funcs) or "veneer" in img.name(f):
             continue
         chain, g, root = [], f, f
         while g is not None:
@@ -159,7 +165,7 @@ def check(elf: Path, cross: str = "arm-none-eabi-") -> list[str]:
             root, g = g, parent[g]
         bad.append(f"{img.name(f)} @ {f:#010x}: " + " <- ".join(chain) + f" ({roots[root]})")
     # Hot code must not read cold const data either (strings, tables of a
-    # COLD_SRC file): a literal-pool address into .ocramtext that is not a
+    # cold file): a literal-pool address into __cold_start__.. that is not a
     # function (those are callbacks, checked above).
     for f in sorted(parent):
         for w in sorted(img.words.get(f, ())):

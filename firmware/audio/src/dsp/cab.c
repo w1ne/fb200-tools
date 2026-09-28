@@ -10,7 +10,12 @@ void cab_init_long(cab_t *c, conv2_tail_t *tail)
     c->scale = 1.0f;
 }
 
-void cab_init(cab_t *c) { cab_init_long(c, NULL); }
+void cab_init(cab_t *c)
+{
+    memset(c, 0, sizeof *c);
+    (void)conv2_init_head(&c->conv);         /* unit impulse; no 512-point FFT linked */
+    c->scale = 1.0f;
+}
 
 int cab_set_ir_len(cab_t *c, const float *ir, unsigned taps, float gain)
 {

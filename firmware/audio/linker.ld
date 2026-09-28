@@ -12,34 +12,22 @@ MEMORY
   ITCM   (rwx) : ORIGIN = 0x00000000, LENGTH = 0x20000
   FLASH  (rx)  : ORIGIN = 0x60010000, LENGTH = 0x31000
   DTCM   (rw)  : ORIGIN = 0x20018B44, LENGTH = 0x358A4
-  /* OCRAM2 (512 kB, 0x20200000..0x2027FFFF). The vendor loader unpacks the
-   * stock's 0x5AA0-byte OCRAM data to 0x20200000 at boot (its load table
-   * entry 3, docs/FIRMWARE_BRINGUP.md); nothing of ours reads it. We start
-   * above it. Not kept over a warm reset (recovery.c): NOLOAD, code clears
-   * what it uses (delay_init); .ocramtext and .ocramdata are copied at
-   * every boot. */
-  OCRAM  (rwx) : ORIGIN = 0x20210000, LENGTH = 0x70000
+  /* OCRAM: 32 kB, 0x20200000..0x20207FFF, and nothing above. The chip is an
+   * i.MX RT1052 (512 kB FlexRAM); stage2_main sets IOMUXC_GPR17 = 0xFFAAAAA9
+   * as the stock does: 4 banks ITCM (128 kB), 11 banks DTCM (352 kB), 1 bank
+   * OCRAM. Measured on the pedal (docs/FIRMWARE_BRINGUP.md, "Memory map"):
+   * at 0x20208000.. data writes are dropped and reads return 0, with no
+   * fault. The vendor loader unpacks the stock's 0x5AA0-byte OCRAM data to
+   * 0x20200000 at boot (its load table entry 3); nothing of ours reads it,
+   * so the whole bank is ours. Not kept over a warm reset (recovery.c):
+   * .ocram is NOLOAD and code clears what it uses (delay_init); .ocramdata
+   * is copied at every boot. What goes here and its sizes: engine.c
+   * (ENGINE_IR_TAPS) and dsp/delay.h (DELAY_MS_MAX). */
+  OCRAM  (rw)  : ORIGIN = 0x20200000, LENGTH = 0x8000
 }
 
 SECTIONS
 {
-  /* App only: cold code, run from OCRAM (docs/FIRMWARE_BRINGUP.md, "Hot and
-   * cold code"). The input list is COLD_SRC in the Makefile, generated into
-   * cold.ld (empty for recovery). Code and const data of those files, loaded
-   * from the slot data blob (F:0x41000, see .ocramdata below) and copied by
-   * stage2_main, which also makes it visible to instruction fetches. First in
-   * SECTIONS: the first matching pattern wins, so .blob's *(.text*) does not
-   * take these files. Calls between ITCM and OCRAM go through linker veneers
-   * (out of BL range). */
-  .ocramtext : AT(0x60041000) {
-    . = ALIGN(32);
-    __ocramtext_start__ = .;
-    INCLUDE cold.ld
-    . = ALIGN(32);
-    __ocramtext_end__ = .;
-  } > OCRAM
-  __ocramtext_load__ = LOADADDR(.ocramtext);
-
   .vectors 0x0 : { KEEP(*(.vectors)) } > ITCM AT> FLASH
 
   .blob 0x400 : AT(0x600107d4) {
@@ -66,11 +54,12 @@ SECTIONS
    * audio during flash writes. Load image in flash right after the app
    * slot's ITCM image (F:0x41000, below the stock data at 0x61000;
    * src/dsp/stock_data.h), one blob that the app slot header carries with
-   * its length and CRC (recovery.h): .ocramtext, .ocramdata, .dtcmdata.
+   * its length and CRC (recovery.h): .ocramdata, then .dtcmdata.
    * .ocramdata: the 512-point rfft tables of the cab's long-IR tail
-   * (dsp/conv2.c, ~4.9 kB). DTCM and ITCM have no room for them; the tail's
-   * own buffers are in OCRAM too. Listed first: first match wins. */
-  .ocramdata : AT(LOADADDR(.ocramtext) + SIZEOF(.ocramtext)) {
+   * (dsp/conv2.c, ~4.9 kB). DTCM and ITCM have no room for them. Empty
+   * while long IRs are off (engine.c ENGINE_IR_TAPS): then nothing links
+   * them. Listed first: first match wins. */
+  .ocramdata : AT(0x60041000) {
     . = ALIGN(4);
     __ocramdata_start__ = .;
     *CommonTables.c.o(.rodata.twiddleCoef_256 .rodata.twiddleCoef_rfft_512
@@ -112,6 +101,11 @@ SECTIONS
   } > OCRAM
 
   _estack = 0x20058000;
+
+  /* The region length above already stops a link that overflows OCRAM;
+   * this says why, should the region ever be widened by mistake. */
+  ASSERT(__ocram_end__ <= 0x20208000 && __ocramdata_end__ <= 0x20208000,
+         "OCRAM is 32 kB (0x20200000..0x20207FFF): nothing exists above it")
 
   /DISCARD/ : { *(.ARM.exidx*) *(.ARM.extab*) *(.comment) }
 }
