@@ -34,6 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Code, Claude Desktop) drives the pedal over USB. Tools for status, the console, effect
   blocks, delay, drums, tuner, CPU profile, crash dump, user IRs and an audio test
   (test signal in, USB capture out: RMS, peak, THD, octave-band response).
+- **LabWired stock first-boot gate** (`labwired/stock-first-boot.yaml`, long:
+  about 30 min of CPU time). The unmodified vendor firmware boots from a blank
+  flash, does its factory reset (sector erase and page program of F:0x82000
+  and F:0xB0000, magics `FB200` and `B01`) and sends the Bluetooth AT
+  sequence on LPUART5 (`AT+TM` .. `AT+B401`) at about 11 s of device time.
+  See `docs/LABWIRED.md`.
 
 ### Changed
 

@@ -16,7 +16,8 @@ has no FB200 special cases.
 | `labwired/chip/peripherals/*.yaml` | register files ingested from the NXP SVD |
 | `labwired/system.yaml` | the FB200 board: ADC inputs, FlexIO2 clock, footswitches, UART |
 | `labwired/smoke.yaml` | gate for the open smoke firmware |
-| `labwired/stock-boot.yaml` | gate for the unmodified vendor firmware |
+| `labwired/stock-boot.yaml` | gate for the unmodified vendor firmware, boot to USB (short) |
+| `labwired/stock-first-boot.yaml` | gate for the vendor firmware from a blank flash: factory reset and Bluetooth AT sequence (long: about 30 min of CPU time) |
 | `firmware/labwired-smoke/` | the open smoke firmware (bare registers, no SDK) |
 | `tools/labwired_elf.py` | puts raw blobs into one ARM ELF, one PT_LOAD per blob |
 | `tools/labwired_stock.py` | builds `build/labwired/stock.elf` from your `.mr` |
@@ -65,6 +66,7 @@ The script reads the `.mr` with `fb200.firmware.MrFile` and writes
 ```bash
 labwired test --script labwired/smoke.yaml
 labwired test --script labwired/stock-boot.yaml
+labwired test --script labwired/stock-first-boot.yaml   # long, see 5
 ```
 
 Expected result:
@@ -72,6 +74,7 @@ Expected result:
 ```
 PASS  4/4 checks · smoke · 2000000 steps · 0.27s
 PASS  24/24 checks · stock-boot · 90000000 steps · 15.26s
+PASS  11/11 checks · stock-first-boot · 6800000000 steps · 3669.59s
 ```
 
 The stock gate asserts `fidelity_clean: true`: an unmapped MMIO access or an
@@ -125,6 +128,54 @@ that every word is `0xC0` or `0xFC`.
 
 The board parts are not modelled yet: NAU88L21 codec, 74HC4051 knob
 multiplexers, 14-segment display, Bluetooth module.
+
+### Stock first-boot gate (long)
+
+The unmodified vendor firmware boots from a blank flash (all `0xFF`), as a
+board fresh from the factory, for 6.8 G cycles (11.3 s of device time at
+600 MHz). It needs about 29 min of CPU time (Apple M4) and 1.1 GB of
+memory at peak (most of it is the text of the FlexSPI `ip` log at the end
+of the run: about 12 M status-poll lines).
+On a busy Mac it took 61 min of wall time. It is not in the default loop.
+
+Timeline, measured on the twin (SysTick is 1 ms = 600 000 cycles):
+
+| Cycles | Device time | What the firmware does |
+|--------|-------------|------------------------|
+| 0 .. 0.09 G | 0 .. 0.15 s | boot to USB enumeration (the stock boot gate) |
+| 0.03 .. 1.40 G | 0.05 .. 2.3 s | factory reset: storage format through FlexSPI IP commands (sector erase `0x20`, quad page program `0x32`, status poll `0x05`) |
+| 1.40 .. 3.20 G | 2.3 .. 5.3 s | a fixed `delay_ms(3000)` before the main loop (ITCM `0x17774`; the wait loop is `0x1A01A..0x1A020`, it polls the SysTick ms counter) |
+| 3.20 .. 6.15 G | 5.3 .. 10.3 s | main loop; a software countdown starts the Bluetooth bring-up |
+| 6.15 .. 6.70 G | 10.3 .. 11.2 s | Bluetooth AT sequence on LPUART5, 150 ms apart |
+
+A run that stops before 6.2 G cycles sees no AT command. (A 3 G probe
+stopped inside the 3 s delay. That is why its `uart.log` was empty.)
+
+| What | Assertion |
+|------|-----------|
+| sector erase and page program of the settings sector F:0x82000 and of F:0xB0000 | `peripheral_log` FlexSPI `ip`: `cmd 0x20 addr 0x00082000`, `cmd 0x32 addr 0x00082000`, same for `0x000b0000` |
+| magic `FB200` at F:0x82000 and `B01` at F:0xB0000 | `memory_value` at `0x60082000`, `0x60082004`, `0x600B0000` (the NOR array, read through the FlexSPI AHB window) |
+| Bluetooth AT sequence `AT+TM`, `AT+BD..`, `AT+BM..`, `AT+CN00`, `AT+B501`, `AT+B401`, in this order | `uart_ordered`, `uart_contains "AT+B401"` |
+| no fidelity gap, run not stopped early | `fidelity_clean`, stop reason `max_cycles` |
+
+The Bluetooth module is not modelled: nothing answers the AT commands. The
+firmware does not wait for `OK`, so the sequence is complete anyway.
+
+Negative control: the same run with each new expected value changed (an
+erase and a program of F:0x10000 and F:0xB1000, `FB21`, `1`, `B02`,
+`AT+BD` before `AT+TM`, `AT+B402`) fails all nine of these checks
+(`FAIL 2/11`; only `fidelity_clean` and the stop reason pass).
+
+Notes on `result.json` for long runs:
+
+- `metrics.exceptions` counts only exceptions that end the run with an
+  error. It is not an interrupt count. It is 0 in a good run; SysTick, SAI1
+  and GPT1 interrupts are taken.
+- `cycles` in `result.json` is the sum of the instruction cost model
+  (for example 1 for MOV, 2 for BL). `max_cycles` and all device time
+  (SysTick, peripheral timers) use the machine clock, which is
+  `stop_reason_details.observed`. A `max_cycles: 3000000000` run reports
+  `cycles` of about 3.67 G.
 
 ## 6. SVD provenance
 
