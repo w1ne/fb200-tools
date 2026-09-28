@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Two-stage convolver for long IRs (M5, library only):** `dsp/conv2.c` runs
+  IRs up to 4096 taps with no added latency: the 512-tap head on the current
+  convolver, the rest in 256-sample partitions spread over the 8 blocks of each
+  frame. Host tests against a direct FIR. Not yet used by the cab.
 - **Better IR import** (host): `fb200 ir import` resamples with a Kaiser windowed
   sinc (aliasing below -60 dB; the linear resampler is gone) and takes
   `--channel`, `--trim`, `--taps N` (up to 4096, half-Hann fade-out),
