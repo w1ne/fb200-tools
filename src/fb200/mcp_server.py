@@ -25,7 +25,8 @@ INSTRUCTIONS = """\
 Tools for the FLAMMA FB200 bass pedal with the open firmware, on USB.
 Effect edits change the live edit buffer of the current preset; `save_preset`
 stores it. Chain: in -> gate -> comp -> amp -> cab -> mod -> delay -> reverb ->
-master -> USB capture / DAC. To hear a change, run `audio_test` (default: the
+master -> USB capture / DAC (USB playback: to the DAC, or with `usb in` into
+the chain input instead of the instrument - reamping). To hear a change, run `audio_test` (default: the
 firmware test signal into the chain input, captured over USB audio) before
 and after. Knob-type values are 0..100."""
 
@@ -33,6 +34,7 @@ and after. Knob-type values are 0..100."""
 FLASH_COMMANDS = ("fwbegin", "fwrec", "fwstock")
 ERROR_MARKERS = ("usage:", "unknown command", "bad ", "not allowed")
 CHAIN_SIGNALS = {"sine": "sine", "noise": "white", "impulse": "impulse"}
+USB_ROUTE_RE = re.compile(r"route=(out|in|mix)")
 
 
 def _num_pairs(text: str) -> dict[str, int]:
@@ -183,7 +185,9 @@ class PedalTools:
         Commands (see `help`):
         audio: usb | sai | codec | creg <reg> [val] | gain [db] | mute [on|off] |
           testgen off|sine|white|impulse [freq] (to the output) |
-          tin <same> (into the chain input, -20 dBFS) | meters on|off | cpu | prof
+          tin <same> (into the chain input, -20 dBFS) | meters on|off | cpu | prof |
+          usb out|in|mix (host playback: to the DAC, default | into the chain
+          input instead of the instrument, reamping | summed with the instrument)
         effects: preset [0-39] | save | delay [on|off] [time] [fb] [mix] [lowcut] [tone] |
           tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>] | stock
         ui: ui | uimon on|off | disp <text> | kled <0-15> on|off | power |
@@ -395,13 +399,17 @@ class PedalTools:
         source "chain" (default): the firmware test generator feeds the chain
         input (`tin`, -20 dBFS; sine, noise or impulse), so the capture holds
         every effect. source "usb": the host plays the signal (sine, sweep,
-        noise or a WAV at level_dbfs) to the pedal's USB audio. Note: the
-        firmware mixes USB playback into the analog output after the effects,
-        not into the capture, so "usb" hears the played signal only when the
-        firmware routes it into the chain."""
+        noise or a WAV at level_dbfs, e.g. a DI bass track) to the pedal's
+        USB audio; the tool sets `usb in` for the test (the playback replaces
+        the instrument at the chain input: reamping) and restores the routing
+        after, also on error. delay_ms (not for a sine): the round trip
+        host -> pedal -> host from the cross-correlation, to align the
+        capture with the source. The pedal part is its USB buffering: about
+        1-2 ms, at most 11 ms (the effects add no buffering); the rest is the host."""
         if not 0.2 <= seconds <= 30.0:
             raise InvalidArgumentError("seconds must be 0.2..30")
         audio = self.audio
+        delay = None
         with self.pedal.lock:
             if source == "chain":
                 if signal not in CHAIN_SIGNALS:
@@ -415,13 +423,25 @@ class PedalTools:
                 level = -20.0
             elif source == "usb":
                 x = audio.make_signal(signal, seconds, freq_hz, level_dbfs, wav_path)
-                rec = audio.play_record(x)
+                route = USB_ROUTE_RE.search(self.pedal.check("usb"))
+                if route is None:
+                    raise CommunicationError("this firmware cannot route USB playback into "
+                                             "the chain (`usb in`): update it")
+                self.pedal.check("usb in")
+                try:
+                    rec = audio.play_record(x)
+                finally:
+                    self.pedal.run(f"usb {route.group(1)}")
                 level = level_dbfs
                 if signal == "sine":        # skip the stream start
                     rec = rec[int(0.25 * audio.FS):]
+                else:
+                    delay = audio.delay_frames(x, rec[:, 0])
             else:
                 raise InvalidArgumentError("source must be 'chain' or 'usb'")
         result = {"source": source, "signal": signal, "seconds": seconds}
+        if delay is not None:
+            result["delay_ms"] = round(1000.0 * delay / audio.FS, 2)
         result.update(audio.analyze(rec, signal, audio.FS, freq_hz, seconds, level))
         if save_wav:
             from fb200.wav import write_wav

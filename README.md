@@ -124,7 +124,10 @@ its LED **blinks** and the display shows the value with a dot. The LED is off wh
 effect is off in the preset.
 
 **USB audio:** choose "FB200 Audio I/O" in your DAW. It records the processed sound
-plus drums, and plays computer audio through the pedal.
+plus drums, and plays computer audio through the pedal. For reamping, `fb200 console
+"usb in"` sends the computer audio through the effects instead of the instrument: play
+a DI track, record the processed result (`usb mix` adds it to the instrument, `usb out`
+is the default).
 
 ## Host tools
 
@@ -139,6 +142,7 @@ fb200 console [cmd ...]             # open-firmware USB console (interactive wit
 fb200 console "factory yes"         # factory reset: presets, settings, IR list
 fb200 console "delay on 350"        # bass delay: [on|off] [time] [fb] [mix] [lowcut] [tone]
 fb200 console prof                  # CPU cycles per chain stage
+fb200 console "usb in"              # reamping: computer playback into the effects (out: default)
 fb200 update app latest             # open-firmware USB update (or a file)
 fb200 update stock FB200.mr         # write the stock sound data (once)
 fb200 crash --elf fb200-app.elf     # read and symbolize the last crash dump
@@ -195,9 +199,9 @@ claude mcp add fb200 -- fb200 mcp
 | `audio_test` | play a test signal, capture the USB audio, return RMS, peak, THD (sine) or an octave-band response; can save a WAV |
 
 `audio_test` uses the firmware test generator (`tin`, into the chain input) by default,
-so the capture holds all effects. With `source="usb"` the host plays the signal. The
-firmware mixes USB playback into the analog output after the effects, not into the
-capture, so this mode hears the signal only if the firmware routes it into the chain.
+so the capture holds all effects. With `source="usb"` the host plays the signal (a
+sweep, noise or a DI track as a WAV) through the effects: the tool sets `usb in` for the
+test and restores the routing after, and returns the round-trip `delay_ms`.
 
 The tools do not flash firmware (use `fb200 update`). One lock serializes all access to
 the pedal. Edits change the live preset until `save_preset`.

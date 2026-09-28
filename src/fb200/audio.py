@@ -180,6 +180,15 @@ def latency_ms(play: np.ndarray, rec: np.ndarray, fs: int) -> float:
     return 1000.0 * lag / fs
 
 
+def delay_frames(play: np.ndarray, rec: np.ndarray) -> int:
+    """Lag of rec behind play in frames: the peak of their FFT cross-correlation
+    (for a broadband signal: sweep, noise, a WAV; a steady sine is ambiguous)."""
+    n = 1 << int(np.ceil(np.log2(len(play) + len(rec))))
+    corr = np.fft.irfft(np.fft.rfft(rec, n) * np.conj(np.fft.rfft(play, n)), n)
+    lag = int(np.argmax(np.abs(corr)))
+    return lag - n if lag > n // 2 else lag
+
+
 def analyze(rec: np.ndarray, kind: str, fs: int = FS, freq: float = 1000.0,
             seconds: float = 0.0, level_dbfs: float = -20.0) -> dict:
     """Levels per channel, plus THD (sine) or an octave-band response (sweep,
