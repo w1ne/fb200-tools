@@ -120,8 +120,8 @@ static int16_t s_dly_line[DELAY_LEN] __attribute__((section(".ocram")));
 static bool s_dly_en;
 /* Our bass EQ (docs/PARITY.md M4), after the cab. Not in the preset: off
  * after boot, set from the console. Off (or flat) = bypassed, bit-exact.
- * OCRAM (cached): 424 B more .bss push the 2 kB-aligned USB buffer
- * (_dcd_data) up by 2 kB and DTCM overflows. The EQ reads ~50 words of it
+ * OCRAM (cached): in .bss its 508 B push the 2 kB-aligned USB buffer
+ * (_dcd_data) up by 2 kB and DTCM overflows. The EQ touches ~70 words of it
  * per block. */
 static eq_t s_eq __attribute__((section(".ocram")));
 static bool s_amp_en, s_cab_en, s_gate_en, s_comp_en, s_mod_en, s_rev_en;

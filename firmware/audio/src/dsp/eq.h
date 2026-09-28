@@ -1,7 +1,7 @@
 #ifndef FB200_DSP_EQ_H
 #define FB200_DSP_EQ_H
 /* Bass EQ (our addition, the stock has none; docs/PARITY.md M4). Mono, in
- * place, after the cab and before MOD. 7 biquads in one CMSIS-DSP cascade:
+ * place, after the cab and before MOD. 7 biquads:
  *
  *   HPF 12 dB/oct 20..200 Hz (0 = off) -> 5 peaking bands -> LPF 12 dB/oct
  *   2..20 kHz (0 = off)
@@ -11,31 +11,34 @@
  * 0 dB, Q 1. The designs run in double (the M7 FPU has double) and are
  * rounded to float once.
  *
- * Settled: arm_biquad_cascade_df1_f32. Direct form 1, not the transposed
- * DF2 (df2T): the DF1 state is the signal itself (the last inputs and
- * outputs), so a coefficient change does not leave a state that belongs to
- * the old filter. Measured (tests/eq_host_test.c): an LPF glide from 20 to
- * 2 kHz puts -20 dB of clicks above 8 kHz with df2T, < -60 dB with DF1.
+ * Settled stages run arm_biquad_cascade_df1_f32 (one stage per call).
+ * Direct form 1, not the transposed DF2 (df2T): the DF1 state is the signal
+ * itself (the last inputs and outputs), so a coefficient change leaves no
+ * state that belongs to the old filter. In a model of this glide (a 200 Hz
+ * sine, LPF 2 -> 20 kHz), df2T put clicks above 8 kHz at -47 dB re the
+ * signal, DF1 at -83 dB.
  *
  * Changes glide: each stage moves its parameters to the new setting in a
  * straight line over EQ_RAMP_BLOCKS blocks (11.6 ms at 44.1 kHz) - frequency
- * and Q in octaves, gain in dB - with a new design every block of the glide
- * (only while it glides; the design runs in the audio path then, ~0.5k
- * cycles a stage). Inside the block the coefficients step every sample from
- * the old design to the new one (plain C, same DF1). A straight line between
- * two neighbouring designs is stable: the biquad stability triangle is
- * convex. (A straight line between the old and new coefficient sets is
- * stable too, but its middle is not a filter in between: a -15 dB notch
- * going from Q 0.3 to 4 made more clicks than a hard switch.)
+ * and Q in octaves, gain in dB - with a new design every block of the glide.
+ * Inside the block the coefficients step every sample from the old design to
+ * the new one (glide_stage: plain C, the same DF1). The design runs in the
+ * audio path, but only in the 16 blocks of a glide and only for the stages
+ * that move. A straight line between two neighbouring designs is stable:
+ * the biquad stability triangle is convex. (A straight line from the old to
+ * the new coefficients in one go is stable too, but its middle is not a
+ * filter in between: a -15 dB notch going from Q 0.3 to 4 clicked more than
+ * a hard switch.)
  *
- * Off states: a band at 0 dB is the identity (b = a). An HPF/LPF fades its
- * numerator to its denominator (b' = a + m (b - a), m 1 -> 0). `eq off`
- * glides every stage to that. When all stages are neutral and each stage's
- * output equals its input (to 1e-5), eq_process only notes the last two
- * input samples: the signal is bit-exact. Leaving the bypass seeds every
- * stage's history with them: no jump.
+ * Neutral: a band at 0 dB (b = a); an HPF/LPF with its numerator faded to
+ * its denominator (b' = a + m (b - a), m 1 -> 0). `eq off` glides every
+ * stage to neutral. A neutral stage whose output equals its input (to 1e-5)
+ * is skipped: it does not touch the signal and only keeps its history (the
+ * last two samples), so it can start again without a jump. Every stage
+ * skipped (off, or flat) = bit-exact. Skipping also keeps the float rounding
+ * noise of idle low-frequency stages (~ -75 dB each) out of the signal.
  *
- * RAM: sizeof(eq_t) = 588 B on the target (OCRAM, the engine's s_eq). */
+ * RAM: sizeof(eq_t) = 508 B on the target (OCRAM, the engine's s_eq). */
 #include <stdint.h>
 #include "arm_math.h"
 #include "dsp.h"
