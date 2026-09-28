@@ -48,7 +48,8 @@ def main() -> int:
 
     try:
         # The app's data blob carries its cold code (console included:
-        # linker.ld .ocramtext), so it is required and holds the commands.
+        # linker.ld .xiptext) and const tables, so it is required and holds
+        # the commands; stage2_main refuses a slot without it.
         data = part(args.app, "dtcmdata")
         images.require_update_commands("recovery", part(args.recovery, "blob"))
         images.require_update_commands("app", part(args.app, "blob") + data)

@@ -28,6 +28,14 @@ MEMORY
    * (DUMP_ADDR, recovery.c: 0x20018A00, survives a warm reset). */
   DTCM_LO (rw)  : ORIGIN = 0x20000000, LENGTH = 0x18A00
   DTCM    (rw)  : ORIGIN = 0x20018B44, LENGTH = 0x3F4BC
+  /* OCRAM: 32 kB, 0x20200000..0x20207FFF, and nothing above (the header).
+   * Measured on the pedal (docs/FIRMWARE_BRINGUP.md, "Memory map"): at
+   * 0x20208000.. data writes are dropped and reads return 0, with no fault.
+   * The stock's loader table unpacks 0x5AA0 bytes of stock data to
+   * 0x20200000 (entry 3); our images turn that entry into the .bss memset
+   * (src/fb200/images.py) and nothing of ours reads it: the bank is ours.
+   * Not kept over a warm reset (recovery.c): .ocram is NOLOAD and zeroed by
+   * stage2_main; .ocramdata is copied at every boot. */
   OCRAM   (rw)  : ORIGIN = 0x20200000, LENGTH = 0x8000
 }
 
@@ -157,6 +165,13 @@ SECTIONS
     . = ALIGN(4);
     __ocram_end__ = .;
   } > OCRAM
+
+  /* The region lengths above already stop a link that overflows; this says
+   * why, should a region ever be widened by mistake. */
+  ASSERT(__ocram_end__ <= 0x20208000 && __ocramdata_end__ <= 0x20208000,
+         "OCRAM is 32 kB (0x20200000..0x20207FFF): nothing exists above it")
+  ASSERT(__dtcm_lo_end__ <= 0x20018A00 && __stack_limit__ <= 0x20058000,
+         "DTCM is 0x20000000..0x20057FFF; the crash dump is at 0x20018A00")
 
   /DISCARD/ : { *(.ARM.exidx*) *(.ARM.extab*) *(.comment) }
 }

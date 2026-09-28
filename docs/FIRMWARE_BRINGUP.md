@@ -86,6 +86,69 @@ The stock loader keeps working on our image because the load table, the
 vendor boot region and entries 1-4 payloads are untouched; only the bytes the
 loader copies to ITCM 0x400 are ours.
 
+### Memory map (audio app)
+
+The chip is an **i.MX RT1052** (MIMXRT1052DVL6B), not an RT1062: 512 kB of
+FlexRAM, no separate OCRAM2. `stage2_main` sets the FlexRAM split as the stock
+stub does: `IOMUXC_GPR16 = 0x00200007`, `IOMUXC_GPR17 = 0xFFAAAAA9` (bank 0
+OCRAM, banks 1-11 DTCM, banks 12-15 ITCM). Measured on the pedal on
+2026-09-28 (`peek32`/`poke32` on the running app, D-cache lines evicted
+before each read):
+
+| Region | Address | Size |
+|---|---|---|
+| ITCM | `0x00000000..0x0001FFFF` | 128 kB (4 banks) |
+| DTCM | `0x20000000..0x20057FFF` | 352 kB (11 banks) |
+| OCRAM | `0x20200000..0x20207FFF` | 32 kB (1 bank) |
+| - | `0x20208000..` | none: data writes are dropped, reads return 0, no fault; an instruction fetch runs through zeros to `0x20280000` and bus-faults |
+
+The app's budget (`make layout` prints the symbols; the numbers change with
+every build):
+
+| Region | Range | Contents | Free |
+|---|---|---|---|
+| ITCM | `0x00000..0x00400` | vectors | - |
+| ITCM | `0x00400..0x13C4C` | hot code + flash write path (`.blob`) | - |
+| ITCM | `0x13C50..0x1F390` | reverb state `s_rev` (`.itcm_bss`) | 3.1 kB |
+| DTCM low | `0x20000000..0x20018000` | long-IR tail, 4096 taps (`.dtcm_lo`) | 2.5 kB |
+| DTCM | `0x20018A00..0x20018B44` | crash dump (survives a warm reset) | - |
+| DTCM | `0x20018B44..0x20040608` | CMSIS tables (`.dtcmdata`), `.bss` | - |
+| DTCM | `0x20040608..0x20055E98` | delay line, 1 s at 44.1 kHz (`.dtcm_hi`) | 0.4 kB |
+| DTCM | `0x20056000..0x20058000` | stack reserve 8 kB (measured high-water < 512 B) | ~7.5 kB |
+| OCRAM | `0x20200000..0x20207708` | rfft tables (`.ocramdata`), cab head `s_cab`, IR staging `s_ir` (4096 taps), EQ (`.ocram`) | 2.2 kB |
+| Flash | `0x60041000..0x6004B780` | cold code (`.xiptext`) | - |
+| Flash | `..0x6004E100` of `..0x60061000` | + table load images | 75.8 kB |
+
+- **OCRAM:** in the stock image the vendor loader unpacks 0x5AA0 bytes of
+  stock data to OCRAM `0x20200000` (load table entry 3). Our images do not:
+  the packer turns entries 1-3 into copies of the `.bss` memset
+  (`src/fb200/images.py`, [BOOTLOADER.md](BOOTLOADER.md) section 4), so all
+  32 kB are ours.
+- **Low DTCM** (`0x20000000..0x20018B44`) is ours for the same reason: no
+  stock data is loaded there. The vendor bootloader (F:0x2000) initializes
+  `0x20010000..0x20012F0C` at every boot (its load table), before recovery
+  runs; its DFU handshake slot 2 (`0x2001051C`) is in its own `.bss`, so no
+  app data can trigger DFU.
+- **Stack:** measured by comparing FlexRAM bank 11 (DTCM `0x20050000..`, the
+  bootloader's ITCM `0x0..`) with the bootloader's ITCM image in flash
+  (F:0x3038): only `0x20057E40..` differs.
+- The NOLOAD regions outside the copier's `.bss` memset (`.itcm_bss`,
+  `.dtcm_lo`, `.dtcm_hi`, `.ocram`) are zeroed by `stage2_main`.
+- Up to PR #13 our linker script declared `OCRAM 0x20210000, 512 kB` (the
+  RT1062 layout). Everything placed there did not exist: the delay line
+  (v0.8.0: the repeats never played), the user IR staging, the EQ state, the
+  long-IR tail and its FFT tables, and in PR #13 the cold code (the app
+  crashed at boot).
+- Guards: `linker.ld` (region lengths and `ASSERT`s),
+  `tests/test_audio_image.py::test_every_section_is_in_real_memory` (every
+  allocated section of both ELFs in the first table) and
+  `test_big_buffers_placement`, and the emulators
+  (`firmware/tools/boot_dry_run.py`, the stock emulators, the LabWired chip
+  model) map only these three windows, so an access outside fails the run.
+- The RAM-bound sizes are one define each: `ENGINE_IR_TAPS`
+  (`src/audio/engine.h`; 4096; 512 = long IRs off) and `DELAY_MS_MAX`
+  (`src/dsp/delay.h`; 1000 ms).
+
 ### Hot and cold code (audio app)
 
 The recovery image is loaded by the vendor loader: its ITCM payload has a
@@ -132,37 +195,6 @@ from flash (XIP):
   the I-cache on.
 - **Recovery** has no XIP code: it runs everything from ITCM.
 
-### Memory map
-
-What the pedal has (read on the pedal 2026-09-28): FlexRAM 512 kB,
-`IOMUXC_GPR17` = 0xFFAAAAA9 (4 banks ITCM, 11 banks DTCM, 1 bank OCRAM),
-`GPR16` = 0x00200007. Nothing answers at OCRAM 0x20208000 and above. The
-boot dry run (`firmware/tools/boot_dry_run.py`) maps exactly this.
-
-| Region | Range | Size | Contents | Free |
-|--------|-------|------|----------|------|
-| ITCM | 0x00000..0x00400 | 1 kB | vectors | - |
-| ITCM | 0x00400..0x13C44 | 78.1 kB | hot code + flash write path (`.blob`) | - |
-| ITCM | 0x13C48..0x1F388 | 45.8 kB | reverb state `s_rev` (`.itcm_bss`) | 3.1 kB |
-| DTCM low | 0x20000000..0x20018A00 | 98.5 kB | long-IR tail, 4096 taps (`.dtcm_lo`) | 2.5 kB |
-| DTCM | 0x20018A00..0x20018B44 | 324 B | crash dump (survives a warm reset) | - |
-| DTCM | 0x20018B44..0x20040608 | 158.7 kB | CMSIS tables, `.bss` | - |
-| DTCM | 0x20040608..0x20055E98 | 86.1 kB | delay line, 1 s at 44.1 kHz (`.dtcm_hi`) | 0.4 kB |
-| DTCM | 0x20056000..0x20058000 | 8 kB | stack (measured high-water < 512 B) | ~7.5 kB |
-| OCRAM | 0x20200000..0x20207708 | 29.8 kB | rfft tables, cab head `s_cab`, IR staging `s_ir`, EQ | 2.2 kB |
-| Flash | 0x60041000..0x6004B6C0 | 41.7 kB | cold code (`.xiptext`) | - |
-| Flash | ..0x60061000 | 128 kB total | + table load images 10.4 kB | 75.9 kB |
-
-Low DTCM (0x20000000..0x20018B44) is ours: in our images the vendor
-loader's table entries 1-3 are `.bss` memsets, so it loads no stock data
-there. The vendor bootloader (F:0x2000) initializes 0x20010000..0x20012F0C
-at every boot (its load table), before recovery runs; its DFU handshake
-slot 2 (0x2001051C) is in its own `.bss`, so no app data can trigger DFU.
-The stack is measured by comparing FlexRAM bank 11 (DTCM 0x20050000.., the
-bootloader's ITCM 0x0..) with the bootloader's ITCM image in flash
-(F:0x3038): only 0x20057E40.. differs.
-
-The numbers change with every build: `make layout` prints the symbols.
 ## 4. Why earlier attempts failed
 
 Before the contract was understood, images were built as plain flash-executable

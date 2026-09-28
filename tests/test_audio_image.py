@@ -82,12 +82,25 @@ def test_ram_map_is_the_pedals():
 
 
 def test_big_buffers_placement():
-    """The long-IR tail (4096 taps) in the low DTCM, the 1 s delay line in
-    the DTCM above .bss (docs/FIRMWARE_BRINGUP.md, "Memory map")."""
-    syms = elf_symbols()
+    """The budget (docs/FIRMWARE_BRINGUP.md, "Memory map"): the long-IR tail
+    for ENGINE_IR_TAPS in the low DTCM, the delay line for DELAY_MS_MAX at
+    44.1 kHz in the DTCM above .bss, the reverb in the ITCM above the code;
+    OCRAM holds the user IR staging, the cab, the EQ and nothing else."""
+    syms, sizes = elf_symbols(), elf_sizes()
+    engine_h = (FW / "src" / "audio" / "engine.h").read_text()
+    taps = int(re.search(r"#define ENGINE_IR_TAPS (\d+)", engine_h).group(1))
+    delay_h = (FW / "src" / "dsp" / "delay.h").read_text()
+    ms = int(re.search(r"#define DELAY_MS_MAX (\d+)", delay_h).group(1))
+    assert taps == 4096 and ms == 1000
     assert 0x20000000 <= syms["s_cab_tail"] < 0x20018A00
     assert syms["__dtcm_hi_start__"] <= syms["s_dly_line"] < syms["__dtcm_hi_end__"]
-    assert syms["__dtcm_hi_end__"] - syms["s_dly_line"] >= 44100 * 2   # 1 s, int16
+    assert sizes["s_dly_line"][1] == 2 * (44100 * ms // 1000 + 4)
+    assert syms["__itcm_bss_start__"] <= syms["s_rev"] < syms["__itcm_bss_end__"]
+    inside = {n: z for n, (a, z) in sizes.items() if 0x20200000 <= a < 0x20300000}
+    tables = {n for n in inside if syms["__ocramdata_start__"] <= sizes[n][0] < syms["__ocramdata_end__"]}
+    assert set(inside) - tables == {"s_ir", "s_eq", "s_cab"}, inside
+    assert inside["s_ir"] == taps * 4
+    assert "twiddleCoef_rfft_512" in tables
 
 
 def elf_symbols(variant: str = "app") -> dict[str, int]:
@@ -95,6 +108,15 @@ def elf_symbols(variant: str = "app") -> dict[str, int]:
     out = subprocess.run(["arm-none-eabi-nm", str(elf)], check=True, capture_output=True,
                          text=True).stdout
     return {n: int(a, 16) for a, _t, n in re.findall(r"^([0-9a-f]{8}) (\S) (\S+)$", out, re.MULTILINE)}
+
+
+def elf_sizes(variant: str = "app") -> dict[str, tuple[int, int]]:
+    """name -> (address, size) of every sized symbol."""
+    elf = fwbuild.build(FW, variant) / f"fb200-{variant}.elf"
+    out = subprocess.run(["arm-none-eabi-nm", "-S", str(elf)], check=True, capture_output=True,
+                         text=True).stdout
+    return {n: (int(a, 16), int(z, 16))
+            for a, z, n in re.findall(r"^([0-9a-f]{8}) ([0-9a-f]{8}) \S (\S+)$", out, re.MULTILINE)}
 
 
 ITCM = range(0x400, 0x1F000)
@@ -189,6 +211,55 @@ def test_bss_uses_the_stock_memset_region():
     assert syms["_estack"] == 0x20058000
 
 
+# The memory that exists on the pedal (i.MX RT1052, measured on hardware:
+# IOMUXC_GPR17 = 0xffaaaaa9, GPR16 = 0x00200007; docs/FIRMWARE_BRINGUP.md,
+# "Memory map"). Above OCRAM_END there is nothing: writes are dropped, reads
+# return 0, no fault. The ELF must not place anything there.
+REAL_MEMORY = {
+    "ITCM": range(0x00020000),                # 4 banks, 128 kB
+    "DTCM": range(0x20000000, 0x20058000),    # 11 banks, 352 kB
+    "OCRAM": range(0x20200000, 0x20208000),   # 1 bank, 32 kB
+    "flash": range(0x60000000, 0x60800000),   # FlexSPI XIP (load addresses)
+}
+
+
+def sections(elf: Path) -> list[tuple[str, int, int, int, list[str]]]:
+    """(name, size, vma, lma, flags) of every section, from objdump -h."""
+    out = subprocess.run(["arm-none-eabi-objdump", "-h", "-w", str(elf)], check=True,
+                         capture_output=True, text=True).stdout
+    rows = re.findall(r"^\s*\d+ (\S+)\s+([0-9a-f]{8})\s+([0-9a-f]{8})\s+([0-9a-f]{8})\s+"
+                      r"[0-9a-f]{8}\s+\S+\s+(.*)$", out, re.MULTILINE)
+    return [(n, int(s, 16), int(v, 16), int(lma, 16), [f.strip() for f in fl.split(",")])
+            for n, s, v, lma, fl in rows]
+
+
+def outside_real_memory(elf: Path) -> list[str]:
+    """Allocated sections (run address) and loaded sections (load address)
+    that do not lie inside one real memory region."""
+    def inside(start: int, size: int) -> bool:
+        return any(start in r and start + size <= r.stop for r in REAL_MEMORY.values())
+    bad = []
+    for name, size, vma, lma, flags in sections(elf):
+        if "ALLOC" not in flags or size == 0:
+            continue
+        if not inside(vma, size):
+            bad.append(f"{name}: run address {vma:#010x}..{vma + size:#010x}")
+        if "LOAD" in flags and not inside(lma, size):
+            bad.append(f"{name}: load address {lma:#010x}..{lma + size:#010x}")
+    return bad
+
+
+@pytest.mark.parametrize("variant", ["app", "recovery"])
+def test_every_section_is_in_real_memory(variant):
+    """Nothing in memory that the pedal does not have: main before the fix
+    put .ocramtext, .ocramdata and .ocram at 0x20210000.. (an RT1062 layout),
+    and the app crashed at boot."""
+    elf = fwbuild.build(FW, variant) / f"fb200-{variant}.elf"
+    assert sections(elf), "objdump output not parsed"
+    bad = outside_real_memory(elf)
+    assert bad == [], "\n".join(bad)
+
+
 def test_no_undefined_symbols():
     build()
     undef = subprocess.run(
@@ -232,7 +303,7 @@ def test_boot_runs_xip_code(tmp_path):
 
 def test_slot_without_its_data_goes_back_to_recovery(tmp_path):
     """A v2 slot with no data passes recovery's check (CRC of 0 bytes), but
-    its cold code would be garbage: stage2_main must reset into recovery with
+    its tables would be garbage: stage2_main must reset into recovery with
     a fault crumb (recovery then stays on the console) instead of running it."""
     out = dry_run(tmp_path, data=False)
     assert "reached app app_main: False" in out and "software reset requested" in out, out

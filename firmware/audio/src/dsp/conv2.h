@@ -77,6 +77,9 @@ enum { CONV2_LOAD_IDLE, CONV2_LOAD_FFT, CONV2_LOAD_READY, CONV2_LOAD_HEAD };
 
 /* tail may be NULL (then taps <= 512). Starts as a unit impulse, clear history. */
 int conv2_init(conv2_t *c, conv2_tail_t *tail);
+/* conv2_init(c, NULL) that does not link the 512-point FFT and its tables
+ * (~4.9 kB of RAM on the target): for a build without long IRs. */
+int conv2_init_head(conv2_t *c);
 /* New IR, taps 1..CONV2_MAX_TAPS (<= 512 without a tail); ir is copied, the
  * caller may reuse it at once. See the top of this file for when it takes
  * effect. Cost: ~60k instructions (the 16 head FFTs, as the 512-tap cab),

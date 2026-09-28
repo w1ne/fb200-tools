@@ -109,18 +109,28 @@ static bool s_tuner_mute = true;        /* S+0x2e, stock default 1 */
 static dsp_knob_t s_in_gain;            /* S+0x1a, smoothed like the stock */
 /* the stock chain (docs/PARITY.md M2): amp (+ tone stack) -> cab, mono */
 static amp_t s_amp;
-/* CPU-only state moved out of DTCM to make room for the delay line (memory
- * map: docs/FIRMWARE_BRINGUP.md): the cab's head spectra to OCRAM (cached),
- * the reverb to the ITCM above the code. */
 static cab_t s_cab __attribute__((section(".ocram")));
+/* RAM (memory map: docs/FIRMWARE_BRINGUP.md): CPU-only state moved out of
+ * DTCM to make room for the delay line: the cab's head spectra and s_ir to
+ * OCRAM (cached), the reverb to the ITCM above the code, the long-IR tail to
+ * the low DTCM. Sizes: ENGINE_IR_TAPS (engine.h) and DELAY_MS_MAX
+ * (dsp/delay.h); the link fails if they do not fit. */
+#define ENGINE_LONG_IR (ENGINE_IR_TAPS > CAB_TAPS)
+_Static_assert(ENGINE_IR_TAPS >= CAB_TAPS && ENGINE_IR_TAPS <= CAB_MAX_TAPS, "ENGINE_IR_TAPS");
+_Static_assert(AUDIO_FS <= DELAY_FS_MAX, "the delay line is sized for DELAY_FS_MAX");
+#if ENGINE_LONG_IR
 /* long IRs (M5): 96 kB, in the low DTCM (linker.ld .dtcm_lo) */
 static conv2_tail_t s_cab_tail __attribute__((section(".dtcm_lo")));
+#define CAB_INIT(c) cab_init_long((c), &s_cab_tail)
+#else
+#define CAB_INIT(c) cab_init(c)
+#endif
 static gate_t s_gate;
 static comp_t s_comp;
 static mod_t s_mod;
 static reverb_t s_rev __attribute__((section(".itcm_bss")));
-/* Our bass delay (docs/PARITY.md M4). Its 88 kB line: the DTCM between
- * .bss and the stack (linker.ld .dtcm_hi). */
+/* Our bass delay (docs/PARITY.md M4). Its line (DELAY_LEN int16, 88 kB for
+ * 1 s): the DTCM between .bss and the stack (linker.ld .dtcm_hi). */
 static delay_t s_dly;
 static int16_t s_dly_line[DELAY_LEN] __attribute__((section(".dtcm_hi")));
 static bool s_dly_en;
@@ -134,8 +144,8 @@ static eq_t s_eq __attribute__((section(".ocram")));
 static bool s_amp_en, s_cab_en, s_gate_en, s_comp_en, s_mod_en, s_rev_en;
 static int s_amp_model = -1, s_cab_type = -1;
 static float s_master = 1.0f, s_master_target = 1.0f;
-/* user IR staging, read only when a slot loads: OCRAM */
-static float s_ir[CAB_MAX_TAPS] __attribute__((section(".ocram")));   /* + `cab long` */
+/* user IR staging, read only when a slot loads: OCRAM. Also `cab long`. */
+static float s_ir[ENGINE_IR_TAPS] __attribute__((section(".ocram")));
 static bool s_testgen_in;               /* testgen feeds the chain input */
 static int s_usb_route;                 /* ENGINE_USB_OUT / _IN / _MIX */
 static uint32_t s_cyc_max, s_cyc_sum, s_cyc_n;   /* DWT cycles per block */
@@ -168,7 +178,7 @@ void engine_init(void)
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;   /* cycle counter for `stats` */
     DWT->CYCCNT = 0;
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
-    cab_init_long(&s_cab, &s_cab_tail);
+    CAB_INIT(&s_cab);
     bt_audio_init();
     gate_init(&s_gate, (float)AUDIO_FS);
     comp_init(&s_comp, (float)AUDIO_FS);
@@ -190,7 +200,7 @@ static volatile bool s_reapply;
 void engine_dsp_reset(void)
 {
     amp_init(&s_amp, (float)AUDIO_FS);
-    cab_init_long(&s_cab, &s_cab_tail);
+    CAB_INIT(&s_cab);
     gate_init(&s_gate, (float)AUDIO_FS);
     comp_init(&s_comp, (float)AUDIO_FS);
     mod_init(&s_mod, (float)AUDIO_FS);
@@ -230,7 +240,8 @@ static bool s_cab_bypass;   /* user IR slot selected but empty */
 
 /* `cab long <taps>` (console, for `prof` on the pedal): the first taps of
  * a synthetic IR (noise, -60 dB at 4096) in the cab until the next cab
- * change; 0 goes back to the preset's cab. */
+ * change; 0 goes back to the preset's cab. More than ENGINE_IR_TAPS: -2
+ * (long IRs off). */
 int engine_cab_long(unsigned taps)
 {
     if (taps == 0) {
@@ -238,9 +249,10 @@ int engine_cab_long(unsigned taps)
         s_reapply = true;
         return 0;
     }
+    if (taps > ENGINE_IR_TAPS) return -2;
     uint32_t seed = 1;
     float env = 1.0f;
-    for (unsigned i = 0; i < CAB_MAX_TAPS; i++, env *= 0.99832f) {
+    for (unsigned i = 0; i < ENGINE_IR_TAPS; i++, env *= 0.99832f) {
         seed = seed * 1664525u + 1013904223u;
         s_ir[i] = (float)(int32_t)seed * (1.0f / 2147483648.0f) * env;
     }

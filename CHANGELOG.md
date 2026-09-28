@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop app PoC (`app/`, `fb200-app`):** a local web UI (Starlette, 127.0.0.1) to
+  edit the pedal like the vendor app - presets (list, select, rename, save), the 7
+  effect blocks, delay, EQ, user IRs (import with the `process_ir` options, delete),
+  drums, tuner, output and global settings - and an assistant panel: type "make it
+  brighter" and a Claude agent (default `claude-sonnet-5`, or `claude-opus-5-5`) calls
+  the MCP tools, shows each step, measures with `audio_test` and charts the octave
+  bands. Tools that store to flash (`save_preset`, `rename_preset`, `ir_import`,
+  `ir_delete`, `settings`, console `save`/`factory`) wait for a user click. The tool
+  schema is the MCP server's `tools/list` (in process). Install: `pip install
+  '.[app]'`. See `app/README.md`. Not yet tried on a real pedal.
+- **MCP tools:** `parameter_docs` (also the resource `fb200://parameter-docs`: every
+  field's range, unit and sound meaning, plus tone recipes, from `fb200/params.py`),
+  `preset_list` (40 names, HID `0x96`), `rename_preset` (`0x99`), `ir_delete`,
+  `settings` (the `0xB0` block: input gain, global cab, BT audio, light ring);
+  `ir_import` takes the `process_ir` options (channel, trim, lowcut, highcut,
+  minphase, normalize).
 - **Reamping over USB:** console `usb in` routes the computer's USB playback into the
   effects chain input instead of the instrument (`usb mix`: summed with it; `usb out`:
   to the analog output only, the default and the stock behaviour). Play a DI track or a
@@ -38,9 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   <= 512 taps the tail does no work: same sound (bit-identical) and same CPU as
   before. A long IR loads without an audio stall: one tail FFT per block, then an
   exact swap at a frame boundary (~15-25 ms after the change). From a short IR the
-  new tail starts empty and fades in over its length. The tail buffers (96 kB) and
-  the 512-point FFT tables (4.9 kB) are in OCRAM. Console: `cab long <taps>` loads
-  a synthetic test IR (0: back to the preset's cab), for `prof` on the pedal.
+  new tail starts empty and fades in over its length. Console: `cab long <taps>`
+  loads a synthetic test IR (0: back to the preset's cab), for `prof` on the pedal.
 - **Better IR import** (host): `fb200 ir import` resamples with a Kaiser windowed
   sinc (aliasing below -60 dB; the linear resampler is gone) and takes
   `--channel`, `--trim`, `--taps N` (up to 4096, half-Hann fade-out),
@@ -59,20 +74,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sequence on LPUART5 (`AT+TM` .. `AT+B401`) at about 11 s of device time.
   See `docs/LABWIRED.md`.
 
+### Fixed
+
+- **Memory map: OCRAM is 32 kB.** The pedal's chip is an i.MX RT1052: its FlexRAM
+  split (IOMUXC_GPR17 = 0xFFAAAAA9, read back on the pedal) gives ITCM 128 kB, DTCM
+  352 kB and OCRAM 32 kB at 0x20200000. Our linker script declared 512 kB of OCRAM at
+  0x20210000 (an RT1062 layout), where the pedal has nothing: writes are dropped,
+  reads return 0, code there faults. Now `linker.ld` has the real regions (with
+  `ASSERT`s), a test checks that every section of both images lies in real memory,
+  and the boot emulation, the stock emulators and the LabWired chip model map only
+  the real RAM (docs/FIRMWARE_BRINGUP.md, "Memory map").
+- **The app crashed at boot** (unreleased): its cold code ran from the missing OCRAM.
+  The cold code (console, UI, preset storage, protocol, clock and pin setup, init
+  drivers) now runs in place from flash (XIP, the slot data area); the audio path and
+  the flash write path stay in ITCM (`firmware/tools/hot_path.py` checks both). An app
+  update runs from RAM only once it starts erasing (`fw_session`): send `reset` when it
+  is done, as before. A slot without its data still goes back to recovery.
+- **RAM reclaimed:** the low DTCM that the stock data used to fill (our images load
+  none there) holds the long-IR tail, the DTCM above `.bss` the delay line (8 kB kept
+  for the stack), the ITCM above the code the reverb state. The crash dump moved to
+  0x20018A00 (an older recovery shows "no crash dump" for a newer app).
+- **Bass delay: the repeats never played on the pedal in v0.8.0** (its line was in
+  the missing OCRAM: only the dry signal came out). The line is now in DTCM, max time
+  1000 ms (sized for 44.1 kHz, the pedal's only rate). `delay on` on a stock preset
+  now sets 300 ms (was 350).
+- **User IR slots (cab 11-19)** (unreleased): the IR was staged in the missing OCRAM,
+  so the cab got the IR only while the D-cache still held it, else zeros (silence).
+  The staging buffer is in the real OCRAM now.
+- **Bass EQ** (unreleased): its state was in the missing OCRAM (it held only while
+  in the D-cache). Now in the real OCRAM.
+- **Long IRs** fit in the real RAM (tail in the low DTCM, FFT tables in OCRAM):
+  `ENGINE_IR_TAPS` (`src/audio/engine.h`) is 4096. A build with 512 links neither the
+  tail nor the tables; there `cab long` over 512 answers "not available" (the MCP
+  `cab_long` reports an error).
+
 ### Changed
-
-- **RAM map is the pedal's:** ITCM 128 kB, DTCM 352 kB, OCRAM 32 kB (the build had
-  assumed 512 kB of OCRAM). The cold code runs in place from flash (XIP), the long-IR
-  tail (4096 taps) uses the low DTCM that the stock data used to fill, the 1 s delay
-  line the DTCM up to an 8 kB stack. An app update now runs from RAM only after it
-  starts erasing (`fw_session`): send `reset` when it is done, as before. The crash
-  dump moved to 0x20018A00 (an older recovery shows "no crash dump" for a newer app).
-
-- **Cold code runs from OCRAM:** console, UI, preset storage, protocol, USB setup and
-  init drivers moved out of ITCM into OCRAM (loaded from the slot data blob at boot).
-  The ITCM payload went from 120 kB to 72 kB of its 121.8 kB limit; the audio path
-  stays in ITCM (`firmware/tools/hot_path.py` checks it). A slot without its data
-  goes back to recovery.
 
 - **Cab IR on the FFT convolver:** the 512-tap cab runs as a partitioned FFT
   convolution, not a direct FIR. No added latency. About a quarter of the cab CPU

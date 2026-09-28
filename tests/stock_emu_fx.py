@@ -64,7 +64,10 @@ DSP_INIT = 0x90C4
 MID_EQ_SELECT = 0x90E4
 COMMIT = 0x174A4
 
-_MAP = [(0, 0x200000), (0x20000000, 0x100000), (0x20200000, 0x100000),
+# The pedal's RAM (i.MX RT1052, FlexRAM split by IOMUXC_GPR17 = 0xFFAAAAA9,
+# measured on the pedal; docs/FIRMWARE_BRINGUP.md "Memory map"): ITCM 128 kB,
+# DTCM 352 kB, OCRAM 32 kB. Nothing else: an access outside stops the run.
+_MAP = [(0, 0x20000), (0x20000000, 0x58000), (0x20200000, 0x8000),
         (0x40000000, 0x10000000), (0x60000000, 0x800000), (0xE0000000, 0x100000)]
 
 
@@ -89,7 +92,7 @@ def load_ram(mr_path: Path = MR_PATH) -> dict[str, bytes]:
     uc.emu_start(0x600104D9, 0x4D6, count=20_000_000)
     return {"itcm": bytes(uc.mem_read(0, 0x20000)),
             "dtcm": bytes(uc.mem_read(0x20000000, 0x58000)),
-            "ocram": bytes(uc.mem_read(0x20200000, 0x10000)),
+            "ocram": bytes(uc.mem_read(0x20200000, 0x8000)),
             "block0": mr.blocks[0].data, "block1": mr.blocks[1].data}
 
 
