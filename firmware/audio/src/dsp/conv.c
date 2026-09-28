@@ -21,19 +21,24 @@ void conv_reset(conv_t *c)
     c->head = c->fill = 0;
 }
 
-int conv_set_ir(conv_t *c, const float *ir, size_t taps)
+unsigned conv_spectra(const conv_t *c, const float *ir, size_t taps, float (*h)[CONV_N])
 {
-    if (taps == 0 || taps > (size_t)c->cap * DSP_BLOCK) return -1;
     float buf[CONV_N];
     unsigned parts = CONV_PARTS(taps);
     for (unsigned p = 0; p < parts; p++) {
         memset(buf, 0, sizeof buf);
         size_t n = taps - p * DSP_BLOCK < DSP_BLOCK ? taps - p * DSP_BLOCK : DSP_BLOCK;
         memcpy(buf, ir + p * DSP_BLOCK, n * sizeof(float));
-        arm_rfft_fast_f32(&c->fft, buf, c->h[p], 0);
+        arm_rfft_fast_f32(&c->fft, buf, h[p], 0);
     }
+    return parts;
+}
+
+int conv_set_ir(conv_t *c, const float *ir, size_t taps)
+{
+    if (taps == 0 || taps > (size_t)c->cap * DSP_BLOCK) return -1;
     /* the x ring is left alone: its spectra do not depend on the IR */
-    c->parts = parts;
+    c->parts = conv_spectra(c, ir, taps, c->h);
     return 0;
 }
 

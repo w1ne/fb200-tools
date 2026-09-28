@@ -113,7 +113,7 @@ static void cmd_help(void)
 #ifndef FB200_RECOVERY
              "  audio : usb | sai | codec | creg <reg> [val] | gain [db] | mute [on|off]\r\n"
              "          testgen off|sine|white|impulse [freq] | tin <same> (into the chain, -20 dBFS)\r\n"
-             "          meters on|off | x | cpu\r\n"
+             "          meters on|off | x | cpu | prof | cab long <0-4096>\r\n"
              "  led   : led on|off|scan | ledpin <gpio> <pin>\r\n"
              "  ui    : ui | uimon on|off | disp <text> | kled <0-15> on|off | power\r\n"
              "          preset [0-39] | save | factory [yes] | rgb 0xRRGGBB [led] | rgb cfg 0xIIS0S1\r\n"
@@ -593,6 +593,12 @@ static void dispatch(char *cmd)
                        (int)r.freq, (int)((r.freq - (int)r.freq) * 100.0f));
     }
     else if (streq(argv[0], "prof")) engine_profile();
+    else if (streq(argv[0], "cab") && argc > 2 && streq(argv[1], "long")) {
+        int ok;
+        uint32_t n = parse_num(argv[2], &ok);
+        log_printf("cab long %lu: %s\r\n", (unsigned long)n,
+                   ok && engine_cab_long(n) == 0 ? "ok" : "bad taps");
+    }
     else if (streq(argv[0], "stock")) {
         int r = stock_check((const void *)STOCK_FLASH, STOCK_FLASH_SIZE);
         log_printf("stock data: flash %s, %s\r\n", stock_error(r),
