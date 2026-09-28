@@ -14,7 +14,7 @@ has no FB200 special cases.
 |------|------------|
 | `labwired/chip/mimxrt1052.yaml` | the chip: memory map, pins, peripherals |
 | `labwired/chip/peripherals/*.yaml` | register files ingested from the NXP SVD |
-| `labwired/system.yaml` | the FB200 board: ADC inputs, FlexIO2 clock, footswitches, UART |
+| `labwired/system.yaml` | the FB200 board: ADC inputs, FlexIO2 clock, footswitches, UART, 14-segment display |
 | `labwired/smoke.yaml` | gate for the open smoke firmware |
 | `labwired/stock-boot.yaml` | gate for the unmodified vendor firmware, boot to USB (short) |
 | `labwired/stock-first-boot.yaml` | gate for the vendor firmware from a blank flash: factory reset and Bluetooth AT sequence (long: about 30 min of CPU time) |
@@ -25,7 +25,9 @@ has no FB200 special cases.
 ## 2. Get the LabWired CLI
 
 The i.MX RT parts and the `peripheral_log` and `fidelity_clean` assertions
-are on core `main` (PRs #1254 and #1255) and are not released yet. Until the
+are on core `main` (PRs #1254 and #1255) and are not released yet. The
+14-segment display model (`segment-display-mux`) needs core PR
+CORE_PR_PLACEHOLDER. Until the
 next core release, build the CLI from `main`:
 
 ```bash
@@ -72,7 +74,7 @@ labwired test --script labwired/stock-first-boot.yaml   # long, see 5
 Expected result:
 
 ```
-PASS  4/4 checks · smoke · 2000000 steps · 0.27s
+PASS  5/5 checks · smoke · 40000000 steps · SMOKE_TIME_PLACEHOLDER
 PASS  24/24 checks · stock-boot · 90000000 steps · 15.26s
 PASS  11/11 checks · stock-first-boot · 6800000000 steps · 3669.59s
 ```
@@ -92,6 +94,18 @@ the vendor image.
 The open smoke firmware boots from FlexSPI at `0x60010000`, prints
 `RT1052 SMOKE OK` on LPUART5, makes knob LED 1 (GPIO4_IO00) an output and
 toggles it. The gate reads GPIO4 GDIR and DR, which printed text cannot fake.
+
+Then the firmware multiplexes `LAb` on the 14-segment display, the way the
+open firmware's display driver does (all selects off, segments, next
+select), about 0.1 ms per digit. The gate reads the text from the display
+model's `text` log:
+
+```yaml
+- peripheral_log: {peripheral: display, log: text, contains: "\"LAb\""}
+```
+
+The display runs for 40 M cycles, because the model decides what is visible
+once per 20 ms window (12 M cycles).
 
 ### Stock boot gate
 
@@ -127,7 +141,8 @@ The stage 5 check counts words and finds both encodings; it does not prove
 that every word is `0xC0` or `0xFC`.
 
 The board parts are not modelled yet: NAU88L21 codec, 74HC4051 knob
-multiplexers, 14-segment display, Bluetooth module.
+multiplexers, Bluetooth module. The 14-segment display is modelled (see
+section 6), but the stock firmware does not refresh it inside 90 M cycles.
 
 ### Stock first-boot gate (long)
 
@@ -177,7 +192,39 @@ Notes on `result.json` for long runs:
   `stop_reason_details.observed`. A `max_cycles: 3000000000` run reports
   `cycles` of about 3.67 G.
 
-## 6. SVD provenance
+## 6. The 14-segment display
+
+`labwired/system.yaml` places the core part `segment-display-mux` with the
+id `display`:
+
+- segments: GPIO4_IO16..30 (pads `GPIO_EMC_16..30`), active high;
+- digit selects, left to right: GPIO4_IO31, GPIO3_IO18, GPIO3_IO21 (pads
+  `GPIO_EMC_31`, `GPIO_EMC_32`, `GPIO_EMC_35`), active high;
+- segment names per pin and the glyphs: from
+  [`UI_AND_STORAGE.md`](UI_AND_STORAGE.md) section 1 and the font of the open
+  firmware (`firmware/audio/src/ui/display.c`), which copies the stock font
+  (ITCM `0x16574`). Glyphs with the same segments decode to the first one:
+  `O` shows as `0`, `S` as `5`, `B` as `b`, `D` as `d`.
+
+The model lights a segment LED only while its segment line AND its digit
+select are active. It integrates the lit time exactly, per GPIO store, and
+every 20 ms decides what a human sees: an LED is visible when it is lit at
+least 50 % as long as the brightest LED, and at least 1 % of the window. A
+short ghost stays dark; a display that is not refreshed goes blank. An
+unknown pattern shows as `?`, a lit `dp` as `.` after the character.
+
+It records two logs for `peripheral_log`:
+
+| Log | One line per | Example |
+|-----|--------------|---------|
+| `text` | change of the visible text | `"LAb" at cycle 12000000` |
+| `frames` | change of the visible segment masks (bit = IO16..IO30) | `0x4021 0x4751 0x4471 at cycle 12000000` |
+
+A failed `peripheral_log` check prints the last lines of the log.
+
+STOCK_DISPLAY_PLACEHOLDER
+
+## 7. SVD provenance
 
 The files in `labwired/chip/peripherals/` and the base addresses and IRQs in
 `labwired/chip/mimxrt1052.yaml` come from the NXP CMSIS SVD for the
