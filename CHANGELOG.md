@@ -10,8 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **LabWired stock first-boot gate** (`labwired/stock-first-boot.yaml`, long:
-  about 25 min). The unmodified vendor firmware boots from a blank flash, does
-  its factory reset (sector erase and page program of F:0x82000 and F:0xB0000,
+  about 30 min of CPU time). The unmodified vendor firmware boots from a blank
+  flash, does its factory reset (sector erase and page program of F:0x82000 and F:0xB0000,
   magics `FB200` and `B01`) and sends the Bluetooth AT sequence on LPUART5
   (`AT+TM` .. `AT+B401`) at about 11 s of device time. See `docs/LABWIRED.md`.
 

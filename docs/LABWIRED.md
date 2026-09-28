@@ -17,7 +17,7 @@ has no FB200 special cases.
 | `labwired/system.yaml` | the FB200 board: ADC inputs, FlexIO2 clock, footswitches, UART |
 | `labwired/smoke.yaml` | gate for the open smoke firmware |
 | `labwired/stock-boot.yaml` | gate for the unmodified vendor firmware, boot to USB (short) |
-| `labwired/stock-first-boot.yaml` | gate for the vendor firmware from a blank flash: factory reset and Bluetooth AT sequence (long, about 25 min) |
+| `labwired/stock-first-boot.yaml` | gate for the vendor firmware from a blank flash: factory reset and Bluetooth AT sequence (long: about 30 min of CPU time) |
 | `firmware/labwired-smoke/` | the open smoke firmware (bare registers, no SDK) |
 | `tools/labwired_elf.py` | puts raw blobs into one ARM ELF, one PT_LOAD per blob |
 | `tools/labwired_stock.py` | builds `build/labwired/stock.elf` from your `.mr` |
@@ -74,6 +74,7 @@ Expected result:
 ```
 PASS  4/4 checks · smoke · 2000000 steps · 0.27s
 PASS  24/24 checks · stock-boot · 90000000 steps · 15.26s
+PASS  11/11 checks · stock-first-boot · 6800000000 steps · 3669.59s
 ```
 
 The stock gate asserts `fidelity_clean: true`: an unmapped MMIO access or an
@@ -132,8 +133,10 @@ multiplexers, 14-segment display, Bluetooth module.
 
 The unmodified vendor firmware boots from a blank flash (all `0xFF`), as a
 board fresh from the factory, for 6.8 G cycles (11.3 s of device time at
-600 MHz). Wall time is about 25 min on an idle Mac, and more on a busy one.
-It is not in the default loop.
+600 MHz). It needs about 29 min of CPU time (Apple M4) and 1.1 GB of
+memory at peak (most of it is the text of the FlexSPI `ip` log at the end
+of the run: about 12 M status-poll lines).
+On a busy Mac it took 61 min of wall time. It is not in the default loop.
 
 Timeline, measured on the twin (SysTick is 1 ms = 600 000 cycles):
 
@@ -157,6 +160,11 @@ stopped inside the 3 s delay. That is why its `uart.log` was empty.)
 
 The Bluetooth module is not modelled: nothing answers the AT commands. The
 firmware does not wait for `OK`, so the sequence is complete anyway.
+
+Negative control: the same run with each new expected value changed (an
+erase and a program of F:0x10000 and F:0xB1000, `FB21`, `1`, `B02`,
+`AT+BD` before `AT+TM`, `AT+B402`) fails all nine of these checks
+(`FAIL 2/11`; only `fidelity_clean` and the stop reason pass).
 
 Notes on `result.json` for long runs:
 

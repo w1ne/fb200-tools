@@ -2,9 +2,10 @@
 #
 # LONG GATE. Boots the UNMODIFIED vendor firmware (V1.0.1) from a blank
 # flash (no presets, no magics), as a board fresh from the factory, for
-# 6.8 G cycles (11.3 s of device time at 600 MHz). Wall time is about
-# 25 min on an Apple M-series Mac. Run it by hand or nightly, not in the
-# default loop. Build build/labwired/stock.elf first (docs/LABWIRED.md).
+# 6.8 G cycles (11.3 s of device time at 600 MHz). It needs about 29 min
+# of CPU time (Apple M4) and 1.1 GB of memory at peak; on a busy Mac it took
+# 61 min of wall time. Run it by hand or nightly, not in the default loop.
+# Build build/labwired/stock.elf first (docs/LABWIRED.md).
 #
 # What the firmware does in this window (measured on the twin, SysTick
 # 1 ms = 600 000 cycles):
@@ -27,7 +28,7 @@ limits:
   max_steps: 8000000000
   # AT+B401 goes out at about 6.70 G cycles; 0.1 G of margin.
   max_cycles: 6800000000
-  # About 25 min on an idle Mac; the margin is for a busy one.
+  # The margin is for a busy Mac.
   wall_time_ms: 7200000
 assertions:
   # --- Factory reset: FlexSPI IP commands ---
