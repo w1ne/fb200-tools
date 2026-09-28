@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Reamping over USB:** console `usb in` routes the computer's USB playback into the
+  effects chain input instead of the instrument (`usb mix`: summed with it; `usb out`:
+  to the analog output only, the default and the stock behaviour). Play a DI track or a
+  test sweep and record the processed sound from the USB capture. The MCP `audio_test`
+  with `source="usb"` uses it (and restores the routing) and reports the round-trip
+  `delay_ms`.
 - **Two-stage convolver for long IRs (M5, library only):** `dsp/conv2.c` runs
   IRs up to 4096 taps with no added latency: the 512-tap head on the current
   convolver, the rest in 256-sample partitions spread over the 8 blocks of each
