@@ -42,33 +42,39 @@ int conv_set_ir(conv_t *c, const float *ir, size_t taps)
     return 0;
 }
 
-/* acc[k0..k0+3] over n partitions: x rows descend, h rows ascend. The four
- * sums stay in registers across the partitions (no acc load/store per
- * partition) and are four independent FMA chains. Per sum the partition order
- * and the operations are those of the plain loop (a += x0*h0 ...), so the
- * result does not depend on this grouping. dc: floats 0, 1 are DC and
- * Nyquist (real). */
-static inline __attribute__((always_inline)) void
-mac4(float *restrict acc, const float *restrict x, const float *restrict h, unsigned n, int dc)
-{
-    float a0 = acc[0], a1 = acc[1], a2 = acc[2], a3 = acc[3];
-    for (; n; n--, x -= CONV_N, h += CONV_N) {
-        float x0 = x[0], x1 = x[1], x2 = x[2], x3 = x[3];
-        float h0 = h[0], h1 = h[1], h2 = h[2], h3 = h[3];
-        if (dc) {
-            a0 = a0 + x0 * h0;
-            a1 = a1 + x1 * h1;
-        } else {
-            a0 = a0 + x0 * h0 - x1 * h1;          /* two FMAs each */
-            a1 = a1 + x0 * h1 + x1 * h0;
-        }
-        a2 = a2 + x2 * h2 - x3 * h3;
-        a3 = a3 + x2 * h3 + x3 * h2;
-    }
-    acc[0] = a0;
-    acc[1] = a1;
-    acc[2] = a2;
+/* acc[0..3] += the products of n partitions: x rows descend, h rows ascend.
+ * The four sums stay in registers across the partitions (no acc load/store
+ * per partition) and are four independent FMA chains. Per sum the partition
+ * order and the operations are those of the plain loop (a += x0*h0 ...), so
+ * the result does not depend on this grouping. Two functions, not a flag:
+ * a shared body lets the compiler share x1*h1 between the cases, and that
+ * changes the FMA contraction (the last bits). Out of line: one copy each
+ * (ITCM is tight). */
+#define MAC_LOOP(FIRST)                                                   \
+    float a0 = acc[0], a1 = acc[1], a2 = acc[2], a3 = acc[3];             \
+    for (; n; n--, x -= CONV_N, h += CONV_N) {                            \
+        float x0 = x[0], x1 = x[1], x2 = x[2], x3 = x[3];                 \
+        float h0 = h[0], h1 = h[1], h2 = h[2], h3 = h[3];                 \
+        FIRST                                                             \
+        a2 = a2 + x2 * h2 - x3 * h3;          /* two FMAs each */         \
+        a3 = a3 + x2 * h3 + x3 * h2;                                      \
+    }                                                                     \
+    acc[0] = a0;                                                          \
+    acc[1] = a1;                                                          \
+    acc[2] = a2;                                                          \
     acc[3] = a3;
+
+/* floats 0, 1 are DC and Nyquist: real */
+static __attribute__((noinline)) void
+mac4_dc(float *restrict acc, const float *restrict x, const float *restrict h, unsigned n)
+{
+    MAC_LOOP(a0 = a0 + x0 * h0; a1 = a1 + x1 * h1;)
+}
+
+static __attribute__((noinline)) void
+mac4(float *restrict acc, const float *restrict x, const float *restrict h, unsigned n)
+{
+    MAC_LOOP(a0 = a0 + x0 * h0 - x1 * h1; a1 = a1 + x0 * h1 + x1 * h0;)
 }
 
 /* One step of n <= DSP_BLOCK - fill samples. Packed spectra (CMSIS
@@ -93,11 +99,11 @@ static void step(conv_t *c, const float *in, float *out, size_t n)
     for (unsigned k = 0; k < CONV_N; k += 4) {
         acc[k] = acc[k + 1] = acc[k + 2] = acc[k + 3] = 0.0f;
         if (k == 0) {
-            mac4(acc, x1, h1, n1, 1);
-            mac4(acc, x2, h2, n2, 1);
+            mac4_dc(acc, x1, h1, n1);
+            mac4_dc(acc, x2, h2, n2);
         } else {
-            mac4(acc + k, x1 + k, h1 + k, n1, 0);
-            mac4(acc + k, x2 + k, h2 + k, n2, 0);
+            mac4(acc + k, x1 + k, h1 + k, n1);
+            mac4(acc + k, x2 + k, h2 + k, n2);
         }
     }
 

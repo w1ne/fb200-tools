@@ -26,13 +26,6 @@ NO_LIBCALL static void copy_fwd(unsigned char *d, const unsigned char *s, size_t
         }
         word_t *dw = (word_t *)(void *)d;
         const word_t *sw = (const word_t *)(const void *)s;
-        for (; n >= 4 * W; n -= 4 * W, dw += 4, sw += 4) {
-            word_t a = sw[0], b = sw[1], c = sw[2], e = sw[3];
-            dw[0] = a;
-            dw[1] = b;
-            dw[2] = c;
-            dw[3] = e;
-        }
         for (; n >= W; n -= W) *dw++ = *sw++;
         d = (unsigned char *)dw;
         s = (const unsigned char *)sw;
@@ -76,12 +69,6 @@ NO_LIBCALL void *memset(void *dst, int c, size_t n)
     }
     word_t v = b * 0x01010101u;
     word_t *dw = (word_t *)(void *)d;
-    for (; n >= 4 * W; n -= 4 * W, dw += 4) {
-        dw[0] = v;
-        dw[1] = v;
-        dw[2] = v;
-        dw[3] = v;
-    }
     for (; n >= W; n -= W) *dw++ = v;
     d = (unsigned char *)dw;
     while (n--) *d++ = b;
