@@ -15,13 +15,15 @@ run it with a Python that has it:
 Symbols read from the ELF (via arm-none-eabi-nm): stage2, stage2_main,
 app_main. With --app-elf (two-stage image, docs/BOOTLOADER.md §4) the ELF is
 the recovery build and the run continues through recovery's boot decision and
-copier until the app's own app_main.
+copier until the app's own app_main, then (with the app slot) into the app's
+OCRAM code (linker.ld .ocramtext) and back.
 """
 
 from __future__ import annotations
 
 import argparse
 import re
+import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -88,7 +90,12 @@ def main() -> int:
     syms = elf_symbols(args.elf)
     stage2, stage2_main, app_main = syms["stage2"], syms["stage2_main"], syms["app_main"]
     copier = syms.get("copier")
-    app_app_main = elf_symbols(args.app_elf)["app_main"] if args.app_elf else None
+    app_syms = elf_symbols(args.app_elf) if args.app_elf else {}
+    app_app_main = app_syms.get("app_main")
+    # The app's cold code (linker.ld .ocramtext): stage2_main copies it from
+    # the slot data to OCRAM. The run goes on until app_main has called into
+    # it and come back to ITCM through the veneers.
+    cold = range(app_syms.get("__ocramtext_start__", 0), app_syms.get("__ocramtext_end__", 0))
     if args.app_elf and copier is None:
         raise SystemExit("--app-elf needs a recovery ELF (no copier symbol)")
 
@@ -119,6 +126,12 @@ def main() -> int:
         elif "copier" in hits and address == app_app_main:
             hits.add("app app_main")
             reached_app[0] = True
+            if not cold:
+                uc_.emu_stop()
+        elif "app app_main" in hits and address in cold:
+            hits.add("app OCRAM code")
+        elif "app OCRAM code" in hits and address < ITCM_SIZE:
+            hits.add("back in ITCM")
             uc_.emu_stop()
         elif address == app_main and "app_main" not in hits:
             hits.add("app_main")
@@ -155,8 +168,18 @@ def main() -> int:
     names = ["stage2", "stage2_main", "app_main"]
     if app_app_main is not None:
         names += ["copier", "app app_main"]
+    if cold:
+        names += ["app OCRAM code", "back in ITCM"]
     for name in names:
         print(f"  reached {name}: {name in hits}")
+    crumbs = struct.unpack("<4I", bytes(uc.mem_read(0x400F8028, 16)))   # SRC_GPR3..6
+    print("  crumbs: " + " ".join(f"{c:08x}" for c in crumbs))
+    copied = True
+    if cold and args.app_slot:
+        load = app_syms["__ocramtext_load__"] - 0x60020000
+        want = args.app_slot.read_bytes()[load:load + len(cold)]
+        copied = bytes(uc.mem_read(cold.start, len(cold))) == want and len(want) == len(cold)
+        print(f"  app .ocramtext copied: {copied}")
     if error:
         print(f"emulation stopped with: {error}")
     unsafe = []
@@ -168,7 +191,7 @@ def main() -> int:
             unsafe.append(f"{addr:#010x} at pc {at:#010x}")
     for u in unsafe:
         print(f"  UNSAFE early peripheral access: {u}")
-    ok = reached_app[0] and not error and not unsafe
+    ok = reached_app[0] and not error and not unsafe and copied and all(n in hits for n in names)
     print("DRY RUN OK" if ok else "DRY RUN FAILED")
     return 0 if ok else 1
 
