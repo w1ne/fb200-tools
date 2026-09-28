@@ -44,7 +44,7 @@
 #define EQ_Q_MAX 4.0f
 #define EQ_Q_DEF 1.0f
 
-typedef struct {
+typedef struct eq_s {
     arm_biquad_cascade_df2T_instance_f32 inst;
     float c[5 * EQ_STAGES];             /* current: b0 b1 b2 -a1 -a2 (CMSIS) */
     float t[5 * EQ_STAGES];             /* target */
