@@ -30,5 +30,8 @@ target-version = "py310"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["hardware: requires a connected FB200 pedal"]
-addopts = "-m 'not hardware'"
+markers = [
+    "hardware: requires a connected FB200 pedal",
+    "stock: slow stock-DSP emulation (unicorn + fb200-stock.mr); nightly: pytest -m stock",
+]
+addopts = "-m 'not hardware and not stock'"

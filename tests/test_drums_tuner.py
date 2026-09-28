@@ -91,6 +91,7 @@ def test_blob_reads_the_stock_image(stock_blob):
     assert len(blob) == 59276 + 21 * 256
 
 
+@pytest.mark.stock
 @pytest.mark.parametrize("rhythm,bpm,secs,block", [(0, 110, 3.0, 32), (7, 180, 2.0, 8),
                                                    (39, 60, 3.0, 13), (21, 260, 1.5, 32)])
 def test_drums_match_stock(stock_blob, rhythm, bpm, secs, block):
@@ -112,6 +113,7 @@ def test_drums_match_stock(stock_blob, rhythm, bpm, secs, block):
     assert diff <= 1e-6
 
 
+@pytest.mark.stock
 @pytest.mark.parametrize("name,freq,note", [("B0", 30.8677, 2), ("E1", 41.2034, 7),
                                             ("A2", 110.0, 12)])
 def test_tuner_matches_stock(name, freq, note):

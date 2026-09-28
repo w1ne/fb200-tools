@@ -3,6 +3,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import fwbuild
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,7 +18,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def build() -> tuple[bytes, bytes]:
-    subprocess.run(["make", "clean", "build", "layout"], cwd=FW, check=True)
+    fwbuild.build(FW)
     return VECTORS.read_bytes(), BLOB.read_bytes()
 
 

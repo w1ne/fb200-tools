@@ -36,6 +36,8 @@ CAB_LATENCY = 16                # stock cab runs 2 x 8-sample ping-pong blocks b
 AMP_MAX_ERR_DB = -120.0
 CHAIN_MAX_ERR_DB = -100.0
 
+pytestmark = pytest.mark.stock
+
 
 @pytest.fixture(scope="module")
 def stock(tmp_path_factory):

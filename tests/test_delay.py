@@ -43,7 +43,7 @@ def test_delay_host_suite():
 
 def _stock_mr() -> Path | None:
     try:
-        import stock_emu_fx                     # also finds it from a git worktree
+        import stock_emu_fx  # also finds it from a git worktree
         return stock_emu_fx.MR_PATH
     except ImportError:                         # no unicorn/capstone: the plain places
         c = [os.environ.get("FB200_STOCK_MR"), ROOT / "fb200-stock.mr"]
@@ -72,6 +72,7 @@ def test_factory_presets_never_play_the_delay():
     assert f"presets: {n} checked, 0 play the delay".encode() in r.stdout
 
 
+@pytest.mark.stock
 def test_stock_dsp_ignores_the_marker():
     np = pytest.importorskip("numpy", reason="needs numpy")
     pytest.importorskip("unicorn", reason="needs unicorn (stock DSP emulation)")

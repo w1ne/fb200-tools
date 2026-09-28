@@ -28,6 +28,7 @@ FS = 44100
 TARGET_DB = -60.0
 
 pytestmark = [
+    pytest.mark.stock,
     pytest.mark.skipif(shutil.which("cc") is None, reason="host C compiler not installed"),
     pytest.mark.skipif(stock_emu.MR_PATH is None,
                        reason="fb200-stock.mr not found (repo root, main checkout or "
