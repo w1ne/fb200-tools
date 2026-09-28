@@ -1,0 +1,65 @@
+# fb200-tools: LabWired twin of the FLAMMA FB200 - stock first-boot gate.
+#
+# LONG GATE. Boots the UNMODIFIED vendor firmware (V1.0.1) from a blank
+# flash (no presets, no magics), as a board fresh from the factory, for
+# 6.8 G cycles (11.3 s of device time at 600 MHz). Wall time is about
+# 25 min on an Apple M-series Mac. Run it by hand or nightly, not in the
+# default loop. Build build/labwired/stock.elf first (docs/LABWIRED.md).
+#
+# What the firmware does in this window (measured on the twin, SysTick
+# 1 ms = 600 000 cycles):
+#   0.00 .. 0.09 G  boot to USB enumeration (stock-boot.yaml covers this)
+#   0.03 .. 1.40 G  factory reset: the storage format through FlexSPI IP
+#                   commands (4 KB sector erase 0x20, quad page program
+#                   0x32, status poll 0x05). Magic "FB200" at F:0x82000,
+#                   "B01" at F:0xB0000.
+#   1.40 .. 3.20 G  a fixed delay_ms(3000) before the main loop
+#   6.15 .. 6.70 G  Bluetooth module bring-up on LPUART5: AT+TM, AT+BD..,
+#                   AT+BM.., AT+CN00, AT+B501, AT+B401, 150 ms apart
+#
+# The expected values are storage and protocol facts from
+# docs/UI_AND_STORAGE.md (sections 4 and 5), not bytes of the vendor image.
+schema_version: "1.0"
+inputs:
+  firmware: "../build/labwired/stock.elf"
+  system: "system.yaml"
+limits:
+  max_steps: 8000000000
+  # AT+B401 goes out at about 6.70 G cycles; 0.1 G of margin.
+  max_cycles: 6800000000
+  wall_time_ms: 3600000
+assertions:
+  # --- Factory reset: FlexSPI IP commands ---
+  # 4 KB sector erase (0x20) and quad page program (0x32) of the global
+  # settings sector (magic at F:0x82000) and of the B01 sector at F:0xB0000.
+  # Only the firmware's IP commands write these log lines.
+  - peripheral_log: {peripheral: flexspi, log: ip, contains: "cmd 0x20 addr 0x00082000 "}
+  - peripheral_log: {peripheral: flexspi, log: ip, contains: "cmd 0x32 addr 0x00082000 "}
+  - peripheral_log: {peripheral: flexspi, log: ip, contains: "cmd 0x20 addr 0x000b0000 "}
+  - peripheral_log: {peripheral: flexspi, log: ip, contains: "cmd 0x32 addr 0x000b0000 "}
+
+  # --- Factory reset: the NOR array, read back through the FlexSPI AHB window ---
+  # "FB20" at F:0x82000 and the "0" that ends "FB200" at F:0x82004. The flash
+  # is blank (0xFF) at reset, so only a program operation writes these bytes.
+  - memory_value:
+      address: 0x60082000
+      expected_value: 0x30324246
+  - memory_value:
+      address: 0x60082004
+      mask: 0x000000FF
+      expected_value: 0x00000030
+  # "B01" at F:0xB0000.
+  - memory_value:
+      address: 0x600B0000
+      mask: 0x00FFFFFF
+      expected_value: 0x00313042
+
+  # --- Bluetooth module bring-up on LPUART5 (115200 8N1) ---
+  # The boot AT sequence, in order (UI_AND_STORAGE.md section 4). The module
+  # is not modelled, so nothing answers; the firmware does not wait for "OK".
+  - uart_ordered: ["AT+TM\r\n", "AT+BD", "AT+BM", "AT+CN00\r\n", "AT+B501\r\n", "AT+B401\r\n"]
+  - uart_contains: "AT+B401"
+
+  # --- No fidelity gap, and the run did not stop early ---
+  - fidelity_clean: true
+  - expected_stop_reason: max_cycles
