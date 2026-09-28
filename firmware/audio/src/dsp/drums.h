@@ -73,6 +73,10 @@ typedef struct {
     float sub[DRUMS_SUBBLOCK];
     unsigned sub_pos;           /* samples of `sub` already consumed */
     uint32_t last_tap_ms;
+    /* 1 while the flash is busy (erase/program, selfupdate.c): the samples
+     * are in flash, so the voices advance without reading them (silence,
+     * in time). Set by the engine (engine_pump). */
+    uint8_t no_flash;
 } drums_t;
 
 /* bank: the block-1 image (0x600D0000 on the pedal); data: the rhythm

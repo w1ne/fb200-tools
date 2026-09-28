@@ -88,7 +88,7 @@ SRC_C := \
   src/dsp/drums.c src/dsp/tuner.c \
   src/dsp/amp.c src/dsp/tone.c src/dsp/cab.c src/dsp/stock_data.c \
   src/debug/log_fmt.c src/debug/cdc_log.c src/debug/console.c \
-  src/debug/selfupdate.c src/debug/recovery.c src/debug/regs.c \
+  src/debug/selfupdate.c src/debug/flash_rmw.c src/debug/recovery.c src/debug/regs.c \
   src/audio/i2c_probe.c \
   src/audio/usb_audio.c src/audio/engine.c src/audio/frontend.c src/audio/bt_audio.c \
   src/ui/pads.c src/ui/display.c src/ui/controls.c src/ui/power.c \
