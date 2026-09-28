@@ -145,9 +145,10 @@ void eq_reset(eq_t *e)
     memset(e->st, 0, sizeof e->st);
 }
 
+static const float def_f[EQ_BANDS] = {40.0f, 100.0f, 250.0f, 800.0f, 3000.0f};
+
 void eq_init(eq_t *e, float fs)
 {
-    static const float def_f[EQ_BANDS] = {40.0f, 100.0f, 250.0f, 800.0f, 3000.0f};
     memset(e, 0, sizeof *e);
     e->fs = fs;
     for (unsigned b = 0; b < EQ_BANDS; b++) { e->f[b] = def_f[b]; e->q[b] = EQ_Q_DEF; }
@@ -162,6 +163,15 @@ void eq_init(eq_t *e, float fs)
     e->bypass = 1;
 }
 
+static float cut(float hz, float lo, float hi) { return hz > 0.0f ? clampf(hz, lo, hi) : 0.0f; }
+
+static void set_band(eq_t *e, unsigned band, float hz, float gain_db, float q)
+{
+    e->f[band] = clampf(hz, EQ_BAND_MIN, EQ_BAND_MAX);
+    e->g[band] = clampf(gain_db, -EQ_GAIN_MAX, EQ_GAIN_MAX);
+    e->q[band] = clampf(q, EQ_Q_MIN, EQ_Q_MAX);
+}
+
 void eq_set_on(eq_t *e, int on)
 {
     e->on = on != 0;
@@ -170,24 +180,54 @@ void eq_set_on(eq_t *e, int on)
 
 void eq_set_hpf(eq_t *e, float hz)
 {
-    e->hpf = hz > 0.0f ? clampf(hz, EQ_HPF_MIN, EQ_HPF_MAX) : 0.0f;
+    e->hpf = cut(hz, EQ_HPF_MIN, EQ_HPF_MAX);
     update(e);
 }
 
 void eq_set_lpf(eq_t *e, float hz)
 {
-    e->lpf = hz > 0.0f ? clampf(hz, EQ_LPF_MIN, EQ_LPF_MAX) : 0.0f;
+    e->lpf = cut(hz, EQ_LPF_MIN, EQ_LPF_MAX);
     update(e);
 }
 
 int eq_set_band(eq_t *e, unsigned band, float hz, float gain_db, float q)
 {
     if (band >= EQ_BANDS) return -1;
-    e->f[band] = clampf(hz, EQ_BAND_MIN, EQ_BAND_MAX);
-    e->g[band] = clampf(gain_db, -EQ_GAIN_MAX, EQ_GAIN_MAX);
-    e->q[band] = clampf(q, EQ_Q_MIN, EQ_Q_MAX);
+    set_band(e, band, hz, gain_db, q);
     update(e);
     return 0;
+}
+
+void eq_load(eq_t *e, const uint8_t *r)
+{
+    static const uint8_t def[EQ_REC] = {0, 0, 0, 0, 40, 0, 0, 50, 100, 0, 0, 50,
+                                        250, 0, 0, 50, 0x20, 3, 0, 50, 0xb8, 0x0b, 0, 50};
+    if (!r) r = def;                    /* off, flat, the default bands (eq_init) */
+    e->on = r[0] != 0;
+    e->hpf = cut(r[1], EQ_HPF_MIN, EQ_HPF_MAX);
+    e->lpf = cut((float)(r[2] | r[3] << 8), EQ_LPF_MIN, EQ_LPF_MAX);
+    for (unsigned b = 0; b < EQ_BANDS; b++) {
+        const uint8_t *s = &r[4 + 4 * b];
+        set_band(e, b, (float)(s[0] | s[1] << 8), (float)(int8_t)s[2] / 8.0f, (float)s[3] / 50.0f);
+    }
+    update(e);
+}
+
+static unsigned rnd(float x) { return (unsigned)(int)(x + (x < 0.0f ? -0.5f : 0.5f)); }
+
+void eq_save(const eq_t *e, uint8_t r[EQ_REC])
+{
+    unsigned lpf = rnd(e->lpf);
+    r[0] = e->on;
+    r[1] = (uint8_t)rnd(e->hpf);
+    r[2] = (uint8_t)lpf; r[3] = (uint8_t)(lpf >> 8);
+    for (unsigned b = 0; b < EQ_BANDS; b++) {
+        uint8_t *s = r + 4 + 4 * b;
+        unsigned f = rnd(e->f[b]);
+        s[0] = (uint8_t)f; s[1] = (uint8_t)(f >> 8);
+        s[2] = (uint8_t)rnd(e->g[b] * 8.0f);
+        s[3] = (uint8_t)rnd(e->q[b] * 50.0f);
+    }
 }
 
 /* One stage over a block, DF1 as CMSIS (state x1 x2 y1 y2), with the

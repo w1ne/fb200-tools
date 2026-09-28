@@ -120,8 +120,9 @@ static reverb_t s_rev;
 static delay_t s_dly;
 static int16_t s_dly_line[DELAY_LEN] __attribute__((section(".ocram")));
 static bool s_dly_en;
-/* Our bass EQ (docs/PARITY.md M4), after the cab. Not in the preset: off
- * after boot, set from the console. Off (or flat) = bypassed, bit-exact.
+/* Our bass EQ (docs/PARITY.md M4), after the cab. In the preset with our
+ * marker (preset.h P_EQ_DATA); without it (every stock preset) off. Set from the
+ * console (`eq`, into the edit buffer). Off (or flat) = bypassed, bit-exact.
  * OCRAM (cached): in .bss its 508 B push the 2 kB-aligned USB buffer
  * (_dcd_data) up by 2 kB and DTCM overflows. The EQ touches ~70 words of it
  * per block. */
@@ -192,7 +193,7 @@ void engine_dsp_reset(void)
     mod_init(&s_mod, (float)AUDIO_FS);
     reverb_init(&s_rev, (float)AUDIO_FS);
     delay_init(&s_dly, (float)AUDIO_FS, s_dly_line);
-    eq_reset(&s_eq);            /* the settings stay (not in the preset) */
+    eq_reset(&s_eq);            /* the settings come back with the preset */
     s_amp_model = s_cab_type = -1;
     s_reapply = true;
 }
@@ -278,6 +279,7 @@ void engine_apply_preset(const preset_t *p, unsigned master)
     delay_set_params(&s_dly, pget(p, P_DLY_TIME), pget(p, P_DLY_FB), pget(p, P_DLY_MIX),
                      pget(p, P_DLY_LOWCUT), pget(p, P_DLY_TONE));
     s_dly_en = dly;
+    eq_load(&s_eq, preset_eq(p));   /* glides; unchanged stages keep going */
     s_master_target = (float)(master > 100u ? 100u : master) * 0.01f;
 }
 void engine_apply_settings(const settings_t *s)

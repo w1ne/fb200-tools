@@ -50,7 +50,8 @@ save blink, rhythm tempo flash). On the pedal so far: the light ring of the sele
 - A bass delay (the stock has none: its delay settings do nothing): 20-1000 ms, feedback,
   mix, low cut on the repeats, tone. Stock presets keep their sound
   ([`docs/PARITY.md`](docs/PARITY.md#m4-bass-delay)).
-- A bass EQ (the stock has none): HPF, 5 bands, LPF, after the cab; console only for now
+- A bass EQ (the stock has none): HPF, 5 bands, LPF, after the cab; set from the console
+  or MCP and stored in the preset (stock presets keep it off)
   ([`docs/PARITY.md`](docs/PARITY.md#m4-bass-eq)).
 - Updates over USB without holding A+D.
 - The display names the knob you turn (`GAn`, `CAb`, …) and marks knobs that have not
@@ -196,8 +197,10 @@ claude mcp add fb200 -- fb200 mcp
 | `preset`, `save_preset` | show or select preset 0..39; store the edit buffer |
 | `get_effects` | all effect blocks of the edit buffer |
 | `set_amp`, `set_cab`, `set_comp`, `set_gate`, `set_mod`, `set_reverb` | change fields of one block (app protocol, HID); returns the block read back |
-| `set_delay`, `set_output`, `drums`, `tuner` | bass delay, output gain and mute, drum machine, tuner |
-| `cpu_profile`, `crash_dump` | CPU cycles per chain stage (`prof`); the last crash dump |
+| `set_delay`, `set_eq` | bass delay; bass EQ (on/off, HPF, LPF, band 1-5 freq/gain/q), returns the EQ state; both go into the edit buffer (`save_preset` stores them) |
+| `set_output`, `drums`, `tuner` | output gain and mute, drum machine, tuner |
+| `usb_route` | USB playback to the output (`out`), into the chain input (`in`, reamping) or summed (`mix`) |
+| `cpu_profile`, `crash_dump`, `cab_long` | CPU cycles per chain stage (`prof`); the last crash dump; a synthetic N-tap cab IR for measurements (0 = the preset's cab) |
 | `ir_list`, `ir_import` | user IR slots; import a WAV into a slot |
 | `audio_test` | play a test signal, capture the USB audio, return RMS, peak, THD (sine) or an octave-band response; can save a WAV |
 

@@ -24,9 +24,10 @@ from fb200.errors import CommunicationError, Fb200Error, InvalidArgumentError
 INSTRUCTIONS = """\
 Tools for the FLAMMA FB200 bass pedal with the open firmware, on USB.
 Effect edits change the live edit buffer of the current preset; `save_preset`
-stores it. Chain: in -> gate -> comp -> amp -> cab -> mod -> delay -> reverb ->
-master -> USB capture / DAC (USB playback: to the DAC, or with `usb in` into
-the chain input instead of the instrument - reamping). To hear a change, run `audio_test` (default: the
+stores it (also the delay and the EQ). Chain: in -> gate -> comp -> amp -> cab
+-> eq -> mod -> delay -> reverb -> master -> USB capture / DAC (USB playback:
+to the DAC, or with `usb_route` "in" into the chain input instead of the
+instrument - reamping). To hear a change, run `audio_test` (default: the
 firmware test signal into the chain input, captured over USB audio) before
 and after. Knob-type values are 0..100."""
 
@@ -35,6 +36,7 @@ FLASH_COMMANDS = ("fwbegin", "fwrec", "fwstock")
 ERROR_MARKERS = ("usage:", "unknown command", "bad ", "not allowed")
 CHAIN_SIGNALS = {"sine": "sine", "noise": "white", "impulse": "impulse"}
 USB_ROUTE_RE = re.compile(r"route=(out|in|mix)")
+CAB_MAX_TAPS = 4096       # dsp/conv2.h CONV2_MAX_TAPS
 
 
 def _num_pairs(text: str) -> dict[str, int]:
@@ -67,6 +69,28 @@ def parse_delay(text: str) -> dict:
     return {"on": m.group(1) == "on", "plays": m.group(2) is None,
             "time_ms": int(m.group(3)), "feedback": int(m.group(4)), "mix": int(m.group(5)),
             "lowcut": int(m.group(6)), "lowcut_hz": int(m.group(7)), "tone": int(m.group(8))}
+
+
+EQ_RE = re.compile(r"eq (on|off)( \(flat\))?: hpf (?:(\d+) Hz|off) lpf (?:(\d+) Hz|off)")
+EQ_BAND_RE = re.compile(r"^\s*(\d): (\d+) Hz ([+-]?\d+\.\d+) dB q (\d+\.\d+)", re.MULTILINE)
+EQ_BANDS = 5
+
+
+def parse_eq(text: str) -> dict:
+    """Parse the `eq` console state: hpf_hz/lpf_hz 0 = off; flat = on but
+    every stage neutral (bypassed)."""
+    m = EQ_RE.search(text)
+    bands = [{"band": int(b), "freq_hz": int(f), "gain_db": float(g), "q": float(q)}
+             for b, f, g, q in EQ_BAND_RE.findall(text)]
+    if not m or len(bands) != EQ_BANDS:
+        raise CommunicationError(f"unexpected eq reply: {text!r}")
+    return {"on": m.group(1) == "on", "flat": m.group(2) is not None,
+            "hpf_hz": int(m.group(3) or 0), "lpf_hz": int(m.group(4) or 0), "bands": bands}
+
+
+def _dec(v: float) -> str:
+    """A console decimal (no exponent): 100 -> '100', -4.5 -> '-4.5'."""
+    return f"{v:.3f}".rstrip("0").rstrip(".")
 
 
 def parse_profile(text: str) -> dict:
@@ -189,6 +213,9 @@ class PedalTools:
           usb out|in|mix (host playback: to the DAC, default | into the chain
           input instead of the instrument, reamping | summed with the instrument)
         effects: preset [0-39] | save | delay [on|off] [time] [fb] [mix] [lowcut] [tone] |
+          eq [on|off] | eq hpf <20-200 Hz|0> | eq lpf <2000-20000 Hz|0> |
+          eq <band 1-5> <30-10000 Hz> <gain -15..15 dB> [q 0.3-4] (into the preset) |
+          cab long <taps 0-4096> (synthetic IR for measurements, 0 = the preset's cab) |
           tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>] | stock
         ui: ui | uimon on|off | disp <text> | kled <0-15> on|off | power |
           rgb 0xRRGGBB [led] | factory [yes] (resets ALL presets)
@@ -198,7 +225,8 @@ class PedalTools:
           crc <addr> <len> | scan | dump [bus addr] | fwinfo | fwtest
         danger: crash / hang (fault tests: the pedal reboots into recovery),
           reset | reboot, recovery.
-        Numbers are decimal or 0x hex; no negative numbers. Flash streaming
+        Numbers are decimal or 0x hex; no negative numbers except the `eq`
+        values (decimals too, e.g. `eq 2 100 -4.5 1.4`). Flash streaming
         (fwbegin/fwrec/fwstock) is refused here: use `fb200 update`."""
         words = command.split()
         if words and words[0] in FLASH_COMMANDS and len(words) > 1:
@@ -298,6 +326,41 @@ class PedalTools:
                     for i in range(last + 1)]
         return parse_delay(self.pedal.check(" ".join(cmd)))
 
+    def set_eq(self, on: bool | None = None, hpf_hz: float | None = None,
+               lpf_hz: float | None = None, band: int | None = None,
+               freq_hz: float | None = None, gain_db: float | None = None,
+               q: float | None = None) -> dict:
+        """Change the bass EQ after the cab (console `eq`): HPF 20..200 Hz and
+        LPF 2000..20000 Hz (12 dB/oct, 0 = off), 5 peaking bands (band 1..5:
+        freq 30..10000 Hz, gain -15..+15 dB, q 0.3..4; the pedal clamps).
+        Omitted band values keep their value. Changes glide (no clicks) and go
+        into the edit buffer: `save_preset` stores the EQ with the preset
+        (stock presets have it off). The preset keeps gain in 1/8 dB and q in
+        0.02 steps. No arguments: read only. Returns the EQ state."""
+        band_vals = (freq_hz, gain_db, q)
+        if band is None and any(v is not None for v in band_vals):
+            raise InvalidArgumentError("freq_hz, gain_db and q need band (1..5)")
+        if band is not None and not 1 <= band <= EQ_BANDS:
+            raise InvalidArgumentError("band must be 1..5")
+        if any(v is not None and v < 0 for v in (hpf_hz, lpf_hz, freq_hz, q)):
+            raise InvalidArgumentError("frequencies and q must not be negative")
+        cmds = []
+        if hpf_hz is not None:
+            cmds.append(f"eq hpf {_dec(hpf_hz)}")
+        if lpf_hz is not None:
+            cmds.append(f"eq lpf {_dec(lpf_hz)}")
+        if band is not None:
+            cur = parse_eq(self.pedal.check("eq"))["bands"][band - 1]
+            f, g, qq = (v if v is not None else cur[k]
+                        for v, k in zip(band_vals, ("freq_hz", "gain_db", "q"), strict=True))
+            cmds.append(f"eq {band} {_dec(f)} {_dec(g)} {_dec(qq)}")
+        if on is not None:                  # last: `eq on` starts with the new settings
+            cmds.append("eq on" if on else "eq off")
+        text = ""
+        for cmd in cmds or ["eq"]:
+            text = self.pedal.check(cmd)
+        return parse_eq(text)
+
     def set_output(self, gain_db: int | None = None, mute: bool | None = None) -> dict:
         """Output gain after the master (console `gain`): 0 dB or more, or
         -6 / -12 dB; and the output mute."""
@@ -320,6 +383,30 @@ class PedalTools:
             out["mute"] = self.pedal.check("mute on" if mute else "mute off")
         out["stats"] = self.pedal.run("stats")
         return out
+
+    def usb_route(self, route: Literal["out", "in", "mix"] | None = None) -> dict:
+        """Where the host's USB playback goes (console `usb`): "out" to the
+        DAC (default, the pedal's output), "in" into the chain input instead
+        of the instrument (reamping), "mix" summed with the instrument. No
+        route: read only. Not stored; `audio_test` source "usb" sets "in" for
+        its run and restores the route."""
+        if route is not None and route not in ("out", "in", "mix"):
+            raise InvalidArgumentError("route must be out, in or mix")
+        text = self.pedal.check("usb" if route is None else f"usb {route}")
+        m = USB_ROUTE_RE.search(text)
+        if m is None:
+            raise CommunicationError("this firmware has no USB playback routing: update it")
+        return {"route": m.group(1), "text": text}
+
+    def cab_long(self, taps: int) -> dict:
+        """Measurement aid (console `cab long`): put a synthetic IR of `taps`
+        taps (1..4096; noise, -60 dB at 4096) in the cab until the next cab
+        change, e.g. to measure the long-IR CPU cost with `cpu_profile`.
+        0 goes back to the preset's cab. Sounds like noise: not for playing."""
+        if not 0 <= taps <= CAB_MAX_TAPS:
+            raise InvalidArgumentError(f"taps must be 0..{CAB_MAX_TAPS}")
+        text = self.pedal.check(f"cab long {taps}")
+        return {"taps": taps, "text": text}
 
     def drums(self, on: bool | None = None, rhythm: int | None = None, bpm: int | None = None,
               level: int | None = None) -> dict:
@@ -454,8 +541,8 @@ class PedalTools:
 
     TOOLS = ("pedal_status", "pedal_info", "console", "preset", "save_preset", "get_effects",
              "set_amp", "set_cab", "set_comp", "set_gate", "set_mod", "set_reverb", "set_delay",
-             "set_output", "drums", "tuner", "cpu_profile", "crash_dump", "ir_list",
-             "ir_import", "audio_test")
+             "set_eq", "set_output", "usb_route", "cab_long", "drums", "tuner", "cpu_profile",
+             "crash_dump", "ir_list", "ir_import", "audio_test")
 
 
 def _sdk():

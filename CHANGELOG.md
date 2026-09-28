@@ -17,8 +17,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `delay_ms`.
 - **Bass EQ** (not in the stock): HPF 20-200 Hz, 5 peaking bands (30-10000 Hz,
   +-15 dB, Q 0.3-4), LPF 2-20 kHz, after the cab. Changes glide in 12 ms, no clicks.
-  Off after boot and bit-exact when off or flat; not in the preset yet. Console:
-  `eq [on|off]`, `eq hpf|lpf <hz>`, `eq <band> <hz> <dB> [q]` (docs/PARITY.md M4).
+  Bit-exact when off or flat. Console: `eq [on|off]`, `eq hpf|lpf <hz>`,
+  `eq <band> <hz> <dB> [q]` (docs/PARITY.md M4).
+- **Bass EQ in the preset:** the console `eq` writes the EQ into the edit buffer and
+  `save` stores it: marker "EQ" at preset `0xc4` and 24 bytes of settings at
+  `0xc6..0xdd` (the unused tail after the module order; gain in 1/8 dB, Q x 50).
+  A preset change glides to its EQ (no click). Presets without the marker (all
+  factory presets, presets from the stock app) play with the EQ off; the stock
+  firmware and the stock app ignore the bytes and the app's module edits keep them.
+- **MCP tools** `set_eq` (on/off, HPF, LPF, band freq/gain/q; returns the EQ state),
+  `usb_route` (`out`/`in`/`mix`) and `cab_long` (N-tap synthetic cab IR for
+  measurements, 0 = back to the preset's cab); the `console` tool lists `eq` and
+  `cab long`.
 - **Two-stage convolver for long IRs (M5, library only):** `dsp/conv2.c` runs
   IRs up to 4096 taps with no added latency: the 512-tap head on the current
   convolver, the rest in 256-sample partitions spread over the 8 blocks of each
