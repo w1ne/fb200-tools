@@ -33,7 +33,7 @@ Status words:
 | Master volume, smoothed | DONE | `engine.c` (`s_master`), knob k15 |
 | Input gain (global `S+0x1a`, app, -55..+6 dB) | DONE | `dsp/gain.c` `gain_input_stock` (stock table dB steps, within 1 ulp; `dsp_host_test.c`), stock smoother in `engine.c`; 0 dB keeps the bit-parity value |
 | Delay (preset fields `0x8c..0x94`, protocol `0x85`) | BETTER | the stock DSP ignores them (emulation). Ours plays them only in presets with our marker, so stock presets sound the same: [M4 delay](#m4-bass-delay) |
-| Bass EQ (not in the stock) | BETTER (host) | ours: HPF + 5 bands + LPF after the cab, console only, off after boot: [M4 EQ](#m4-bass-eq) |
+| Bass EQ (not in the stock) | BETTER (host) | ours: HPF + 5 bands + LPF after the cab, set from the console, stored in the preset with our marker (`0xc4`); stock presets keep it off: [M4 EQ](#m4-bass-eq) |
 | Module order (`0xbc`) | not needed | the stock ignores it (emulation); stored by `proto.c` `0xA0` |
 | Sample rate 44.1 kHz | DONE | `audio_config.h` `AUDIO_FS`; stock clock tree |
 
@@ -427,8 +427,29 @@ bands (30-10000 Hz, +-15 dB, Q 0.3-4; defaults 40, 100, 250, 800, 3000 Hz at
 to float once. No shelves: a band at 30-40 Hz with a low Q or the HPF does
 that job; add them if players ask.
 
-**Not in the preset** (yet): off after boot, set from the console. A preset
-field needs a free place and a rule like the delay marker (open).
+**In the preset, with a marker** (the delay rule). The record has a free
+tail after the module order (`0xbc..0xc3`): `0xc4..0xff` is 0 in all 21
+factory presets, no app command writes it (`0x80..0x86` write inside their
+0x18-byte module blocks, `0xA0` writes `0xbc..0xc2`, `0x99` the name), and
+the stock DSP ignores it. Layout (`preset.h` `P_EQ_MARK`, `eq.h` `eq_save`):
+
+| offset | size | field |
+|---|---|---|
+| `0xc4` | u16 | marker `0x5145` ("EQ") |
+| `0xc6` | u8 | on |
+| `0xc7` | u8 | HPF Hz (0 = off, 20-200) |
+| `0xc8` | u16 | LPF Hz (0 = off, 2000-20000) |
+| `0xca + 4 b` | u16, s8, u8 | band b 0..4: Hz, gain in 1/8 dB (+-120 = +-15 dB), Q x 50 (15-200) |
+
+`0xde..0xff` stays free. No marker (every stock preset, erased flash, a
+whole preset from the app with 0 there) = EQ off with the default settings.
+`engine_apply_preset` loads it every time (`eq_load`): only the stages that
+change glide (the same 16-block glide as the console), so a preset change
+does not click and a knob edit restarts nothing. The console `eq` writes the
+marker and the record into the edit buffer (on the grid: the state it shows
+is what `save` keeps). Presets with the EQ still load on the stock firmware
+(it ignores the bytes) and in the app; a whole-preset write from the app
+keeps them if the app sends back what it read.
 
 **Changes do not click.** Each stage glides to a new setting in 16 blocks
 (11.6 ms): frequency and Q in octaves, gain in dB, a new design every block,
@@ -461,7 +482,8 @@ with `prof` and `cpu`.
 
 **Console** (for tests on the pedal): `eq` (state), `eq on|off`,
 `eq hpf <20-200 Hz|0>`, `eq lpf <2000-20000 Hz|0>`,
-`eq <band 1-5> <hz> <gain dB> [q]` (e.g. `eq 2 100 -4.5 1.4`).
+`eq <band 1-5> <hz> <gain dB> [q]` (e.g. `eq 2 100 -4.5 1.4`). Each change
+goes into the edit buffer; `save` stores it. MCP: `set_eq`.
 
 **Tests** (`tests/test_dsp_host.py::test_eq_suite`, `audio/tests/eq_host_test.c`,
 44.1 and 48 kHz): the measured response (the DFT of the impulse response
@@ -474,9 +496,18 @@ through 10 parameter changes, the output above 8 kHz stays below -70 dB re
 its peak (worst -76 dB; negative controls: a 1 % step added at the change
 reads -48 to -63 dB, a hard coefficient switch fails 2 of the 10); stable:
 every stage at its limits, 20 s of random changes every 1-40 blocks, a
-silence ends in exact zeros.
+silence ends in exact zeros. Preset (`tests/test_eq_preset.py`,
+`audio/tests/eq_preset_host_test.c`): the marker rule (0, erased,
+byte-swapped), the record layout byte for byte, save -> load -> save is the
+identity, off-grid values round, garbage clamps and stays finite; a preset
+change with a 100 Hz sine: max |second difference| stays at the settled
+sine's (0.98 off -> on, 0.90 on -> off; a cleared-state control reads 199x),
+then bypassed and bit-exact; all factory presets 0 in `0xc4..0xff`; the
+stock DSP output is bit-identical with a full EQ record there (emulation;
+an amp-gain control edit does change it); app module/order/name writes keep
+the bytes (`test_proto_host.py`).
 
-Open: preset storage and app control, pedal knobs/footswitch for it,
+Open: app control, pedal knobs/footswitch for it,
 shelves if wanted, the pedal check.
 
 ## Why ours is better

@@ -251,7 +251,7 @@ static void cmd_eq(int argc, char **argv)
     if (e->lpf > 0.0f) log_printf("%d Hz\r\n", (int)(e->lpf + 0.5f)); else log_printf("off\r\n");
     for (unsigned b = 0; b < EQ_BANDS; b++) {
         log_printf("  %u: %d Hz", b + 1u, (int)(e->f[b] + 0.5f));
-        print_dec(" ", e->g[b], 1, 1);
+        print_dec(" ", e->g[b], 2, 1);
         print_dec(" dB q ", e->q[b], 2, 0);
         log_printf("\r\n");
     }
