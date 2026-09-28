@@ -76,8 +76,7 @@ CFLAGS    := $(CPUFLAGS) -O2 -g3 -ffreestanding -fno-builtin -fno-common \
              -Wall -Wextra -Wno-unused-parameter -std=gnu11 \
              $(if $(filter recovery,$(VARIANT)),-DFB200_RECOVERY) \
              $(TUSB_INC) $(TUSB_DEFS) -I src -I src/compat -I board -I . -MMD -MP
-LDFLAGS   := $(CPUFLAGS) -nostdlib -Wl,--gc-sections -L $(TARGET) -T linker.ld \
-             -Wl,-Map=$(TARGET).map,--cref
+LDFLAGS   := $(CPUFLAGS) -nostdlib -Wl,--gc-sections -T linker.ld -Wl,-Map=$(TARGET).map,--cref
 
 SRC_C := \
   src/startup.c src/vectors.c src/main.c src/memfuncs.c \
@@ -146,40 +145,6 @@ STOCK_OBJS  := $(patsubst %,$(TARGET)/%.o,src/dsp/amp.c src/dsp/tone.c src/dsp/c
 $(STOCK_OBJS) $(TARGET)/$(DSP_SRC)/FilteringFunctions/FilteringFunctions.c.o: \
   CFLAGS += -ffp-contract=off
 
-# Hot and cold code (docs/FIRMWARE_BRINGUP.md, "Hot and cold code").
-# ITCM is full, so the app runs code that is not on the audio path from OCRAM:
-# linker.ld .ocramtext, loaded from the slot data blob by stage2_main. The
-# rule: a file goes here only if nothing in it is reachable from an ISR,
-# from engine_task or usb_audio_task, or through a driver callback
-# (firmware/tools/hot_path.py checks it; tests/test_audio_image.py). Every
-# other file stays in ITCM. The main loop (main.c), boot (startup.c), the
-# fault path (vectors.c, recovery.c) and crc32.c stay in ITCM on purpose.
-# Recovery has no OCRAM code: it runs everything from ITCM.
-COLD_SRC := \
-  src/debug/console.c src/debug/regs.c src/debug/selfupdate.c \
-  src/debug/log_fmt.c src/debug/cdc_log.c \
-  src/usb_descriptors.c src/led.c \
-  src/ui/ui.c src/ui/display.c src/ui/controls.c src/ui/power.c src/ui/lightbar.c \
-  src/preset/preset.c src/proto/proto.c \
-  src/audio/i2c_probe.c src/audio/frontend.c src/dsp/stock_data.c \
-  $(TUSB_DIR)/src/class/cdc/cdc_device.c \
-  $(TUSB_DIR)/src/class/hid/hid_device.c \
-  $(BOARD_DIR)/board/clock_config.c \
-  $(BOARD_DIR)/board/pin_mux.c \
-  $(MCU_DIR)/drivers/fsl_clock.c \
-  $(MCUX_CORE)/drivers/common/fsl_common.c \
-  $(MCUX_CORE)/drivers/common/fsl_common_arm.c \
-  $(MCUX_CORE)/drivers/igpio/fsl_gpio.c \
-  $(MCUX_CORE)/drivers/ocotp/fsl_ocotp.c \
-  $(MCUX_CORE)/drivers/flexspi/fsl_flexspi.c \
-  $(MCUX_CORE)/drivers/adc_12b1msps_sar/fsl_adc.c \
-  $(MCUX_CORE)/drivers/flexio/fsl_flexio.c \
-  $(MCUX_CORE)/drivers/flexio/uart/fsl_flexio_uart.c \
-  $(MCUX_CORE)/drivers/dmamux/fsl_dmamux.c
-ifeq ($(VARIANT),recovery)
-COLD_SRC :=
-endif
-
 SRC_S := src/stage2.S
 OBJS  := $(patsubst %,$(TARGET)/%.o,$(SRC_C) $(SRC_S))
 
@@ -193,23 +158,16 @@ all: build
 
 build: deps $(TARGET).vectors.bin $(TARGET).blob.bin $(TARGET).copier.bin $(TARGET).dtcmdata.bin
 
-$(TARGET).elf: $(OBJS) linker.ld $(TARGET)/cold.ld
+$(TARGET).elf: $(OBJS) linker.ld
 	$(CC) $(OBJS) $(LDFLAGS) -lgcc -o $@
 
-# The .ocramtext input list for linker.ld (INCLUDE cold.ld), from COLD_SRC.
-$(TARGET)/cold.ld: Makefile
-	@mkdir -p $(dir $@)
-	@printf '/* generated from COLD_SRC (Makefile) */\n' > $@
-	@for f in $(COLD_SRC); do printf '*/%s.o(.text .text.* .rodata .rodata.*)\n' "$$f"; done >> $@
-
 # .vectors goes to block 0 offset 0; .blob to offset 0x7d4 (LMA in linker.ld).
-# .dtcmdata.bin is the slot's data blob: .ocramtext + .ocramdata + .dtcmdata
-# (contiguous LMAs).
+# .dtcmdata.bin is the slot's data blob: .ocramdata + .dtcmdata (contiguous LMAs).
 $(TARGET).vectors.bin $(TARGET).blob.bin $(TARGET).copier.bin $(TARGET).dtcmdata.bin: $(TARGET).elf
 	$(OBJCOPY) -O binary -j .vectors $< $(TARGET).vectors.bin
 	$(OBJCOPY) -O binary -j .blob $< $(TARGET).blob.bin
 	$(OBJCOPY) -O binary -j .copier $< $(TARGET).copier.bin
-	$(OBJCOPY) -O binary -j .ocramtext -j .ocramdata -j .dtcmdata $< $(TARGET).dtcmdata.bin
+	$(OBJCOPY) -O binary -j .ocramdata -j .dtcmdata $< $(TARGET).dtcmdata.bin
 
 $(TARGET)/%.c.o: %.c
 	@mkdir -p $(dir $@)
@@ -220,7 +178,7 @@ $(TARGET)/%.S.o: %.S
 	$(CC) $(CFLAGS) -c $< -o $@
 
 layout: deps $(TARGET).elf
-	$(NM) $(TARGET).elf | grep -E '(_estack|__bss_|__blob_end__|__ocramtext_|__ocramdata_|__dtcmdata_|stage2|app_main)' | sort > $(BUILD)/layout.txt
+	$(NM) $(TARGET).elf | grep -E '(_estack|__bss_|__blob_end__|__ocramdata_|__dtcmdata_|stage2|app_main)' | sort > $(BUILD)/layout.txt
 	cat $(BUILD)/layout.txt
 
 clean:
