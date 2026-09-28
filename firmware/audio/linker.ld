@@ -17,9 +17,9 @@ MEMORY
    * as the stock does: 4 banks ITCM (128 kB), 11 banks DTCM (352 kB), 1 bank
    * OCRAM. Measured on the pedal (docs/FIRMWARE_BRINGUP.md, "Memory map"):
    * at 0x20208000.. data writes are dropped and reads return 0, with no
-   * fault. The vendor loader unpacks the stock's 0x5AA0-byte OCRAM data to
-   * 0x20200000 at boot (its load table entry 3); nothing of ours reads it,
-   * so the whole bank is ours. Not kept over a warm reset (recovery.c):
+   * fault. The stock's loader table unpacks 0x5AA0 bytes of stock data to
+   * 0x20200000 (entry 3); our images turn that entry into the .bss memset
+   * (src/fb200/images.py) and nothing of ours reads it: the bank is ours. Not kept over a warm reset (recovery.c):
    * .ocram is NOLOAD and code clears what it uses (delay_init); .ocramdata
    * is copied at every boot. What goes here and its sizes: engine.c
    * (ENGINE_IR_TAPS) and dsp/delay.h (DELAY_MS_MAX). */

@@ -86,33 +86,53 @@ The stock loader keeps working on our image because the load table, the
 vendor boot region and entries 1-4 payloads are untouched; only the bytes the
 loader copies to ITCM 0x400 are ours.
 
+### Memory map (audio app)
+
+The chip is an **i.MX RT1052** (MIMXRT1052DVL6B), not an RT1062: 512 kB of
+FlexRAM, no separate OCRAM2. `stage2_main` sets the FlexRAM split as the stock
+stub does: `IOMUXC_GPR16 = 0x00200007`, `IOMUXC_GPR17 = 0xFFAAAAA9` (bank 0
+OCRAM, banks 1-11 DTCM, banks 12-15 ITCM). Measured on the pedal on
+2026-09-28 (`peek32`/`poke32` on the running app, D-cache lines evicted
+before each read):
+
+| Region | Address | Size | Our use |
+|---|---|---|---|
+| ITCM | `0x00000000..0x0001FFFF` | 128 kB (4 banks) | vectors, all code and const data (`.blob`, limit 0x1dbc8 B), recovery's copier at `0x1F000` |
+| DTCM | `0x20000000..0x20057FFF` | 352 kB (11 banks) | `.dtcmdata` + `.bss` from `0x20018B44` (the stock memset region), stack below `0x20058000`; below `0x20018B44`: stock data unpacked at boot, crash dump (`recovery.c`) |
+| OCRAM | `0x20200000..0x20207FFF` | 32 kB (1 bank) | `.ocramdata` (empty now) and `.ocram`: user IR staging (2 kB), EQ (508 B), delay line (30 kB) |
+| - | `0x20208000..` | none | data writes are dropped, reads return 0, no fault; an instruction fetch runs through zeros to `0x20280000` and bus-faults |
+
+- In the stock image the vendor loader unpacks 0x5AA0 bytes of stock data
+  to OCRAM `0x20200000` (load table entry 3). Our images do not: the packer
+  turns entries 1-3 into copies of the `.bss` memset (`src/fb200/images.py`,
+  [BOOTLOADER.md](BOOTLOADER.md) section 4), and nothing of ours reads the
+  range before it writes it (`.ocram` is NOLOAD, and each buffer is written before it is read:
+  `delay_init` clears the line, `eq_init` sets the EQ, a user IR is copied in
+  before the cab reads it), so all 32 kB are ours.
+- Up to PR #13 our linker script declared `OCRAM 0x20210000, 512 kB` (the
+  RT1062 layout). Everything placed there did not exist: the delay line
+  (v0.8.0: the repeats never played), the user IR staging, the EQ state, the
+  long-IR tail and its FFT tables, and in PR #13 the cold code (the app
+  crashed at boot).
+- Guards: `linker.ld` (region length and an `ASSERT`),
+  `tests/test_audio_image.py::test_every_section_is_in_real_memory` (every
+  allocated section of both ELFs in the table above), and the emulators
+  (`firmware/tools/boot_dry_run.py`, the stock emulators, the LabWired chip
+  model) map only these three windows, so an access outside fails the run.
+- The RAM-bound sizes are one define each: `ENGINE_IR_TAPS`
+  (`src/audio/engine.h`; 512 = long IRs off) and `DELAY_MS_MAX`
+  (`src/dsp/delay.h`; 342 ms).
+
 ### Hot and cold code (audio app)
 
-The ITCM payload has a hard limit: 0x1dbc8 bytes (the vendor loader's entry
-0, `tests/test_audio_image.py`). The audio app does not fit in it any more,
-so it runs code that is not on the audio path from OCRAM:
-
-- **Hot (ITCM):** everything an ISR, `engine_task` or `usb_audio_task` can
-  reach, the TinyUSB audio class driver (`audiod_*`), driver callbacks, and
-  on purpose the main loop (`main.c`), boot (`startup.c`), the fault path
-  (`vectors.c`, `recovery.c`) and `crc32.c`.
-- **Cold (OCRAM, linker `.ocramtext`):** the files in `COLD_SRC`
-  (`firmware/audio/Makefile`): console, self-update, logging, UI and
-  display, preset storage, protocol, USB descriptors and the CDC/HID class
-  drivers, clock and pin setup, and SDK drivers used only at init or from
-  the main loop.
-- **Rule:** a file goes to `COLD_SRC` only if nothing in it is reachable from
-  a hot root. `firmware/tools/hot_path.py` follows direct calls, tail calls,
-  veneers and callback addresses from the hot roots and fails if any
-  reachable function is in OCRAM; `tests/test_audio_image.py` runs it and
-  has a negative control.
-- **Load:** `.ocramtext` is the first part of the slot data blob (flash
-  0x60041000: `.ocramtext`, `.ocramdata`, `.dtcmdata`; the slot header
-  carries its length and CRC). `stage2_main` refuses a slot whose data is
-  shorter than this build needs (fault crumb, reset into recovery, which
-  stays on the console), copies the three parts, makes OCRAM executable if
-  the MPU is on, and cleans/invalidates the caches and turns the I-cache on.
-- **Recovery** has no OCRAM code: it runs everything from ITCM.
+All app code runs from ITCM; the ITCM payload is 121024 of its 121800-byte
+limit (0x1dbc8, the vendor loader's entry 0). Moving code that is not on the
+audio path out of ITCM (for example to flash XIP) needs a rule for what may
+move: nothing reachable from an ISR, from `engine_task` or `usb_audio_task`,
+or through a driver callback. `firmware/tools/hot_path.py` follows direct
+calls, tail calls, veneers and callback addresses from these roots and fails
+if any reachable function is outside ITCM; `tests/test_audio_image.py` runs
+it, with a negative control.
 
 ## 4. Why earlier attempts failed
 

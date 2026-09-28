@@ -38,9 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   <= 512 taps the tail does no work: same sound (bit-identical) and same CPU as
   before. A long IR loads without an audio stall: one tail FFT per block, then an
   exact swap at a frame boundary (~15-25 ms after the change). From a short IR the
-  new tail starts empty and fades in over its length. The tail buffers (96 kB) and
-  the 512-point FFT tables (4.9 kB) are in OCRAM. Console: `cab long <taps>` loads
-  a synthetic test IR (0: back to the preset's cab), for `prof` on the pedal.
+  new tail starts empty and fades in over its length. Console: `cab long <taps>`
+  loads a synthetic test IR (0: back to the preset's cab), for `prof` on the pedal.
+  **Off on the pedal for now** (see Fixed): the tail (96 kB) and its FFT tables
+  (4.9 kB) do not fit in RAM yet.
 - **Better IR import** (host): `fb200 ir import` resamples with a Kaiser windowed
   sinc (aliasing below -60 dB; the linear resampler is gone) and takes
   `--channel`, `--trim`, `--taps N` (up to 4096, half-Hann fade-out),
@@ -59,13 +60,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sequence on LPUART5 (`AT+TM` .. `AT+B401`) at about 11 s of device time.
   See `docs/LABWIRED.md`.
 
-### Changed
+### Fixed
 
-- **Cold code runs from OCRAM:** console, UI, preset storage, protocol, USB setup and
-  init drivers moved out of ITCM into OCRAM (loaded from the slot data blob at boot).
-  The ITCM payload went from 120 kB to 72 kB of its 121.8 kB limit; the audio path
-  stays in ITCM (`firmware/tools/hot_path.py` checks it). A slot without its data
-  goes back to recovery.
+- **Memory map: OCRAM is 32 kB.** The pedal's chip is an i.MX RT1052: its FlexRAM
+  split (IOMUXC_GPR17 = 0xFFAAAAA9, read back on the pedal) gives ITCM 128 kB, DTCM
+  352 kB and OCRAM 32 kB at 0x20200000. Our linker script declared 512 kB of OCRAM at
+  0x20210000 (an RT1062 layout), where the pedal has nothing: writes are dropped,
+  reads return 0, code there faults. Now `linker.ld` has the real 32 kB (with an
+  `ASSERT`), a test checks that every section of both images lies in real memory,
+  and the boot emulation, the stock emulators and the LabWired chip model map only
+  the real RAM (docs/FIRMWARE_BRINGUP.md, "Memory map").
+- **The app crashed at boot** (unreleased): its cold code ran from the missing OCRAM.
+  All code runs from ITCM again (121024 of 121800 bytes). `firmware/tools/hot_path.py`
+  stays, as the check for moving cold code out of ITCM later. A slot without its
+  data still goes back to recovery.
+- **Bass delay: the repeats never played on the pedal in v0.8.0** (its line was in
+  the missing OCRAM: only the dry signal came out). The line is now in the real OCRAM;
+  **the max time is 342 ms** (was 1000 ms) until more RAM is found. The console and
+  the MCP `set_delay` clamp to it; a preset keeps its stored time (format unchanged)
+  and plays it clamped. `delay on` on a stock preset now sets 300 ms (was 350).
+- **User IR slots (cab 11-19)** (unreleased): the IR was staged in the missing OCRAM,
+  so the cab got the IR only while the D-cache still held it, else zeros (silence).
+  The 512-tap staging buffer (2 kB) is in the real OCRAM now.
+- **Bass EQ** (unreleased): its state was in the missing OCRAM (it held only while
+  in the D-cache). Now in the real OCRAM.
+- **Long IRs are off** until more RAM is found: `cab_set_ir_len` over 512 taps fails,
+  `cab long` over 512 answers "not available" (the MCP `cab_long` reports an error),
+  and neither the tail nor the 512-point FFT tables are linked. The code and its host
+  tests stay (`ENGINE_IR_TAPS` in `src/audio/engine.h`).
+
+### Changed
 
 - **Cab IR on the FFT convolver:** the 512-tap cab runs as a partitioned FFT
   convolution, not a direct FIR. No added latency. About a quarter of the cab CPU

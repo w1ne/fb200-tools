@@ -138,7 +138,7 @@ def test_bss_uses_the_stock_memset_region():
 # "Memory map"). Above OCRAM_END there is nothing: writes are dropped, reads
 # return 0, no fault. The ELF must not place anything there.
 REAL_MEMORY = {
-    "ITCM": range(0x00000000, 0x00020000),    # 4 banks, 128 kB
+    "ITCM": range(0x00020000),                # 4 banks, 128 kB
     "DTCM": range(0x20000000, 0x20058000),    # 11 banks, 352 kB
     "OCRAM": range(0x20200000, 0x20208000),   # 1 bank, 32 kB
     "flash": range(0x60000000, 0x60800000),   # FlexSPI XIP (load addresses)

@@ -102,8 +102,9 @@ class FakeConsole:
         if w[0] == "eq":
             return self.eq_cmd(w[1:])
         if w[0] == "cab" and len(w) > 2 and w[1] == "long":
-            ok = w[2].isdigit() and int(w[2]) <= 4096
-            return f"cab long {w[2]}: {'ok' if ok else 'bad taps'}"
+            if w[2].isdigit() and int(w[2]) > 512:     # firmware without long IRs
+                return f"cab long {w[2]}: not available (long IRs need more RAM; max 512)"
+            return f"cab long {w[2]}: {'ok' if w[2].isdigit() else 'bad taps'}"
         if w[0] == "gain":
             if len(w) > 1:
                 if not w[1].isdigit():
@@ -264,7 +265,9 @@ def test_usb_route_and_cab_long(rig):
     assert con.sent == ["usb", "usb in"]
     with pytest.raises(InvalidArgumentError):
         tools.usb_route("dac")
-    assert tools.cab_long(4096)["text"] == "cab long 4096: ok"
+    assert tools.cab_long(512)["text"] == "cab long 512: ok"
+    with pytest.raises(InvalidArgumentError, match="not available"):
+        tools.cab_long(4096)
     assert tools.cab_long(0)["taps"] == 0 and con.sent[-1] == "cab long 0"
     for bad in (-1, 4097):
         with pytest.raises(InvalidArgumentError):
