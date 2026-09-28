@@ -15,7 +15,11 @@
 #   - NAU88L21 codec at I2C 0x54 on LPI2C1 (SD_B1_04/05); SAI1 audio 44.1 kHz;
 #     Bluetooth audio in on SAI3 RX
 #   - USB1: device 34DB:800F (USB Audio + vendor HID interface 3)
-#   - Bluetooth module on LPUART5 (B1_12 TX / B1_13 RX, 115200 8N1)
+#   - Bluetooth module on LPUART5 (B1_12 TX / B1_13 RX, 115200 8N1): a
+#     BT201-class module (Jieli KT1025A), the core `bt201` part. It powers on
+#     with the board, with the factory names (BT201-AUDIO / BT201-BLE): a board
+#     fresh from the factory. The console connector below stays as a tap, so
+#     `uart.log` still has what the firmware sends to the module.
 #   - display: 3-digit 14-segment LEDs multiplexed by GPIO4_IO16..30 (segments,
 #     active high) and GPIO4_IO31 / GPIO3_IO18 / GPIO3_IO21 (digit selects)
 #   - 16 knob LEDs GPIO4_IO0..15 (active low); 40 WS2812 on FlexIO2 D02
@@ -32,7 +36,10 @@
 
 name: "fb200"
 chip: "chip/mimxrt1052.yaml"
-external_devices: []
+external_devices:
+  - id: "bt"
+    type: "bt201"
+    connection: "lpuart5"
 peripherals:
   - id: "adc1"
     type: "imxrt_adc"
