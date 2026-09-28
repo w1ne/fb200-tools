@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **MCP server** (`fb200 mcp`, `pip install 'fb200-tools[mcp]'`): an AI agent (Claude
+  Code, Claude Desktop) drives the pedal over USB. Tools for status, the console, effect
+  blocks, delay, drums, tuner, CPU profile, crash dump, user IRs and an audio test
+  (test signal in, USB capture out: RMS, peak, THD, octave-band response).
+
 ### Changed
 
 - **Cab IR on the FFT convolver:** the 512-tap cab runs as a partitioned FFT
