@@ -88,6 +88,24 @@ def test_amp_cab_suite():
     assert "cab fir: max err" in result.stdout
 
 
+def test_eq_suite():
+    """Our bass EQ (dsp/eq.c): response vs the RBJ cookbook, flat = bit-exact,
+    no clicks on a change, stable at the extremes."""
+    out = FW / "build" / "eq_host_test"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-I", str(FW / "src"),
+         str(FW / "tests" / "eq_host_test.c"), str(FW / "src" / "dsp" / "eq.c"),
+         *cmsis_dsp_args(), "-lm", "-o", str(out)],
+        check=True,
+    )
+    result = subprocess.run([str(out)], capture_output=True, text=True, check=False)
+    print(result.stdout)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "eq host tests OK" in result.stdout
+    assert "no clicks:" in result.stdout and "all 7 stages:" in result.stdout
+
+
 OUT_FX = FW / "build" / "fx_host_test"
 
 
