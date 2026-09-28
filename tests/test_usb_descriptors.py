@@ -11,7 +11,6 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 FW = ROOT / "firmware" / "audio"
-ELF = FW / "build" / "fb200-app.elf"
 
 pytestmark = pytest.mark.skipif(
     any(shutil.which(t) is None for t in ("arm-none-eabi-gcc", "make")),
@@ -25,12 +24,12 @@ CS_AC_FEATURE_UNIT, CS_AC_CLOCK_SOURCE = 0x06, 0x0A
 
 
 def descriptor() -> bytes:
-    fwbuild.build(FW)
-    nm = subprocess.run(["arm-none-eabi-nm", str(ELF)], check=True,
+    elf = fwbuild.build(FW) / "fb200-app.elf"
+    nm = subprocess.run(["arm-none-eabi-nm", str(elf)], check=True,
                         capture_output=True, text=True).stdout
     addr = next(int(line.split()[0], 16) for line in nm.splitlines()
                 if line.endswith(" desc_configuration"))
-    sections = subprocess.run(["arm-none-eabi-readelf", "-S", "-W", str(ELF)],
+    sections = subprocess.run(["arm-none-eabi-readelf", "-S", "-W", str(elf)],
                               check=True, capture_output=True, text=True).stdout
     # Find the allocatable section containing the descriptor (the linker merges
     # .rodata into .blob).
@@ -48,7 +47,7 @@ def descriptor() -> bytes:
             off = int(file_off, 16) + (addr - int(vma, 16))
             break
     assert off is not None, "no section contains desc_configuration"
-    data = ELF.read_bytes()
+    data = elf.read_bytes()
     total = int.from_bytes(data[off + 2:off + 4], "little")
     return data[off:off + total]
 

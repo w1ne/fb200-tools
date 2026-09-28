@@ -1,15 +1,14 @@
+import functools
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 FW = ROOT / "firmware" / "audio"
-OUT = FW / "build" / "dsp_host_test"
-OUT_ENGINE = FW / "build" / "engine_host_test"
-OUT_LED = FW / "build" / "led_host_test"
 
 pytestmark = pytest.mark.skipif(
     shutil.which("cc") is None, reason="host C compiler not installed"
@@ -21,9 +20,14 @@ DSP_GROUPS = ["BasicMathFunctions", "ComplexMathFunctions", "FastMathFunctions",
               "SupportFunctions", "CommonTables",
               # arm_mfcc_* call the matrix functions; MinGW's linker keeps them
               "MatrixFunctions"]
-OUT_BLOCKS = FW / "build" / "dsp_blocks_host_test"
 # g_stock and stock_check(): amp, tone, cab and drums read the stock data through them
 STOCK_SRC = [FW / "src" / "dsp" / "stock_data.c", FW / "src" / "crc32.c"]
+
+
+@functools.cache
+def _build_dir() -> Path:
+    """Per process: parallel workers (pytest -n) do not overwrite each other's binaries."""
+    return Path(tempfile.mkdtemp(prefix="dsp_host_"))
 
 
 def cmsis_dsp_args() -> list[str]:
@@ -40,30 +44,30 @@ def cmsis_dsp_args() -> list[str]:
 
 
 def test_dsp_host_suite():
-    OUT.parent.mkdir(parents=True, exist_ok=True)
+    out = _build_dir() / "dsp_host_test"
     sources = [str(p) for p in sorted((FW / "src" / "dsp").glob("*.c"))] + [str(FW / "src" / "crc32.c")]
     subprocess.run(
         ["cc", "-O2", "-Wall", "-Wextra", "-I", str(FW / "src"),
          str(FW / "tests" / "dsp_host_test.c"), *sources, *cmsis_dsp_args(), "-lm",
-         "-o", str(OUT)],
+         "-o", str(out)],
         check=True,
     )
-    result = subprocess.run([str(OUT)], capture_output=True, text=True, check=False)
+    result = subprocess.run([str(out)], capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "dsp host tests OK" in result.stdout
 
 
 def test_dsp_blocks_suite():
     """Convolver vs brute-force FIR, RBJ biquads vs analytic response."""
-    OUT_BLOCKS.parent.mkdir(parents=True, exist_ok=True)
+    out = _build_dir() / "dsp_blocks_host_test"
     blocks = [FW / "src" / "dsp" / f for f in ("conv.c", "biquad.c", "math.c")]
     subprocess.run(
         ["cc", "-O2", "-Wall", "-Wextra", "-I", str(FW / "src"),
          str(FW / "tests" / "dsp_blocks_host_test.c"), *map(str, blocks), *cmsis_dsp_args(),
-         "-lm", "-o", str(OUT_BLOCKS)],
+         "-lm", "-o", str(out)],
         check=True,
     )
-    result = subprocess.run([str(OUT_BLOCKS)], capture_output=True, text=True, check=False)
+    result = subprocess.run([str(out)], capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "dsp blocks host tests OK" in result.stdout
     assert "conv 2048 taps" in result.stdout
@@ -72,8 +76,7 @@ def test_dsp_blocks_suite():
 def test_conv2_suite():
     """Two-stage convolver (M5, up to 4096 taps) vs a double-precision FIR,
     bit-identity with conv_t for IRs <= 512 taps, IR swaps, zero latency."""
-    out = FW / "build" / "conv2_host_test"
-    out.parent.mkdir(parents=True, exist_ok=True)
+    out = _build_dir() / "conv2_host_test"
     mods = [FW / "src" / "dsp" / f for f in ("conv2.c", "conv.c")]
     subprocess.run(
         ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-I", str(FW / "src"),
@@ -91,8 +94,7 @@ def test_amp_cab_suite():
     """amp/tone/cab without the stock data (CI): pass-through, cab FIR vs
     brute force, stock user-IR gain formula. Stock parity lives in
     test_stock_dsp_parity.py (needs the vendor .mr)."""
-    out = FW / "build" / "amp_cab_host_test"
-    out.parent.mkdir(parents=True, exist_ok=True)
+    out = _build_dir() / "amp_cab_host_test"
     mods = [FW / "src" / "dsp" / f for f in ("amp.c", "tone.c", "cab.c", "conv.c")] + STOCK_SRC
     subprocess.run(
         ["cc", "-O2", "-Wall", "-Wextra", "-I", str(FW / "src"),
@@ -106,46 +108,43 @@ def test_amp_cab_suite():
     assert "cab fir: max err" in result.stdout
 
 
-OUT_FX = FW / "build" / "fx_host_test"
-
-
 def test_fx_suite():
     """Stock-effect ports: behaviour at 44.1 and 48 kHz (parity: test_fx_parity.py)."""
-    OUT_FX.parent.mkdir(parents=True, exist_ok=True)
+    out = _build_dir() / "fx_host_test"
     fx = [FW / "src" / "dsp" / f for f in ("detector.c", "gate.c", "comp.c", "mod.c", "reverb.c", "math.c")]
     subprocess.run(
         ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-I", str(FW / "src"),
          str(FW / "tests" / "fx_host_test.c"), *map(str, fx), *cmsis_dsp_args(),
-         "-lm", "-o", str(OUT_FX)],
+         "-lm", "-o", str(out)],
         check=True,
     )
-    result = subprocess.run([str(OUT_FX)], capture_output=True, text=True, check=False)
+    result = subprocess.run([str(out)], capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "fx host tests OK" in result.stdout
 
 
 def test_engine_drift_suite():
-    OUT_ENGINE.parent.mkdir(parents=True, exist_ok=True)
+    out = _build_dir() / "engine_host_test"
     subprocess.run(
         ["cc", "-O2", "-Wall", "-Wextra", "-I", str(FW / "src"),
          str(FW / "tests" / "engine_host_test.c"),
-         str(FW / "src" / "audio" / "drift.c"), "-o", str(OUT_ENGINE)],
+         str(FW / "src" / "audio" / "drift.c"), "-o", str(out)],
         check=True,
     )
-    result = subprocess.run([str(OUT_ENGINE)], capture_output=True, text=True,
+    result = subprocess.run([str(out)], capture_output=True, text=True,
                             check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "drift host tests OK" in result.stdout
 
 
 def test_led_pattern_suite():
-    OUT_LED.parent.mkdir(parents=True, exist_ok=True)
+    out = _build_dir() / "led_host_test"
     subprocess.run(
         ["cc", "-O2", "-Wall", "-Wextra", "-I", str(FW / "src"),
-         str(FW / "tests" / "led_host_test.c"), "-o", str(OUT_LED)],
+         str(FW / "tests" / "led_host_test.c"), "-o", str(out)],
         check=True,
     )
-    result = subprocess.run([str(OUT_LED)], capture_output=True, text=True,
+    result = subprocess.run([str(out)], capture_output=True, text=True,
                             check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "led host tests OK" in result.stdout

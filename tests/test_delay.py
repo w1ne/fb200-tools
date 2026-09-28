@@ -9,29 +9,32 @@
 
 Part 2 skips (with the reason) without the vendor image or unicorn.
 """
+import functools
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 FW = ROOT / "firmware" / "audio"
-OUT = FW / "build" / "delay_host_test"
 sys.path.insert(0, str(ROOT / "src"))
 
 pytestmark = pytest.mark.skipif(shutil.which("cc") is None, reason="host C compiler not installed")
 
 
+@functools.cache
 def build() -> Path:
-    OUT.parent.mkdir(parents=True, exist_ok=True)
+    """Once per process, in its own dir: parallel workers (pytest -n) do not collide."""
+    exe = Path(tempfile.mkdtemp(prefix="delay_host_")) / "delay_host_test"
     subprocess.run(["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-I", str(FW / "src"),
                     str(FW / "tests" / "delay_host_test.c"),
                     str(FW / "src" / "dsp" / "delay.c"), str(FW / "src" / "dsp" / "math.c"),
-                    "-lm", "-o", str(OUT)], check=True)
-    return OUT
+                    "-lm", "-o", str(exe)], check=True)
+    return exe
 
 
 def test_delay_host_suite():

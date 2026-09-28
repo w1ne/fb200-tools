@@ -8,8 +8,6 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 FW = ROOT / "firmware" / "audio"
-VECTORS = FW / "build" / "fb200-app.vectors.bin"
-BLOB = FW / "build" / "fb200-app.blob.bin"
 
 pytestmark = pytest.mark.skipif(
     any(shutil.which(t) is None for t in ("arm-none-eabi-gcc", "make", "curl", "git", "python3")),
@@ -18,12 +16,12 @@ pytestmark = pytest.mark.skipif(
 
 
 def build() -> tuple[bytes, bytes]:
-    fwbuild.build(FW)
-    return VECTORS.read_bytes(), BLOB.read_bytes()
+    out = fwbuild.build(FW)
+    return (out / "fb200-app.vectors.bin").read_bytes(), (out / "fb200-app.blob.bin").read_bytes()
 
 
 def symbols() -> dict[str, int]:
-    text = (FW / "build" / "layout.txt").read_text()
+    text = (fwbuild.build(FW) / "layout.txt").read_text()
     return {n: int(a, 16) for a, n in re.findall(r"^([0-9a-f]{8}) \S+ (\S+)$", text, re.MULTILINE)}
 
 
@@ -49,7 +47,7 @@ def test_bss_uses_the_stock_memset_region():
 def test_no_undefined_symbols():
     build()
     undef = subprocess.run(
-        ["arm-none-eabi-nm", "-u", str(FW / "build" / "fb200-app.elf")],
+        ["arm-none-eabi-nm", "-u", str(fwbuild.build(FW) / "fb200-app.elf")],
         check=True, capture_output=True, text=True,
     ).stdout.strip()
     assert undef == ""
