@@ -1,0 +1,114 @@
+# fb200-tools: LabWired twin of the FLAMMA FB200 - stock boot gate.
+#
+# Boots the UNMODIFIED vendor firmware (V1.0.1) on the FB200 board
+# (system.yaml) for 90 M cycles, cold, through the vendor loader, to USB
+# enumeration. The vendor image is not in this repository: build
+# build/labwired/stock.elf from your own fb200-stock.mr first
+# (python3 tools/labwired_stock.py, see docs/LABWIRED.md).
+#
+# Every assertion reads a register that the firmware or the simulated USB
+# host changed from its reset value. The expected values are silicon register
+# facts (IMXRT1050RM), not bytes of the vendor image. Run it with
+# LABWIRED_STRICT_FIDELITY=1: then an unmapped MMIO access or an undecoded
+# instruction stops the run with an error (stage 8).
+schema_version: "1.0"
+inputs:
+  firmware: "../build/labwired/stock.elf"
+  system: "system.yaml"
+limits:
+  max_steps: 400000000
+  # USB enumeration ends at about 65 M cycles; the first-boot preset format
+  # that follows takes more than 1 G cycles and is not needed here.
+  max_cycles: 90000000
+  wall_time_ms: 300000
+assertions:
+  # --- Stage 2: clocks ---
+  # DCDC_REG3.TRG: VDD_SOC target raised from the reset 0x0E (1.15 V) to
+  # 0x12 (1.25 V) before the 600 MHz switch. Only the firmware writes it.
+  - memory_value:
+      address: 0x4008000C
+      mask: 0x0000001F
+      expected_value: 0x00000012
+  # DCDC_REG0.STS_DC_OK: set again after the output slewed to the new target
+  # (the model clears it on a TRG change). With the check above it proves
+  # the firmware waited for the rail, not only that the reset value is 1.
+  - memory_value:
+      address: 0x40080000
+      mask: 0x80000000
+      expected_value: 0x80000000
+  # CCM_ANALOG_PLL_ARM: LOCK=1, ENABLE=1, POWERDOWN=0, DIV_SELECT=100
+  # (1200 MHz, /2 = 600 MHz core). Reset is 0x00013063 (powered down, not
+  # locked); the model raises LOCK only 50 us after power-up.
+  - memory_value:
+      address: 0x400D8000
+      mask: 0x8000307F
+      expected_value: 0x80002064
+
+  # --- Stage 4: codec on LPI2C1 ---
+  # LPI2C1_MSR.NDF: a NACK was detected. Reset is 0; the model sets it only
+  # when an address or data byte is not acknowledged. No codec is attached,
+  # so the NAU88L21 probe NACKs. (The address 0x54 is not visible here.)
+  - memory_value:
+      address: 0x403F0014
+      mask: 0x00000400
+      expected_value: 0x00000400
+
+  # --- Stage 6: USB1 enumeration ---
+  # USB1_USBMODE.CM = 2: device mode (reset 0 = idle).
+  - memory_value:
+      address: 0x402E01A8
+      mask: 0x00000003
+      expected_value: 0x00000002
+  # USB1_USBCMD.RS = 1: the controller is running (reset 0).
+  - memory_value:
+      address: 0x402E0140
+      mask: 0x00000001
+      expected_value: 0x00000001
+  # USB1_PORTSC1: CCS=1, PE=1, PSPD=2 (high speed). The model reports these
+  # only after the host saw the device attach and completed the bus reset.
+  - memory_value:
+      address: 0x402E0184
+      mask: 0x0C000005
+      expected_value: 0x08000005
+  # USB1_DEVICEADDR.USBADR = 5. The simulated host picks 5 in SET_ADDRESS;
+  # the firmware can only learn it from that SETUP packet and write it back.
+  - memory_value:
+      address: 0x402E0154
+      mask: 0xFE000000
+      expected_value: 0x0A000000
+  # USB1_ENDPTCTRL1: TX enabled (TXE), interrupt type (TXT=3). Reset 0; the
+  # firmware enables its non-control endpoints only on SET_CONFIGURATION.
+  - memory_value:
+      address: 0x402E01C4
+      mask: 0x008C0000
+      expected_value: 0x008C0000
+  # USB1_ENDPTCTRL4: TX enabled, interrupt type. Same reason as endpoint 1.
+  - memory_value:
+      address: 0x402E01D0
+      mask: 0x008C0000
+      expected_value: 0x008C0000
+  # USB1_ENDPTCTRL5: RX enabled (RXE), interrupt type (RXT=3). Same reason.
+  - memory_value:
+      address: 0x402E01D4
+      mask: 0x0000008C
+      expected_value: 0x0000008C
+
+  # --- Stage 7: display pins ---
+  # GPIO4_GDIR bits 16..31: segment lines and digit select 0 are outputs
+  # (reset 0 = all inputs).
+  - memory_value:
+      address: 0x401C4004
+      mask: 0xFFFF0000
+      expected_value: 0xFFFF0000
+  # GPIO3_GDIR bits 18 and 21: digit selects 1 and 2 are outputs (reset 0).
+  - memory_value:
+      address: 0x401C0004
+      mask: 0x00240000
+      expected_value: 0x00240000
+
+  # --- Stage 8: the run did not stop early ---
+  # A memory violation or a decode error ends the run with that reason, so
+  # reaching the cycle limit proves neither happened. Unmapped MMIO and
+  # undecoded instructions that the core only logs are caught by
+  # LABWIRED_STRICT_FIDELITY=1 (see the header).
+  - expected_stop_reason: max_cycles
