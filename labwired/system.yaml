@@ -32,7 +32,13 @@
 
 name: "fb200"
 chip: "chip/mimxrt1052.yaml"
-external_devices: []
+external_devices:
+  # NAU88L21 codec: CSB strapped high, so I2C address 0x54 (AUDIO_PATH.md).
+  - id: "codec"
+    type: "nau88l21"
+    connection: "lpi2c1"
+    config:
+      i2c_address: 0x54
 peripherals:
   - id: "adc1"
     type: "imxrt_adc"
