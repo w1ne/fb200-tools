@@ -16,7 +16,11 @@ Symbols read from the ELF (via arm-none-eabi-nm): stage2, stage2_main,
 app_main. With --app-elf (two-stage image, docs/BOOTLOADER.md §4) the ELF is
 the recovery build and the run continues through recovery's boot decision and
 copier until the app's own app_main, then (with the app slot) into the app's
-OCRAM code (linker.ld .ocramtext) and back.
+cold code, run in place from flash (linker.ld .xiptext), and back.
+
+RAM is mapped as the pedal has it (IOMUXC_GPR17 = 0xFFAAAAA9, measured):
+ITCM 128 kB, DTCM 352 kB, OCRAM 32 kB. An access anywhere else stops the
+run.
 """
 
 from __future__ import annotations
@@ -33,9 +37,9 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from fb200.firmware import MrFile
 
-ITCM_BASE, ITCM_SIZE = 0x0, 0x200000
-DTCM_BASE, DTCM_SIZE = 0x20000000, 0x100000
-OCRAM_BASE, OCRAM_SIZE = 0x20200000, 0x100000
+ITCM_BASE, ITCM_SIZE = 0x0, 0x20000             # 4 FlexRAM banks
+DTCM_BASE, DTCM_SIZE = 0x20000000, 0x58000      # 11 banks
+OCRAM_BASE, OCRAM_SIZE = 0x20200000, 0x8000     # 1 bank
 PERIPH_BASE, PERIPH_SIZE = 0x40000000, 0x10000000
 FLASH_BASE, FLASH_SIZE = 0x60000000, 0x800000
 SCB_BASE, SCB_SIZE = 0xE0000000, 0x100000
@@ -92,10 +96,10 @@ def main() -> int:
     copier = syms.get("copier")
     app_syms = elf_symbols(args.app_elf) if args.app_elf else {}
     app_app_main = app_syms.get("app_main")
-    # The app's cold code (linker.ld .ocramtext): stage2_main copies it from
-    # the slot data to OCRAM. The run goes on until app_main has called into
-    # it and come back to ITCM through the veneers.
-    cold = range(app_syms.get("__ocramtext_start__", 0), app_syms.get("__ocramtext_end__", 0))
+    # The app's cold code (linker.ld .xiptext) runs in place from the slot
+    # data area. The run goes on until app_main has called into it and come
+    # back to ITCM through the veneers.
+    cold = range(app_syms.get("__xiptext_start__", 0), app_syms.get("__xiptext_end__", 0))
     if args.app_elf and copier is None:
         raise SystemExit("--app-elf needs a recovery ELF (no copier symbol)")
 
@@ -129,8 +133,8 @@ def main() -> int:
             if not cold:
                 uc_.emu_stop()
         elif "app app_main" in hits and address in cold:
-            hits.add("app OCRAM code")
-        elif "app OCRAM code" in hits and address < ITCM_SIZE:
+            hits.add("app XIP code")
+        elif "app XIP code" in hits and address < ITCM_SIZE:
             hits.add("back in ITCM")
             uc_.emu_stop()
         elif address == app_main and "app_main" not in hits:
@@ -176,7 +180,7 @@ def main() -> int:
     if app_app_main is not None:
         names += ["copier", "app app_main"]
     if cold:
-        names += ["app OCRAM code", "back in ITCM"]
+        names += ["app XIP code", "back in ITCM"]
     for name in names:
         print(f"  reached {name}: {name in hits}")
     if "reset" in hits:
@@ -184,11 +188,15 @@ def main() -> int:
     crumbs = struct.unpack("<4I", bytes(uc.mem_read(0x400F8028, 16)))   # SRC_GPR3..6
     print("  crumbs: " + " ".join(f"{c:08x}" for c in crumbs))
     copied = True
-    if cold and args.app_slot:
-        load = app_syms["__ocramtext_load__"] - 0x60020000
-        want = args.app_slot.read_bytes()[load:load + len(cold)]
-        copied = bytes(uc.mem_read(cold.start, len(cold))) == want and len(want) == len(cold)
-        print(f"  app .ocramtext copied: {copied}")
+    if cold and args.app_slot and "app app_main" in hits:
+        slot = args.app_slot.read_bytes()
+        for name in ("ocramdata", "dtcmdata"):
+            start, end = app_syms[f"__{name}_start__"], app_syms[f"__{name}_end__"]
+            load = app_syms[f"__{name}_load__"] - 0x60020000
+            want = slot[load:load + end - start]
+            ok = bytes(uc.mem_read(start, end - start)) == want and len(want) == end - start
+            print(f"  app .{name} copied: {ok}")
+            copied = copied and ok
     if error:
         print(f"emulation stopped with: {error}")
     unsafe = []

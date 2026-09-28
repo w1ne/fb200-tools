@@ -178,6 +178,8 @@ COLD_SRC := \
   $(MCUX_CORE)/drivers/flexio/fsl_flexio.c \
   $(MCUX_CORE)/drivers/flexio/uart/fsl_flexio_uart.c \
   $(MCUX_CORE)/drivers/dmamux/fsl_dmamux.c
+# tests/test_audio_image.py: negative controls of hot_path.py
+COLD_SRC += $(COLD_EXTRA)
 ifeq ($(VARIANT),recovery)
 COLD_SRC :=
 endif

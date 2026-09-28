@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Hot-path check for the FB200 app: nothing the audio path can reach runs
-from OCRAM (docs/FIRMWARE_BRINGUP.md, "Hot and cold code").
+"""Hot-path check for the FB200 app: nothing the audio path can reach, and
+nothing that runs during a flash write, runs from flash (XIP)
+(docs/FIRMWARE_BRINGUP.md, "Hot and cold code").
 
     hot_path.py build/fb200-app.elf [--cross arm-none-eabi-]
 
@@ -14,13 +15,22 @@ Hot roots:
     drivers call them from their ISRs.
 From the roots, direct calls and tail calls (bl/b to another function) are
 followed, through linker veneers. Every reachable function must be in ITCM,
-and none may load the address of cold const data (.ocramtext).
+and none may load the address of cold const data (.xiptext).
 Function pointers kept in data tables (console commands, usbd's driver
 table) are not followed: those tables are cold, except usbd's audio entries
 (the audiod_* root above).
 
+Flash-write roots (second check): the code that runs while the flash is
+busy, or after an app update has erased the app's own cold code (it lives
+in the app slot's data area): fw_begin, fw_rx_task, fw_session and
+flash_store (src/debug/selfupdate.c), and the USB class drivers that
+tud_task dispatches through usbd's driver table (cdcd_*, hidd_*, audiod_*).
+Everything they reach must be in RAM (not in flash), and none of it may
+load the address of cold const data. A call guarded by fw_xip_gone() (the
+caller returns first once an app update started) is not followed: GATED.
+
 Exit status 1 and a list of the offending call chains if a hot function is
-in OCRAM.
+in flash.
 """
 
 from __future__ import annotations
@@ -31,9 +41,14 @@ import subprocess
 from pathlib import Path
 
 ITCM = range(0x20000)
-OCRAM = range(0x20200000, 0x20280000)
+FLASH = range(0x60000000, 0x70000000)
 HOT_ENTRY = ("engine_task", "usb_audio_task")
 HOT_PATTERN = re.compile(r"^audiod_")
+FLASH_WRITE_ENTRY = ("fw_begin", "fw_rx_task", "fw_session", "flash_store")
+FLASH_WRITE_PATTERN = re.compile(r"^(cdcd_|hidd_|audiod_)")
+# caller -> callee edges not followed by the flash-write check, and the gate
+# the caller must also call (it returns before the callee once set)
+GATED = {("tud_hid_set_report_cb", "proto_feed"): "fw_xip_gone"}
 
 FUNC_RE = re.compile(r"^([0-9a-f]+) <([^>]+)>:$")
 INSN_RE = re.compile(r"^\s*([0-9a-f]+):\s+(\S+)\s*(.*)$")
@@ -93,7 +108,8 @@ class Image:
             self.calls.setdefault(v, set()).add(tgt)
         self.vectors = self._vectors(elf, cross)
         syms = {parts[-1]: int(parts[0], 16) for parts in map(str.split, nm.splitlines())}
-        self.cold = range(syms.get("__ocramtext_start__", 0), syms.get("__ocramtext_end__", 0))
+        self.cold = range(syms.get("__xiptext_start__", 0), syms.get("__xiptext_end__", 0))
+        self.addr = {n: a for a, n in self.funcs.items()}
 
     def owner(self, addr: int) -> int | None:
         if addr in self.funcs:
@@ -128,43 +144,82 @@ def hot_roots(img: Image) -> dict[int, str]:
     return roots
 
 
-def reachable(img: Image, roots: dict[int, str]) -> dict[int, int | None]:
+def flash_write_roots(img: Image) -> dict[int, str]:
+    roots = {}
+    for a, n in img.funcs.items():
+        if n in FLASH_WRITE_ENTRY or FLASH_WRITE_PATTERN.match(n):
+            roots[a] = "flash write"
+    return roots
+
+
+def gated_edges(img: Image) -> tuple[set[tuple[int, int]], list[str]]:
+    """GATED as addresses; a gate its caller does not call is an error."""
+    edges, bad = set(), []
+    for (caller, callee), gate in GATED.items():
+        a, b, g = img.addr.get(caller), img.addr.get(callee), img.addr.get(gate)
+        if a is None or b is None:
+            continue
+        if g is None or g not in {img.veneer.get(c, c) for c in img.calls.get(a, ())}:
+            bad.append(f"{caller} -> {callee}: gate {gate}() not called by {caller}")
+            continue
+        edges.add((a, b))
+    return edges, bad
+
+
+def reachable(img: Image, roots: dict[int, str],
+              skip: set[tuple[int, int]] = frozenset()) -> dict[int, int | None]:
     """function -> the caller it was first reached from (None for roots)."""
     parent: dict[int, int | None] = {r: None for r in roots}
     todo = list(roots)
     while todo:
         f = todo.pop()
         for g in img.calls.get(f, ()):
+            if (f, img.veneer.get(g, g)) in skip:   # a gated call, direct or through a veneer
+                continue
             if g not in parent:
                 parent[g] = f
                 todo.append(g)
     return parent
 
 
-def check(elf: Path, cross: str = "arm-none-eabi-") -> list[str]:
-    """Returns one line per hot function outside ITCM (empty = pass)."""
-    img = Image(elf, cross)
-    roots = hot_roots(img)
-    for n in HOT_ENTRY:
-        if n not in img.funcs.values():
-            return [f"hot entry {n} not found in {elf}"]
-    parent = reachable(img, roots)
+def _chains(img: Image, parent: dict[int, int | None], roots: dict[int, str],
+            bad_place, what: str) -> list[str]:
     bad = []
     for f in sorted(parent):
-        if f in ITCM or "veneer" in img.name(f):
+        if not bad_place(f) or "veneer" in img.name(f):
             continue
         chain, g, root = [], f, f
         while g is not None:
             chain.append(img.name(g))
             root, g = g, parent[g]
-        bad.append(f"{img.name(f)} @ {f:#010x}: " + " <- ".join(chain) + f" ({roots[root]})")
-    # Hot code must not read cold const data either (strings, tables of a
-    # COLD_SRC file): a literal-pool address into .ocramtext that is not a
-    # function (those are callbacks, checked above).
+        bad.append(f"{what}{img.name(f)} @ {f:#010x}: " + " <- ".join(chain) + f" ({roots[root]})")
+    # Nor may it read cold const data (strings, tables of a COLD_SRC file):
+    # a literal-pool address into .xiptext that is not a function (those are
+    # callbacks, checked above).
     for f in sorted(parent):
         for w in sorted(img.words.get(f, ())):
             if w in img.cold and (w & ~1) not in img.funcs:
-                bad.append(f"{img.name(f)} reads cold data at {w:#010x}")
+                bad.append(f"{what}{img.name(f)} reads cold data at {w:#010x}")
+    return bad
+
+
+def check(elf: Path, cross: str = "arm-none-eabi-") -> list[str]:
+    """Returns one line per violation (empty = pass): a hot function outside
+    ITCM, or a flash-write function in flash."""
+    img = Image(elf, cross)
+    roots = hot_roots(img)
+    for n in HOT_ENTRY:
+        if n not in img.funcs.values():
+            return [f"hot entry {n} not found in {elf}"]
+    bad = _chains(img, reachable(img, roots), roots, lambda f: f not in ITCM, "")
+    wroots = flash_write_roots(img)
+    for n in FLASH_WRITE_ENTRY:
+        if n not in img.addr:
+            return bad + [f"flash-write entry {n} not found in {elf}"]
+    skip, gate_bad = gated_edges(img)
+    bad += gate_bad
+    bad += _chains(img, reachable(img, wroots, skip), wroots, lambda f: f in FLASH,
+                   "flash write: ")
     return bad
 
 
@@ -173,10 +228,16 @@ def main() -> int:
     ap.add_argument("elf", type=Path)
     ap.add_argument("--cross", default="arm-none-eabi-")
     ap.add_argument("--list", action="store_true", help="print the hot set")
+    ap.add_argument("--list-flash-write", action="store_true",
+                    help="print the flash-write set")
     args = ap.parse_args()
-    if args.list:
+    if args.list or args.list_flash_write:
         img = Image(args.elf, args.cross)
-        for f in sorted(reachable(img, hot_roots(img))):
+        if args.list:
+            found = reachable(img, hot_roots(img))
+        else:
+            found = reachable(img, flash_write_roots(img), gated_edges(img)[0])
+        for f in sorted(found):
             print(f"{f:#010x} {img.name(f)}")
         return 0
     bad = check(args.elf, args.cross)

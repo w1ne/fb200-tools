@@ -183,7 +183,9 @@ int main(int argc, char **argv)
 {
     if (argc > 1 && strcmp(argv[1], "--presets") == 0) return check_presets();
     test_preset_rule();
-    const float rates[2] = {44100.0f, 48000.0f};
+    /* The line holds 1 s at DELAY_FS_MAX = 44.1 kHz, the pedal's only rate
+     * (AUDIO_FS); a lower rate fits too. */
+    const float rates[2] = {44100.0f, 32000.0f};
     for (int k = 0; k < 2; k++) {
         test_impulse(rates[k]);
         test_lowcut(rates[k]);

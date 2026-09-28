@@ -35,28 +35,59 @@ def test_vectors_and_entry():
     syms = symbols()
     assert syms["stage2"] == 0x4D6
     assert len(blob) == syms["__blob_end__"] - 0x400
-    assert len(blob) <= 0x1DBC8          # vendor entry 0 payload limit
+    # The app is loaded by recovery's copier, which runs at ITCM 0x1F000
+    # (recovery.c slot_valid: APP_ITCM_LIMIT); the vendor loader's 0x1DBC8
+    # payload limit binds recovery only.
+    assert len(blob) <= 0x1F000 - 0x400
 
 
-def test_data_blob_is_ocramtext_ocramdata_dtcmdata():
-    """The slot data blob (flash 0x60041000) holds the cold code (.ocramtext),
-    the .ocramdata tables, then the .dtcmdata tables; stage2_main copies each
-    from its load address."""
+def test_recovery_fits_the_vendor_loader():
+    out = fwbuild.build(FW, "recovery")
+    assert len((out / "fb200-recovery.blob.bin").read_bytes()) <= 0x1DBC8   # entry 0 payload
+
+
+def test_data_blob_is_xiptext_ocramdata_dtcmdata():
+    """The slot data blob (flash 0x60041000) holds the cold code (.xiptext,
+    run in place: VMA = LMA), then the .ocramdata and .dtcmdata tables that
+    stage2_main copies from their load addresses."""
     build()
     syms = symbols()
-    text = syms["__ocramtext_end__"] - syms["__ocramtext_start__"]
+    text = syms["__xiptext_end__"] - syms["__xiptext_start__"]
     ocram = syms["__ocramdata_end__"] - syms["__ocramdata_start__"]
     dtcm = syms["__dtcmdata_end__"] - syms["__dtcmdata_start__"]
-    assert syms["__ocramtext_load__"] == 0x60041000
+    assert syms["__xiptext_start__"] == syms["__xiptext_load__"] == 0x60041000
     assert syms["__ocramdata_load__"] == 0x60041000 + text
     assert syms["__dtcmdata_load__"] == 0x60041000 + text + ocram
     assert syms["__dtcmdata_start__"] == 0x20018B44     # the startup probes this word
-    assert syms["__ocramtext_start__"] == 0x20210000    # OCRAM2, above the vendor data
-    assert syms["__ocramtext_start__"] % 32 == 0 and text % 32 == 0   # whole cache lines
-    assert syms["__ocramdata_start__"] == syms["__ocramtext_end__"]
+    assert text % 32 == 0                               # whole cache lines
     data = (fwbuild.build(FW) / "fb200-app.dtcmdata.bin").read_bytes()
     assert len(data) == text + ocram + dtcm <= 0x20000  # SLOT_DATA_MAX
     assert text > 0x8000                                # the cold code is there
+
+
+def test_ram_map_is_the_pedals():
+    """Every RAM section inside the FlexRAM split the pedal has (GPR17 =
+    0xFFAAAAA9: ITCM 128 kB, DTCM 0x20000000..0x20057FFF, OCRAM
+    0x20200000..0x20207FFF), the low DTCM below the crash dump, and 8 kB
+    kept for the stack (measured high-water: under 512 B)."""
+    build()
+    syms = symbols()
+    assert syms["__itcm_bss_start__"] >= syms["__blob_end__"]
+    assert syms["__itcm_bss_end__"] <= 0x20000
+    assert 0x20000000 <= syms["__dtcm_lo_start__"] and syms["__dtcm_lo_end__"] <= 0x20018A00
+    assert syms["__dtcm_hi_start__"] >= syms["__bss_end__"]
+    assert syms["__dtcm_hi_end__"] <= syms["__stack_limit__"] == syms["_estack"] - 0x2000
+    assert 0x20200000 <= syms["__ocramdata_start__"] and syms["__ocram_end__"] <= 0x20208000
+    assert syms["__ocram_start__"] >= syms["__ocramdata_end__"]
+
+
+def test_big_buffers_placement():
+    """The long-IR tail (4096 taps) in the low DTCM, the 1 s delay line in
+    the DTCM above .bss (docs/FIRMWARE_BRINGUP.md, "Memory map")."""
+    syms = elf_symbols()
+    assert 0x20000000 <= syms["s_cab_tail"] < 0x20018A00
+    assert syms["__dtcm_hi_start__"] <= syms["s_dly_line"] < syms["__dtcm_hi_end__"]
+    assert syms["__dtcm_hi_end__"] - syms["s_dly_line"] >= 44100 * 2   # 1 s, int16
 
 
 def elf_symbols(variant: str = "app") -> dict[str, int]:
@@ -67,26 +98,30 @@ def elf_symbols(variant: str = "app") -> dict[str, int]:
 
 
 ITCM = range(0x400, 0x1F000)
-OCRAM = range(0x20210000, 0x20280000)
+XIP = range(0x60041000, 0x60061000)
 
 
 def test_hot_and_cold_placement():
-    """Hot: ITCM; cold: OCRAM (Makefile COLD_SRC). Spot checks both ways, so
-    a placement rule that silently stops matching fails here."""
+    """Hot: ITCM; cold: flash, XIP (Makefile COLD_SRC). Spot checks both
+    ways, so a placement rule that silently stops matching fails here. The
+    flash write path and what it runs during an app update are RAM too."""
     syms = elf_symbols()
     for hot in ("stage2_main", "app_main", "engine_task", "usb_audio_task", "fault_record",
                 "Default_Handler", "wdog_feed", "dcd_int_handler", "EDMA_HandleIRQ",
-                "memcpy", "crc32_ieee"):
+                "memcpy", "crc32_ieee",
+                "fw_begin", "fw_session", "flash_store", "FLEXSPI_TransferBlocking",
+                "log_printf", "tud_descriptor_configuration_cb", "cdcd_xfer_cb"):
         assert syms[hot] in ITCM, hot
-    for cold in ("console_task", "ui_task", "display_task", "proto_feed", "log_printf",
-                 "fw_begin", "tud_descriptor_configuration_cb", "CLOCK_InitArmPll"):
-        assert syms[cold] in OCRAM, cold
+    for cold in ("console_task", "ui_task", "display_task", "proto_feed", "preset_write",
+                 "CLOCK_InitArmPll"):
+        assert syms[cold] in XIP, cold
 
 
-def test_nothing_hot_runs_from_ocram():
+def test_nothing_hot_runs_from_flash():
     """Call graph from every ISR, engine_task, usb_audio_task, the USB audio
     class driver and every driver callback: all of it in ITCM, and none of it
-    loads cold const data (firmware/tools/hot_path.py)."""
+    loads cold const data. Call graph from the flash write path and the USB
+    class drivers: none of it in flash (firmware/tools/hot_path.py)."""
     import hot_path
     bad = hot_path.check(fwbuild.build(FW) / "fb200-app.elf")
     assert bad == [], "\n".join(bad)
@@ -94,24 +129,49 @@ def test_nothing_hot_runs_from_ocram():
 
 def test_hot_path_check_catches_cold_audio_code(tmp_path):
     """Negative control: an audio file (gain.c, called by engine_task) and an
-    ISR callback file (rgb.c) moved to OCRAM must fail the check."""
+    ISR callback file (rgb.c) moved to flash (COLD_SRC) must fail the check."""
     import hot_path
     out = tmp_path / "build"
     shutil.copytree(fwbuild.build(FW), out)             # relink only: objects are current
     (out / "fb200-app" / "cold.ld").unlink()
     subprocess.run(["make", f"BUILD={out}", "build",
-                    "COLD_SRC=src/debug/console.c src/dsp/gain.c src/ui/rgb.c"],
+                    "COLD_EXTRA=src/dsp/gain.c src/ui/rgb.c"],
                    cwd=FW, check=True, capture_output=True)
     bad = "\n".join(hot_path.check(out / "fb200-app.elf"))
     assert "gain_process" in bad and "engine_task" in bad
     assert "done @" in bad                               # rgb.c's eDMA callback
 
 
-def test_recovery_has_no_ocram_code():
-    """Recovery never copies a data blob: all its code must be in ITCM."""
+def test_hot_path_check_catches_cold_flash_writes(tmp_path):
+    """Negative control: the flash write path (selfupdate.c) or the CDC class
+    driver in flash must fail the flash-write check, and so must the HID
+    report callback without its fw_xip_gone() gate."""
+    import hot_path
+    out = tmp_path / "build"
+    shutil.copytree(fwbuild.build(FW), out)
+    (out / "fb200-app" / "cold.ld").unlink()
+    cdc = ".deps/tinyusb/src/class/cdc/cdc_device.c"
+    subprocess.run(["make", f"BUILD={out}", "build",
+                    f"COLD_EXTRA=src/debug/selfupdate.c {cdc}"],
+                   cwd=FW, check=True, capture_output=True)
+    bad = "\n".join(hot_path.check(out / "fb200-app.elf"))
+    assert "flash write: fw_begin @" in bad and "flash write: flash_store @" in bad, bad
+    assert "flash write: cdcd_xfer_cb @" in bad, bad
+    gates = dict(hot_path.GATED)
+    try:
+        hot_path.GATED[("tud_hid_set_report_cb", "proto_feed")] = "no_such_gate"
+        bad = "\n".join(hot_path.check(fwbuild.build(FW) / "fb200-app.elf"))
+    finally:
+        hot_path.GATED.clear()
+        hot_path.GATED.update(gates)
+    assert "gate no_such_gate() not called" in bad and "flash write: proto_feed @" in bad, bad
+
+
+def test_recovery_has_no_xip_code():
+    """Recovery never uses a data blob: all its code must be in ITCM."""
     out = fwbuild.build(FW, "recovery")
     syms = elf_symbols("recovery")
-    assert syms["__ocramtext_start__"] == syms["__ocramtext_end__"]
+    assert syms["__xiptext_start__"] == syms["__xiptext_end__"]
     assert (out / "fb200-recovery.dtcmdata.bin").read_bytes() == b""
     nm = subprocess.run(["arm-none-eabi-nm", str(out / "fb200-recovery.elf")], check=True,
                         capture_output=True, text=True).stdout
@@ -137,8 +197,8 @@ def test_no_undefined_symbols():
 
 
 def dry_run(tmp_path, data: bool) -> str:
-    """Vendor loader -> recovery -> copier -> app stage2 -> app_main -> OCRAM
-    code, emulated (firmware/tools/boot_dry_run.py)."""
+    """Vendor loader -> recovery -> copier -> app stage2 -> app_main -> XIP
+    code, emulated with the pedal's RAM map (firmware/tools/boot_dry_run.py)."""
     pytest.importorskip("unicorn")
     from stock_emu import find_stock_mr
     stock = find_stock_mr()
@@ -161,9 +221,10 @@ def dry_run(tmp_path, data: bool) -> str:
          str(tmp_path / "twostage.mr")], capture_output=True, text=True, check=False).stdout
 
 
-def test_boot_runs_ocram_code(tmp_path):
+def test_boot_runs_xip_code(tmp_path):
     out = dry_run(tmp_path, data=True)
-    assert "app .ocramtext copied: True" in out and "reached back in ITCM: True" in out, out
+    assert "reached app XIP code: True" in out and "reached back in ITCM: True" in out, out
+    assert "app .dtcmdata copied: True" in out and "app .ocramdata copied: True" in out, out
     assert "DRY RUN OK" in out, out
 
 
