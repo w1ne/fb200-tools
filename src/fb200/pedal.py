@@ -195,7 +195,7 @@ class FB200Device:
         """The stored 256-byte preset `index` (0..39), from flash."""
         if not 0 <= index < PRESET_COUNT:
             raise InvalidArgumentError(f"preset index must be 0..{PRESET_COUNT - 1}")
-        while True:
+        for _ in range(3):              # skip a 97 notification for another preset
             packet = self.request(protocol.CMD_READ_PRESET, bytes([index]),
                                   expect=protocol.REPLY_PRESET)
             data = packet[1:]
@@ -203,6 +203,7 @@ class FB200Device:
                 raise ProtocolError(f"short preset reply ({len(data)} bytes)")
             if data[0] == index:
                 return bytes(data[1:1 + PRESET_SIZE])
+        raise CommunicationError(f"no reply for preset {index}")
 
     def preset_names(self) -> list[str]:
         """The names of the 40 stored presets."""
