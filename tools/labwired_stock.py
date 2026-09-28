@@ -26,9 +26,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tools"))
 
-from fb200.errors import FirmwareError  # noqa: E402
-from fb200.firmware import MrFile  # noqa: E402
-from labwired_elf import build_elf  # noqa: E402
+from labwired_elf import build_elf
+
+from fb200.errors import FirmwareError
+from fb200.firmware import MrFile
 
 BLOCK_ADDRESSES = (0x6001_0000, 0x600D_0000)
 DEFAULT_OUT = ROOT / "build" / "labwired" / "stock.elf"

@@ -18,6 +18,7 @@ the vendor image and keep the result out of git (build/ is ignored).
 from __future__ import annotations
 
 import argparse
+import itertools
 import struct
 import sys
 from pathlib import Path
@@ -37,7 +38,7 @@ def build_elf(segments: list[tuple[int, bytes]]) -> bytes:
     if not segments:
         raise ValueError("at least one segment is required")
     ordered = sorted(segments)
-    for (a0, d0), (a1, _) in zip(ordered, ordered[1:]):
+    for (a0, d0), (a1, _) in itertools.pairwise(ordered):
         if a0 + len(d0) > a1:
             raise ValueError(f"segments overlap: 0x{a0:08x}+{len(d0):#x} > 0x{a1:08x}")
     first_addr, first = segments[0]
