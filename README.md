@@ -139,7 +139,9 @@ fb200 fw inspect|flash ...          # .mr container tools and the vendor updater
 ```
 
 Install for development: `.venv/bin/pip install -e ".[dev,hid]"`, then run the host
-tests with `.venv/bin/pytest -m "not hardware"`.
+tests with `.venv/bin/pytest` (under a minute). The slow stock-DSP parity tests
+(`-m stock`: unicorn emulation of the stock firmware, need `.[stock]` and your
+`fb200-stock.mr` in `FB200_STOCK_MR`) run nightly: `tools/nightly_stock.sh`.
 
 ## Documentation
 

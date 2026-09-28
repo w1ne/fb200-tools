@@ -9,8 +9,10 @@ same chain input. Error = RMS(ours - stock) / RMS(stock) in dB; target <= -60.
 Skips (with the reason) when the vendor image or unicorn/numpy/capstone are
 absent; asserts when they are present. `pytest -s` prints the table.
 """
+import functools
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -23,7 +25,6 @@ import stock_emu_fx as stock_emu
 
 ROOT = Path(__file__).resolve().parents[1]
 FW = ROOT / "firmware" / "audio"
-BUILD = FW / "build" / "fx_parity"
 FS = 44100
 TARGET_DB = -60.0
 
@@ -72,12 +73,17 @@ def err_db(ours, ref) -> float:
 _bins: dict[str, Path] = {}
 
 
+@functools.cache
+def _build_dir() -> Path:
+    """Per process: parallel workers (pytest -n) do not overwrite each other's binaries."""
+    return Path(tempfile.mkdtemp(prefix="fx_parity_"))
+
+
 def build(module: str) -> Path:
     if module in _bins:
         return _bins[module]
     from test_dsp_host import cmsis_dsp_args
-    BUILD.mkdir(parents=True, exist_ok=True)
-    exe = BUILD / f"fx_render_{module}"
+    exe = _build_dir() / f"fx_render_{module}"
     srcs = [str(FW / "src" / "dsp" / s) for s in MODULES[module][0] + ["math.c"]]
     subprocess.run(["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-ffp-contract=off",
                     f"-DFX_{module.upper()}", "-I", str(FW / "src"),
