@@ -16,6 +16,7 @@ from fb200.mcp_server import (
     _sdk,
     build_server,
     parse_delay,
+    parse_eq,
     parse_profile,
 )
 from fb200.pedal import MODULES, PRESET_SIZE, FB200Device
@@ -36,7 +37,46 @@ class FakeConsole:
         self.gain = 0
         self.usb_route = "out"
         self.delay = {"on": "off", "time": 500, "fb": 30, "mix": 25, "lowcut": 0, "tone": 100}
+        self.eq = {"on": False, "hpf": 0.0, "lpf": 0.0,
+                   "bands": [[f, 0.0, 1.0] for f in (40.0, 100.0, 250.0, 800.0, 3000.0)]}
         self.closed = False
+
+    def eq_line(self) -> str:
+        # console.c cmd_eq, with its clamps
+        e = self.eq
+        flat = e["on"] and not e["hpf"] and not e["lpf"] and all(g == 0 for _, g, _ in e["bands"])
+        def cut(hz: float) -> str:
+            return f"{round(hz)} Hz" if hz else "off"
+
+        head = f"eq {'on' if e['on'] else 'off'}{' (flat)' if flat else ''}"
+        lines = [f"{head}: hpf {cut(e['hpf'])} lpf {cut(e['lpf'])}"]
+        lines += [f"  {i + 1}: {round(f)} Hz {g:+.2f} dB q {q:.2f}"
+                  for i, (f, g, q) in enumerate(e["bands"])]
+        return "\r\n".join(lines)
+
+    def eq_cmd(self, args: list[str]) -> str:
+        usage = "usage: eq [on|off] | eq hpf <20-200 Hz|0> | ..."
+
+        def clamp(v: float, lo: float, hi: float) -> float:
+            return min(max(v, lo), hi)
+
+        try:
+            if args and args[0] in ("on", "off"):
+                self.eq["on"] = args[0] == "on"
+            elif len(args) > 1 and args[0] in ("hpf", "lpf"):
+                hz = float(args[1])
+                lo, hi = (20, 200) if args[0] == "hpf" else (2000, 20000)
+                self.eq[args[0]] = clamp(hz, lo, hi) if hz > 0 else 0.0
+            elif len(args) > 2 and 1 <= int(args[0]) <= 5:
+                q = float(args[3]) if len(args) > 3 else 1.0
+                self.eq["bands"][int(args[0]) - 1] = [clamp(float(args[1]), 30, 10000),
+                                                      clamp(float(args[2]), -15, 15),
+                                                      clamp(q, 0.3, 4)]
+            elif args:
+                return usage
+        except ValueError:
+            return usage
+        return self.eq_line()
 
     def delay_line(self) -> str:
         d = self.delay
@@ -59,6 +99,12 @@ class FakeConsole:
             for key, val in zip(("time", "fb", "mix", "lowcut", "tone"), args):
                 self.delay[key] = int(val)
             return self.delay_line()
+        if w[0] == "eq":
+            return self.eq_cmd(w[1:])
+        if w[0] == "cab" and len(w) > 2 and w[1] == "long":
+            if w[2].isdigit() and int(w[2]) > 512:     # firmware without long IRs
+                return f"cab long {w[2]}: not available (long IRs need more RAM; max 512)"
+            return f"cab long {w[2]}: {'ok' if w[2].isdigit() else 'bad taps'}"
         if w[0] == "gain":
             if len(w) > 1:
                 if not w[1].isdigit():
@@ -177,6 +223,55 @@ def test_delay_fills_positional_args(rig):
     con.sent.clear()
     tools.set_delay(tone=60)
     assert con.sent == ["delay", "delay 500 30 40 0 60"]
+
+
+def test_eq_commands_and_state(rig):
+    tools, con, _ = rig
+    st = tools.set_eq()
+    assert con.sent == ["eq"]
+    assert not st["on"] and st["hpf_hz"] == 0 and st["lpf_hz"] == 0
+    assert [b["freq_hz"] for b in st["bands"]] == [40, 100, 250, 800, 3000]
+    con.sent.clear()
+    st = tools.set_eq(on=True, hpf_hz=45, lpf_hz=6000, band=2, gain_db=-4.5, q=1.4)
+    # the band's omitted freq comes from the state; `on` goes last
+    assert con.sent == ["eq", "eq hpf 45", "eq lpf 6000", "eq 2 100 -4.5 1.4", "eq on"]
+    assert st["on"] and not st["flat"] and st["hpf_hz"] == 45 and st["lpf_hz"] == 6000
+    assert st["bands"][1] == {"band": 2, "freq_hz": 100, "gain_db": -4.5, "q": 1.4}
+    con.sent.clear()
+    st = tools.set_eq(band=2, freq_hz=120)
+    assert con.sent == ["eq", "eq 2 120 -4.5 1.4"] and st["bands"][1]["freq_hz"] == 120
+    con.sent.clear()
+    assert tools.set_eq(hpf_hz=0, on=False)["hpf_hz"] == 0
+    assert con.sent == ["eq hpf 0", "eq off"]
+    for bad in ({"band": 6, "gain_db": 1}, {"gain_db": 3}, {"band": 1, "q": -1}):
+        with pytest.raises(InvalidArgumentError):
+            tools.set_eq(**bad)
+
+
+def test_parse_eq_firmware_text():
+    text = ("eq on (flat): hpf off lpf 20000 Hz\r\n  1: 40 Hz +0.00 dB q 1.00\r\n"
+            "  2: 100 Hz -4.25 dB q 0.72\r\n  3: 250 Hz +0.00 dB q 1.00\r\n"
+            "  4: 800 Hz +0.00 dB q 1.00\r\n  5: 3000 Hz +15.00 dB q 4.00\r\n")
+    st = parse_eq(text)
+    assert st["on"] and st["flat"] and st["hpf_hz"] == 0 and st["lpf_hz"] == 20000
+    assert st["bands"][1] == {"band": 2, "freq_hz": 100, "gain_db": -4.25, "q": 0.72}
+    assert st["bands"][4]["gain_db"] == 15.0
+
+
+def test_usb_route_and_cab_long(rig):
+    tools, con, _ = rig
+    assert tools.usb_route()["route"] == "out"
+    assert tools.usb_route("in")["route"] == "in" and con.usb_route == "in"
+    assert con.sent == ["usb", "usb in"]
+    with pytest.raises(InvalidArgumentError):
+        tools.usb_route("dac")
+    assert tools.cab_long(512)["text"] == "cab long 512: ok"
+    with pytest.raises(InvalidArgumentError, match="not available"):
+        tools.cab_long(4096)
+    assert tools.cab_long(0)["taps"] == 0 and con.sent[-1] == "cab long 0"
+    for bad in (-1, 4097):
+        with pytest.raises(InvalidArgumentError):
+            tools.cab_long(bad)
 
 
 def test_output_gain_steps_to_negative(rig):
@@ -404,6 +499,8 @@ def test_parsers_reject_garbage():
     with pytest.raises(CommunicationError):
         parse_delay("unknown command")
     with pytest.raises(CommunicationError):
+        parse_eq("eq on: hpf off lpf off")               # no bands
+    with pytest.raises(CommunicationError):
         parse_profile("")
 
 
@@ -419,6 +516,7 @@ def test_server_lists_tools(rig):
     assert names == set(PedalTools.TOOLS)
     desc = next(t for t in tools if t.name == "console").description
     assert "crashdump" in desc and "fwbegin" in desc
+    assert "eq <band 1-5>" in desc and "cab long" in desc and "usb out|in|mix" in desc
 
 
 def test_server_call_and_tool_error(rig):

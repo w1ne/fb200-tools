@@ -11,7 +11,7 @@ static float frand(void) { return (float)rand() / (float)RAND_MAX * 2.0f - 1.0f;
 
 enum { LEN = 16384 };
 static conv2_tail_t s_tail;
-static conv2_t s_c, s_c2;
+static conv2_t s_c, s_c2, s_c3;   /* s_c3: conv2_init_head (no tail linked) */
 static float s_x[LEN], s_y[LEN], s_ir[CONV2_MAX_TAPS], s_ir2[CONV2_MAX_TAPS];
 static double s_ref[LEN];
 
@@ -127,6 +127,8 @@ static void test_bit_identical(size_t taps, int mode)
     assert(conv2_set_ir(&s_c, s_ir, taps) == 0 && !conv2_pending(&s_c) && s_c.parts == 0);
     assert(conv2_init(&s_c2, NULL) == 0 && conv2_set_ir(&s_c2, s_ir, taps) == 0);
     assert(conv2_set_ir(&s_c2, s_ir, CONV2_HEAD_TAPS + 1) != 0);   /* no tail storage */
+    assert(conv2_init_head(&s_c3) == 0 && s_c3.t == NULL && conv2_set_ir(&s_c3, s_ir, taps) == 0);
+    assert(conv2_set_ir(&s_c3, s_ir, CONV2_HEAD_TAPS + 1) != 0);
     for (size_t i = 0, j = 0; i < LEN; j++) {
         size_t m = chunk(mode, j);
         if (m > LEN - i) m = LEN - i;
@@ -134,6 +136,8 @@ static void test_bit_identical(size_t taps, int mode)
         conv2_process(&s_c, s_x + i, s_y + i, m);
         assert(memcmp(s_y + i, y2 + i, m * sizeof(float)) == 0);
         conv2_process(&s_c2, s_x + i, s_y + i, m);
+        assert(memcmp(s_y + i, y2 + i, m * sizeof(float)) == 0);
+        conv2_process(&s_c3, s_x + i, s_y + i, m);
         assert(memcmp(s_y + i, y2 + i, m * sizeof(float)) == 0);
         i += m;
     }

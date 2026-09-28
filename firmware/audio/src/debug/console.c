@@ -36,6 +36,9 @@
 #include "proto/proto.h"
 #endif
 
+#define STR_(x) #x
+#define XSTR(x) STR_(x)   /* a macro's value as a string literal */
+
 extern int g_bss_writable;
 
 static int streq(const char *a, const char *b);
@@ -115,13 +118,13 @@ static void cmd_help(void)
              "  audio : usb [out|in|mix] | sai | codec | creg <reg> [val] | gain [db] | mute [on|off]\r\n"
              "          testgen off|sine|white|impulse [freq] | tin <same> (into the chain, -20 dBFS)\r\n"
              "          usb in = reamping: host playback into the chain (mix: + instrument, out: default)\r\n"
-             "          meters on|off | x | cpu | prof | cab long <0-4096>\r\n"
+             "          meters on|off | x | cpu | prof | cab long <0-" XSTR(ENGINE_IR_TAPS) ">\r\n"
              "  led   : led on|off|scan | ledpin <gpio> <pin>\r\n"
              "  ui    : ui | uimon on|off | disp <text> | kled <0-15> on|off | power\r\n"
              "          preset [0-39] | save | factory [yes] | rgb 0xRRGGBB [led] | rgb cfg 0xIIS0S1\r\n"
              "  bt    : bt | bt send <AT+...> | btaudio\r\n"
              "  music : stock | tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>]\r\n"
-             "  delay : delay [on|off] [time 20-1000 ms] [fb 0-100] [mix 0-100] [lowcut 0-100] [tone 0-100]\r\n"
+             "  delay : delay [on|off] [time " XSTR(DELAY_MS_MIN) "-" XSTR(DELAY_MS_MAX) " ms] [fb 0-100] [mix 0-100] [lowcut 0-100] [tone 0-100]\r\n"
              "  eq    : eq [on|off] | eq hpf <20-200 Hz|0> | eq lpf <2000-20000 Hz|0>\r\n"
              "          eq <band 1-5> <30-10000 Hz> <gain -15..15 dB> [q 0.3-4]\r\n"
              "  tests : crash | hang\r\n"
@@ -150,6 +153,10 @@ static void cmd_delay(int argc, char **argv)
     if (marked) {
         v[0] = pget(e, P_DLY_TIME); v[1] = pget(e, P_DLY_FB); v[2] = pget(e, P_DLY_MIX);
         v[3] = pget(e, P_DLY_LOWCUT); v[4] = pget(e, P_DLY_TONE);
+        /* a stored time over DELAY_MS_MAX (RAM, dsp/delay.h) plays clamped:
+         * show that; the next edit stores it */
+        if (v[0] > DELAY_MS_MAX) v[0] = DELAY_MS_MAX;
+        if (v[0] < DELAY_MS_MIN) v[0] = DELAY_MS_MIN;
     }
     int i = 1, change = 0;
     if (i < argc && (streq(argv[i], "on") || streq(argv[i], "off"))) {
@@ -161,7 +168,7 @@ static void cmd_delay(int argc, char **argv)
         int ok;
         uint32_t n = parse_num(argv[i], &ok);
         if (!ok) {
-            log_printf("usage: delay [on|off] [time 20-1000 ms] [fb 0-100] [mix 0-100] "
+            log_printf("usage: delay [on|off] [time " XSTR(DELAY_MS_MIN) "-" XSTR(DELAY_MS_MAX) " ms] [fb 0-100] [mix 0-100] "
                        "[lowcut 0-100] [tone 0-100]\r\n");
             return;
         }
@@ -213,7 +220,8 @@ static void print_dec(const char *pre, float x, int decimals, int plus)
 }
 
 /* eq [on|off] | eq hpf <hz> | eq lpf <hz> | eq <band> <hz> <gain dB> [q]: our
- * EQ after the cab (dsp/eq.h). Not in the preset: off after boot. */
+ * EQ after the cab (dsp/eq.h). A change goes into the edit buffer with our
+ * marker (preset.h P_EQ_DATA; `save` stores it), on the preset's grid. */
 static void cmd_eq(int argc, char **argv)
 {
     eq_t *e = engine_eq();
@@ -238,13 +246,19 @@ static void cmd_eq(int argc, char **argv)
                    "eq <band 1-5> <30-10000 Hz> <gain -15..15 dB> [q 0.3-4]\r\n");
         return;
     }
+    if (argc > 1) {
+        uint8_t r[2 + EQ_REC] = {(uint8_t)EQ_MARK, (uint8_t)(EQ_MARK >> 8)};
+        eq_save(e, r + 2);
+        eq_load(e, r + 2);              /* show what the preset keeps */
+        ui_edit_write(P_EQ_MARK, r, sizeof r);
+    }
     log_printf("eq %s%s: hpf ", e->on ? "on" : "off", e->on && e->bypass ? " (flat)" : "");
     if (e->hpf > 0.0f) log_printf("%d Hz", (int)(e->hpf + 0.5f)); else log_printf("off");
     log_printf(" lpf ");
     if (e->lpf > 0.0f) log_printf("%d Hz\r\n", (int)(e->lpf + 0.5f)); else log_printf("off\r\n");
     for (unsigned b = 0; b < EQ_BANDS; b++) {
         log_printf("  %u: %d Hz", b + 1u, (int)(e->f[b] + 0.5f));
-        print_dec(" ", e->g[b], 1, 1);
+        print_dec(" ", e->g[b], 2, 1);
         print_dec(" dB q ", e->q[b], 2, 0);
         log_printf("\r\n");
     }
@@ -679,8 +693,10 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "cab") && argc > 2 && streq(argv[1], "long")) {
         int ok;
         uint32_t n = parse_num(argv[2], &ok);
+        int r = ok ? engine_cab_long(n) : -1;
         log_printf("cab long %lu: %s\r\n", (unsigned long)n,
-                   ok && engine_cab_long(n) == 0 ? "ok" : "bad taps");
+                   r == 0 ? "ok" : r == -2 ? "not available (long IRs need more RAM; max " XSTR(ENGINE_IR_TAPS) ")"
+                                           : "bad taps");
     }
     else if (streq(argv[0], "stock")) {
         int r = stock_check((const void *)STOCK_FLASH, STOCK_FLASH_SIZE);
