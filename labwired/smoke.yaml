@@ -1,0 +1,27 @@
+# fb200-tools: LabWired twin of the FLAMMA FB200 - smoke gate.
+#
+# Boots the open smoke image (firmware/labwired-smoke, built with
+# `make -C firmware/labwired-smoke`) on the FB200 board (system.yaml).
+# The UART text proves the core ran; the two memory_value assertions read
+# the registers the firmware configured, which printed text cannot fake:
+# GPIO4 GDIR bit 0 (knob LED 1 is an output) and GPIO4 DR bit 0 (DR_TOGGLE
+# flipped it from its reset value 0).
+schema_version: "1.0"
+inputs:
+  firmware: "../firmware/labwired-smoke/build/labwired-smoke.elf"
+  system: "system.yaml"
+limits:
+  max_steps: 2000000
+assertions:
+  - uart_contains: "RT1052 SMOKE OK"
+  # GPIO4_GDIR
+  - memory_value:
+      address: 0x401C4004
+      mask: 0x00000001
+      expected_value: 0x00000001
+  # GPIO4_DR
+  - memory_value:
+      address: 0x401C4000
+      mask: 0x00000001
+      expected_value: 0x00000001
+  - expected_stop_reason: max_steps

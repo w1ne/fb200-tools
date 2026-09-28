@@ -1,0 +1,1292 @@
+peripheral: IOMUXC_GPR
+version: 0.1.0
+registers:
+- id: GPR0
+  address_offset: 0
+  size: 32
+  access: READ_ONLY
+  reset_value: 0
+  fields: []
+  side_effects: null
+- id: GPR1
+  address_offset: 4
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SAI1_MCLK1_SEL
+    bit_range:
+    - 2
+    - 0
+    description: SAI1 MCLK1 source select
+  - name: SAI1_MCLK2_SEL
+    bit_range:
+    - 5
+    - 3
+    description: SAI1 MCLK2 source select
+  - name: SAI1_MCLK3_SEL
+    bit_range:
+    - 7
+    - 6
+    description: SAI1 MCLK3 source select
+  - name: SAI2_MCLK3_SEL
+    bit_range:
+    - 9
+    - 8
+    description: SAI2 MCLK3 source select
+  - name: SAI3_MCLK3_SEL
+    bit_range:
+    - 11
+    - 10
+    description: SAI3 MCLK3 source select
+  - name: GINT
+    bit_range:
+    - 12
+    - 12
+    description: Global interrupt bit (connected to ARM M7 IRQ#41 and GPC)
+  - name: ENET1_CLK_SEL
+    bit_range:
+    - 13
+    - 13
+    description: ENET1 reference clock mode select.
+  - name: USB_EXP_MODE
+    bit_range:
+    - 15
+    - 15
+    description: USB Exposure mode
+  - name: ENET1_TX_CLK_DIR
+    bit_range:
+    - 17
+    - 17
+    description: ENET1_TX_CLK data direction control when ENET_REF_CLK1 ALT is selected.
+  - name: SAI1_MCLK_DIR
+    bit_range:
+    - 19
+    - 19
+    description: sai1.MCLK signal direction control
+  - name: SAI2_MCLK_DIR
+    bit_range:
+    - 20
+    - 20
+    description: sai2.MCLK signal direction control
+  - name: SAI3_MCLK_DIR
+    bit_range:
+    - 21
+    - 21
+    description: sai3.MCLK signal direction control
+  - name: EXC_MON
+    bit_range:
+    - 22
+    - 22
+    description: Exclusive monitor response select of illegal command
+  - name: ENET_IPG_CLK_S_EN
+    bit_range:
+    - 23
+    - 23
+    description: ENET ipg_clk_s clock gating enable
+  - name: CM7_FORCE_HCLK_EN
+    bit_range:
+    - 31
+    - 31
+    description: ARM CM7 platform AHB clock enable
+  side_effects: null
+- id: GPR2
+  address_offset: 8
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: L2_MEM_EN_POWERSAVING
+    bit_range:
+    - 12
+    - 12
+    description: enable power saving features on memory
+  - name: L2_MEM_DEEPSLEEP
+    bit_range:
+    - 14
+    - 14
+    description: control how memory enter Deep Sleep mode (shutdown periphery power, but maintain memory contents, outputs of memory are pulled low)
+  - name: MQS_CLK_DIV
+    bit_range:
+    - 23
+    - 16
+    description: Divider ratio control for mclk from hmclk. mclk frequency = 1/(n+1) * hmclk frequency.
+  - name: MQS_SW_RST
+    bit_range:
+    - 24
+    - 24
+    description: MQS software reset
+  - name: MQS_EN
+    bit_range:
+    - 25
+    - 25
+    description: MQS enable.
+  - name: MQS_OVERSAMPLE
+    bit_range:
+    - 26
+    - 26
+    description: Used to control the PWM oversampling rate compared with mclk.
+  - name: QTIMER1_TMR_CNTS_FREEZE
+    bit_range:
+    - 28
+    - 28
+    description: QTIMER1 timer counter freeze
+  - name: QTIMER2_TMR_CNTS_FREEZE
+    bit_range:
+    - 29
+    - 29
+    description: QTIMER2 timer counter freeze
+  - name: QTIMER3_TMR_CNTS_FREEZE
+    bit_range:
+    - 30
+    - 30
+    description: QTIMER3 timer counter freeze
+  - name: QTIMER4_TMR_CNTS_FREEZE
+    bit_range:
+    - 31
+    - 31
+    description: QTIMER4 timer counter freeze
+  side_effects: null
+- id: GPR3
+  address_offset: 12
+  size: 32
+  access: READ_WRITE
+  reset_value: 65520
+  fields:
+  - name: OCRAM_CTL
+    bit_range:
+    - 3
+    - 0
+    description: OCRAM_CTL[3] - write address pipeline control bit
+  - name: DCP_KEY_SEL
+    bit_range:
+    - 4
+    - 4
+    description: Select 128-bit dcp key from 256-bit key from snvs/ocotp
+  - name: OCRAM_STATUS
+    bit_range:
+    - 19
+    - 16
+    description: This field shows the OCRAM pipeline settings status, controlled by OCRAM_CTL bits respectively
+  side_effects: null
+- id: GPR4
+  address_offset: 16
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: EDMA_STOP_REQ
+    bit_range:
+    - 0
+    - 0
+    description: EDMA stop request.
+  - name: CAN1_STOP_REQ
+    bit_range:
+    - 1
+    - 1
+    description: CAN1 stop request.
+  - name: CAN2_STOP_REQ
+    bit_range:
+    - 2
+    - 2
+    description: CAN2 stop request.
+  - name: TRNG_STOP_REQ
+    bit_range:
+    - 3
+    - 3
+    description: TRNG stop request.
+  - name: ENET_STOP_REQ
+    bit_range:
+    - 4
+    - 4
+    description: ENET stop request.
+  - name: SAI1_STOP_REQ
+    bit_range:
+    - 5
+    - 5
+    description: SAI1 stop request.
+  - name: SAI2_STOP_REQ
+    bit_range:
+    - 6
+    - 6
+    description: SAI2 stop request.
+  - name: SAI3_STOP_REQ
+    bit_range:
+    - 7
+    - 7
+    description: SAI3 stop request.
+  - name: SEMC_STOP_REQ
+    bit_range:
+    - 9
+    - 9
+    description: SEMC stop request.
+  - name: PIT_STOP_REQ
+    bit_range:
+    - 10
+    - 10
+    description: PIT stop request.
+  - name: FLEXSPI_STOP_REQ
+    bit_range:
+    - 11
+    - 11
+    description: FlexSPI stop request.
+  - name: FLEXIO1_STOP_REQ
+    bit_range:
+    - 12
+    - 12
+    description: FlexIO1 stop request.
+  - name: FLEXIO2_STOP_REQ
+    bit_range:
+    - 13
+    - 13
+    description: FlexIO2 stop request.
+  - name: EDMA_STOP_ACK
+    bit_range:
+    - 16
+    - 16
+    description: EDMA stop acknowledge. This is a status (read-only) bit
+  - name: CAN1_STOP_ACK
+    bit_range:
+    - 17
+    - 17
+    description: CAN1 stop acknowledge.
+  - name: CAN2_STOP_ACK
+    bit_range:
+    - 18
+    - 18
+    description: CAN2 stop acknowledge.
+  - name: TRNG_STOP_ACK
+    bit_range:
+    - 19
+    - 19
+    description: TRNG stop acknowledge
+  - name: ENET_STOP_ACK
+    bit_range:
+    - 20
+    - 20
+    description: ENET stop acknowledge.
+  - name: SAI1_STOP_ACK
+    bit_range:
+    - 21
+    - 21
+    description: SAI1 stop acknowledge
+  - name: SAI2_STOP_ACK
+    bit_range:
+    - 22
+    - 22
+    description: SAI2 stop acknowledge
+  - name: SAI3_STOP_ACK
+    bit_range:
+    - 23
+    - 23
+    description: SAI3 stop acknowledge
+  - name: SEMC_STOP_ACK
+    bit_range:
+    - 25
+    - 25
+    description: SEMC stop acknowledge
+  - name: PIT_STOP_ACK
+    bit_range:
+    - 26
+    - 26
+    description: PIT stop acknowledge
+  - name: FLEXSPI_STOP_ACK
+    bit_range:
+    - 27
+    - 27
+    description: FLEXSPI stop acknowledge
+  - name: FLEXIO1_STOP_ACK
+    bit_range:
+    - 28
+    - 28
+    description: FLEXIO1 stop acknowledge
+  - name: FLEXIO2_STOP_ACK
+    bit_range:
+    - 29
+    - 29
+    description: FLEXIO2 stop acknowledge
+  side_effects: null
+- id: GPR5
+  address_offset: 20
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: WDOG1_MASK
+    bit_range:
+    - 6
+    - 6
+    description: WDOG1 Timeout Mask
+  - name: WDOG2_MASK
+    bit_range:
+    - 7
+    - 7
+    description: WDOG2 Timeout Mask
+  - name: GPT2_CAPIN1_SEL
+    bit_range:
+    - 23
+    - 23
+    description: GPT2 input capture channel 1 source select
+  - name: ENET_EVENT3IN_SEL
+    bit_range:
+    - 25
+    - 25
+    description: ENET input timer event3 source select
+  - name: VREF_1M_CLK_GPT1
+    bit_range:
+    - 28
+    - 28
+    description: GPT1 1 MHz clock source select
+  - name: VREF_1M_CLK_GPT2
+    bit_range:
+    - 29
+    - 29
+    description: GPT2 1 MHz clock source select
+  side_effects: null
+- id: GPR6
+  address_offset: 24
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: QTIMER1_TRM0_INPUT_SEL
+    bit_range:
+    - 0
+    - 0
+    description: QTIMER1 TMR0 input select
+  - name: QTIMER1_TRM1_INPUT_SEL
+    bit_range:
+    - 1
+    - 1
+    description: QTIMER1 TMR1 input select
+  - name: QTIMER1_TRM2_INPUT_SEL
+    bit_range:
+    - 2
+    - 2
+    description: QTIMER1 TMR2 input select
+  - name: QTIMER1_TRM3_INPUT_SEL
+    bit_range:
+    - 3
+    - 3
+    description: QTIMER1 TMR3 input select
+  - name: QTIMER2_TRM0_INPUT_SEL
+    bit_range:
+    - 4
+    - 4
+    description: QTIMER2 TMR0 input select
+  - name: QTIMER2_TRM1_INPUT_SEL
+    bit_range:
+    - 5
+    - 5
+    description: QTIMER2 TMR1 input select
+  - name: QTIMER2_TRM2_INPUT_SEL
+    bit_range:
+    - 6
+    - 6
+    description: QTIMER2 TMR2 input select
+  - name: QTIMER2_TRM3_INPUT_SEL
+    bit_range:
+    - 7
+    - 7
+    description: QTIMER2 TMR3 input select
+  - name: QTIMER3_TRM0_INPUT_SEL
+    bit_range:
+    - 8
+    - 8
+    description: QTIMER3 TMR0 input select
+  - name: QTIMER3_TRM1_INPUT_SEL
+    bit_range:
+    - 9
+    - 9
+    description: QTIMER3 TMR1 input select
+  - name: QTIMER3_TRM2_INPUT_SEL
+    bit_range:
+    - 10
+    - 10
+    description: QTIMER3 TMR2 input select
+  - name: QTIMER3_TRM3_INPUT_SEL
+    bit_range:
+    - 11
+    - 11
+    description: QTIMER3 TMR3 input select
+  - name: QTIMER4_TRM0_INPUT_SEL
+    bit_range:
+    - 12
+    - 12
+    description: QTIMER4 TMR0 input select
+  - name: QTIMER4_TRM1_INPUT_SEL
+    bit_range:
+    - 13
+    - 13
+    description: QTIMER4 TMR1 input select
+  - name: QTIMER4_TRM2_INPUT_SEL
+    bit_range:
+    - 14
+    - 14
+    description: QTIMER4 TMR2 input select
+  - name: QTIMER4_TRM3_INPUT_SEL
+    bit_range:
+    - 15
+    - 15
+    description: QTIMER4 TMR3 input select
+  - name: IOMUXC_XBAR_DIR_SEL_4
+    bit_range:
+    - 16
+    - 16
+    description: IOMUXC XBAR_INOUT4 function direction select
+  - name: IOMUXC_XBAR_DIR_SEL_5
+    bit_range:
+    - 17
+    - 17
+    description: IOMUXC XBAR_INOUT5 function direction select
+  - name: IOMUXC_XBAR_DIR_SEL_6
+    bit_range:
+    - 18
+    - 18
+    description: IOMUXC XBAR_INOUT6 function direction select
+  - name: IOMUXC_XBAR_DIR_SEL_7
+    bit_range:
+    - 19
+    - 19
+    description: IOMUXC XBAR_INOUT7 function direction select
+  - name: IOMUXC_XBAR_DIR_SEL_8
+    bit_range:
+    - 20
+    - 20
+    description: IOMUXC XBAR_INOUT8 function direction select
+  - name: IOMUXC_XBAR_DIR_SEL_9
+    bit_range:
+    - 21
+    - 21
+    description: IOMUXC XBAR_INOUT9 function direction select
+  - name: IOMUXC_XBAR_DIR_SEL_10
+    bit_range:
+    - 22
+    - 22
+    description: IOMUXC XBAR_INOUT10 function direction select
+  - name: IOMUXC_XBAR_DIR_SEL_11
+    bit_range:
+    - 23
+    - 23
+    description: IOMUXC XBAR_INOUT11 function direction select
+  - name: IOMUXC_XBAR_DIR_SEL_12
+    bit_range:
+    - 24
+    - 24
+    description: IOMUXC XBAR_INOUT12 function direction select
+  - name: IOMUXC_XBAR_DIR_SEL_13
+    bit_range:
+    - 25
+    - 25
+    description: IOMUXC XBAR_INOUT13 function direction select
+  - name: IOMUXC_XBAR_DIR_SEL_14
+    bit_range:
+    - 26
+    - 26
+    description: IOMUXC XBAR_INOUT14 function direction select
+  - name: IOMUXC_XBAR_DIR_SEL_15
+    bit_range:
+    - 27
+    - 27
+    description: IOMUXC XBAR_INOUT15 function direction select
+  - name: IOMUXC_XBAR_DIR_SEL_16
+    bit_range:
+    - 28
+    - 28
+    description: IOMUXC XBAR_INOUT16 function direction select
+  - name: IOMUXC_XBAR_DIR_SEL_17
+    bit_range:
+    - 29
+    - 29
+    description: IOMUXC XBAR_INOUT17 function direction select
+  - name: IOMUXC_XBAR_DIR_SEL_18
+    bit_range:
+    - 30
+    - 30
+    description: IOMUXC XBAR_INOUT18 function direction select
+  - name: IOMUXC_XBAR_DIR_SEL_19
+    bit_range:
+    - 31
+    - 31
+    description: IOMUXC XBAR_INOUT19 function direction select
+  side_effects: null
+- id: GPR7
+  address_offset: 28
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: LPI2C1_STOP_REQ
+    bit_range:
+    - 0
+    - 0
+    description: LPI2C1 stop request
+  - name: LPI2C2_STOP_REQ
+    bit_range:
+    - 1
+    - 1
+    description: LPI2C2 stop request
+  - name: LPI2C3_STOP_REQ
+    bit_range:
+    - 2
+    - 2
+    description: LPI2C3 stop request
+  - name: LPI2C4_STOP_REQ
+    bit_range:
+    - 3
+    - 3
+    description: LPI2C4 stop request
+  - name: LPSPI1_STOP_REQ
+    bit_range:
+    - 4
+    - 4
+    description: LPSPI1 stop request
+  - name: LPSPI2_STOP_REQ
+    bit_range:
+    - 5
+    - 5
+    description: LPSPI2 stop request
+  - name: LPSPI3_STOP_REQ
+    bit_range:
+    - 6
+    - 6
+    description: LPSPI3 stop request
+  - name: LPSPI4_STOP_REQ
+    bit_range:
+    - 7
+    - 7
+    description: LPSPI4 stop request
+  - name: LPUART1_STOP_REQ
+    bit_range:
+    - 8
+    - 8
+    description: LPUART1 stop request
+  - name: LPUART2_STOP_REQ
+    bit_range:
+    - 9
+    - 9
+    description: LPUART1 stop request
+  - name: LPUART3_STOP_REQ
+    bit_range:
+    - 10
+    - 10
+    description: LPUART3 stop request
+  - name: LPUART4_STOP_REQ
+    bit_range:
+    - 11
+    - 11
+    description: LPUART4 stop request
+  - name: LPUART5_STOP_REQ
+    bit_range:
+    - 12
+    - 12
+    description: LPUART5 stop request
+  - name: LPUART6_STOP_REQ
+    bit_range:
+    - 13
+    - 13
+    description: LPUART6 stop request
+  - name: LPUART7_STOP_REQ
+    bit_range:
+    - 14
+    - 14
+    description: LPUART7 stop request
+  - name: LPUART8_STOP_REQ
+    bit_range:
+    - 15
+    - 15
+    description: LPUART8 stop request
+  - name: LPI2C1_STOP_ACK
+    bit_range:
+    - 16
+    - 16
+    description: LPI2C1 stop acknowledge
+  - name: LPI2C2_STOP_ACK
+    bit_range:
+    - 17
+    - 17
+    description: LPI2C2 stop acknowledge
+  - name: LPI2C3_STOP_ACK
+    bit_range:
+    - 18
+    - 18
+    description: LPI2C3 stop acknowledge
+  - name: LPI2C4_STOP_ACK
+    bit_range:
+    - 19
+    - 19
+    description: LPI2C4 stop acknowledge
+  - name: LPSPI1_STOP_ACK
+    bit_range:
+    - 20
+    - 20
+    description: LPSPI1 stop acknowledge
+  - name: LPSPI2_STOP_ACK
+    bit_range:
+    - 21
+    - 21
+    description: LPSPI2 stop acknowledge
+  - name: LPSPI3_STOP_ACK
+    bit_range:
+    - 22
+    - 22
+    description: LPSPI3 stop acknowledge
+  - name: LPSPI4_STOP_ACK
+    bit_range:
+    - 23
+    - 23
+    description: LPSPI4 stop acknowledge
+  - name: LPUART1_STOP_ACK
+    bit_range:
+    - 24
+    - 24
+    description: LPUART1 stop acknowledge
+  - name: LPUART2_STOP_ACK
+    bit_range:
+    - 25
+    - 25
+    description: LPUART1 stop acknowledge
+  - name: LPUART3_STOP_ACK
+    bit_range:
+    - 26
+    - 26
+    description: LPUART3 stop acknowledge
+  - name: LPUART4_STOP_ACK
+    bit_range:
+    - 27
+    - 27
+    description: LPUART4 stop acknowledge
+  - name: LPUART5_STOP_ACK
+    bit_range:
+    - 28
+    - 28
+    description: LPUART5 stop acknowledge
+  - name: LPUART6_STOP_ACK
+    bit_range:
+    - 29
+    - 29
+    description: LPUART6 stop acknowledge
+  - name: LPUART7_STOP_ACK
+    bit_range:
+    - 30
+    - 30
+    description: LPUART7 stop acknowledge
+  - name: LPUART8_STOP_ACK
+    bit_range:
+    - 31
+    - 31
+    description: LPUART8 stop acknowledge
+  side_effects: null
+- id: GPR8
+  address_offset: 32
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: LPI2C1_IPG_STOP_MODE
+    bit_range:
+    - 0
+    - 0
+    description: LPI2C1 stop mode selection, cannot change when ipg_stop is asserted.
+  - name: LPI2C1_IPG_DOZE
+    bit_range:
+    - 1
+    - 1
+    description: LPI2C1 ipg_doze mode
+  - name: LPI2C2_IPG_STOP_MODE
+    bit_range:
+    - 2
+    - 2
+    description: LPI2C2 stop mode selection, cannot change when ipg_stop is asserted.
+  - name: LPI2C2_IPG_DOZE
+    bit_range:
+    - 3
+    - 3
+    description: LPI2C2 ipg_doze mode
+  - name: LPI2C3_IPG_STOP_MODE
+    bit_range:
+    - 4
+    - 4
+    description: LPI2C3 stop mode selection, cannot change when ipg_stop is asserted.
+  - name: LPI2C3_IPG_DOZE
+    bit_range:
+    - 5
+    - 5
+    description: LPI2C3 ipg_doze mode
+  - name: LPI2C4_IPG_STOP_MODE
+    bit_range:
+    - 6
+    - 6
+    description: LPI2C4 stop mode selection, cannot change when ipg_stop is asserted.
+  - name: LPI2C4_IPG_DOZE
+    bit_range:
+    - 7
+    - 7
+    description: LPI2C4 ipg_doze mode
+  - name: LPSPI1_IPG_STOP_MODE
+    bit_range:
+    - 8
+    - 8
+    description: LPSPI1 stop mode selection, cannot change when ipg_stop is asserted.
+  - name: LPSPI1_IPG_DOZE
+    bit_range:
+    - 9
+    - 9
+    description: LPSPI1 ipg_doze mode
+  - name: LPSPI2_IPG_STOP_MODE
+    bit_range:
+    - 10
+    - 10
+    description: LPSPI2 stop mode selection, cannot change when ipg_stop is asserted.
+  - name: LPSPI2_IPG_DOZE
+    bit_range:
+    - 11
+    - 11
+    description: LPSPI2 ipg_doze mode
+  - name: LPSPI3_IPG_STOP_MODE
+    bit_range:
+    - 12
+    - 12
+    description: LPSPI3 stop mode selection, cannot change when ipg_stop is asserted.
+  - name: LPSPI3_IPG_DOZE
+    bit_range:
+    - 13
+    - 13
+    description: LPSPI3 ipg_doze mode
+  - name: LPSPI4_IPG_STOP_MODE
+    bit_range:
+    - 14
+    - 14
+    description: LPSPI4 stop mode selection, cannot change when ipg_stop is asserted.
+  - name: LPSPI4_IPG_DOZE
+    bit_range:
+    - 15
+    - 15
+    description: LPSPI4 ipg_doze mode
+  - name: LPUART1_IPG_STOP_MODE
+    bit_range:
+    - 16
+    - 16
+    description: LPUART1 stop mode selection, cannot change when ipg_stop is asserted.
+  - name: LPUART1_IPG_DOZE
+    bit_range:
+    - 17
+    - 17
+    description: LPUART1 ipg_doze mode
+  - name: LPUART2_IPG_STOP_MODE
+    bit_range:
+    - 18
+    - 18
+    description: LPUART2 stop mode selection, cannot change when ipg_stop is asserted.
+  - name: LPUART2_IPG_DOZE
+    bit_range:
+    - 19
+    - 19
+    description: LPUART2 ipg_doze mode
+  - name: LPUART3_IPG_STOP_MODE
+    bit_range:
+    - 20
+    - 20
+    description: LPUART3 stop mode selection, cannot change when ipg_stop is asserted.
+  - name: LPUART3_IPG_DOZE
+    bit_range:
+    - 21
+    - 21
+    description: LPUART3 ipg_doze mode
+  - name: LPUART4_IPG_STOP_MODE
+    bit_range:
+    - 22
+    - 22
+    description: LPUART4 stop mode selection, cannot change when ipg_stop is asserted.
+  - name: LPUART4_IPG_DOZE
+    bit_range:
+    - 23
+    - 23
+    description: LPUART4 ipg_doze mode
+  - name: LPUART5_IPG_STOP_MODE
+    bit_range:
+    - 24
+    - 24
+    description: LPUART5 stop mode selection, cannot change when ipg_stop is asserted.
+  - name: LPUART5_IPG_DOZE
+    bit_range:
+    - 25
+    - 25
+    description: LPUART5 ipg_doze mode
+  - name: LPUART6_IPG_STOP_MODE
+    bit_range:
+    - 26
+    - 26
+    description: LPUART6 stop mode selection, cannot change when ipg_stop is asserted.
+  - name: LPUART6_IPG_DOZE
+    bit_range:
+    - 27
+    - 27
+    description: LPUART6 ipg_doze mode
+  - name: LPUART7_IPG_STOP_MODE
+    bit_range:
+    - 28
+    - 28
+    description: LPUART7 stop mode selection, cannot change when ipg_stop is asserted.
+  - name: LPUART7_IPG_DOZE
+    bit_range:
+    - 29
+    - 29
+    description: LPUART7 ipg_doze mode
+  - name: LPUART8_IPG_STOP_MODE
+    bit_range:
+    - 30
+    - 30
+    description: LPUART8 stop mode selection, cannot change when ipg_stop is asserted.
+  - name: LPUART8_IPG_DOZE
+    bit_range:
+    - 31
+    - 31
+    description: LPUART8 ipg_doze mode
+  side_effects: null
+- id: GPR9
+  address_offset: 36
+  size: 32
+  access: READ_ONLY
+  reset_value: 0
+  fields: []
+  side_effects: null
+- id: GPR10
+  address_offset: 40
+  size: 32
+  access: READ_WRITE
+  reset_value: 7
+  fields:
+  - name: NIDEN
+    bit_range:
+    - 0
+    - 0
+    description: ARM non-secure (non-invasive) debug enable
+  - name: DBG_EN
+    bit_range:
+    - 1
+    - 1
+    description: ARM invasive debug enable
+  - name: SEC_ERR_RESP
+    bit_range:
+    - 2
+    - 2
+    description: Security error response enable for all security gaskets (on both AHB and AXI buses)
+  - name: DCPKEY_OCOTP_OR_KEYMUX
+    bit_range:
+    - 4
+    - 4
+    description: DCP Key selection bit.
+  - name: OCRAM_TZ_EN
+    bit_range:
+    - 8
+    - 8
+    description: OCRAM TrustZone (TZ) enable.
+  - name: OCRAM_TZ_ADDR
+    bit_range:
+    - 15
+    - 9
+    description: OCRAM TrustZone (TZ) start address
+  - name: LOCK_NIDEN
+    bit_range:
+    - 16
+    - 16
+    description: Lock NIDEN field for changes
+  - name: LOCK_DBG_EN
+    bit_range:
+    - 17
+    - 17
+    description: Lock DBG_EN field for changes
+  - name: LOCK_SEC_ERR_RESP
+    bit_range:
+    - 18
+    - 18
+    description: Lock SEC_ERR_RESP field for changes
+  - name: LOCK_DCPKEY_OCOTP_OR_KEYMUX
+    bit_range:
+    - 20
+    - 20
+    description: Lock DCP Key OCOTP/Key MUX selection bit
+  - name: LOCK_OCRAM_TZ_EN
+    bit_range:
+    - 24
+    - 24
+    description: Lock OCRAM_TZ_EN field for changes
+  - name: LOCK_OCRAM_TZ_ADDR
+    bit_range:
+    - 31
+    - 25
+    description: Lock OCRAM_TZ_ADDR field for changes
+  side_effects: null
+- id: GPR11
+  address_offset: 44
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: M7_APC_AC_R0_CTRL
+    bit_range:
+    - 1
+    - 0
+    description: Access control of memory region-0
+  - name: M7_APC_AC_R1_CTRL
+    bit_range:
+    - 3
+    - 2
+    description: Access control of memory region-1
+  - name: M7_APC_AC_R2_CTRL
+    bit_range:
+    - 5
+    - 4
+    description: Access control of memory region-2
+  - name: M7_APC_AC_R3_CTRL
+    bit_range:
+    - 7
+    - 6
+    description: Access control of memory region-3
+  - name: BEE_DE_RX_EN
+    bit_range:
+    - 11
+    - 8
+    description: BEE data decryption of memory region-n (n = 3 to 0)
+  - name: LOCK_M7_APC_AC_R0_CTRL
+    bit_range:
+    - 17
+    - 16
+    description: Lock M7_APC_AC_R0_CTRL field for changes
+  - name: LOCK_M7_APC_AC_R1_CTRL
+    bit_range:
+    - 19
+    - 18
+    description: Lock M7_APC_AC_R1_CTRL field for changes
+  - name: LOCK_M7_APC_AC_R2_CTRL
+    bit_range:
+    - 21
+    - 20
+    description: Lock M7_APC_AC_R2_CTRL field for changes
+  - name: LOCK_M7_APC_AC_R3_CTRL
+    bit_range:
+    - 23
+    - 22
+    description: Lock M7_APC_AC_R3_CTRL field for changes
+  - name: LOCK_BEE_DE_RX_EN
+    bit_range:
+    - 27
+    - 24
+    description: Lock BEE_DE_RX_EN[n] (n = 3 to 0) field for changes
+  side_effects: null
+- id: GPR12
+  address_offset: 48
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: FLEXIO1_IPG_STOP_MODE
+    bit_range:
+    - 0
+    - 0
+    description: FlexIO1 stop mode selection. Cannot change when ipg_stop is asserted.
+  - name: FLEXIO1_IPG_DOZE
+    bit_range:
+    - 1
+    - 1
+    description: FLEXIO1 ipg_doze mode
+  - name: FLEXIO2_IPG_STOP_MODE
+    bit_range:
+    - 2
+    - 2
+    description: FlexIO2 stop mode selection. Cannot change when ipg_stop is asserted.
+  - name: FLEXIO2_IPG_DOZE
+    bit_range:
+    - 3
+    - 3
+    description: FLEXIO2 ipg_doze mode
+  - name: ACMP_IPG_STOP_MODE
+    bit_range:
+    - 4
+    - 4
+    description: ACMP stop mode selection. Cannot change when ipg_stop is asserted.
+  side_effects: null
+- id: GPR13
+  address_offset: 52
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: ARCACHE_USDHC
+    bit_range:
+    - 0
+    - 0
+    description: uSDHC block cacheable attribute value of AXI read transactions
+  - name: AWCACHE_USDHC
+    bit_range:
+    - 1
+    - 1
+    description: uSDHC block cacheable attribute value of AXI write transactions
+  - name: CACHE_ENET
+    bit_range:
+    - 7
+    - 7
+    description: ENET block cacheable attribute value of AXI transactions
+  - name: CACHE_USB
+    bit_range:
+    - 13
+    - 13
+    description: USB block cacheable attribute value of AXI transactions
+  side_effects: null
+- id: GPR14
+  address_offset: 56
+  size: 32
+  access: READ_WRITE
+  reset_value: 11141120
+  fields:
+  - name: ACMP1_CMP_IGEN_TRIM_DN
+    bit_range:
+    - 0
+    - 0
+    description: reduces ACMP1 internal bias current by 30%
+  - name: ACMP2_CMP_IGEN_TRIM_DN
+    bit_range:
+    - 1
+    - 1
+    description: reduces ACMP2 internal bias current by 30%
+  - name: ACMP3_CMP_IGEN_TRIM_DN
+    bit_range:
+    - 2
+    - 2
+    description: reduces ACMP3 internal bias current by 30%
+  - name: ACMP4_CMP_IGEN_TRIM_DN
+    bit_range:
+    - 3
+    - 3
+    description: reduces ACMP4 internal bias current by 30%
+  - name: ACMP1_CMP_IGEN_TRIM_UP
+    bit_range:
+    - 4
+    - 4
+    description: increases ACMP1 internal bias current by 30%
+  - name: ACMP2_CMP_IGEN_TRIM_UP
+    bit_range:
+    - 5
+    - 5
+    description: increases ACMP2 internal bias current by 30%
+  - name: ACMP3_CMP_IGEN_TRIM_UP
+    bit_range:
+    - 6
+    - 6
+    description: increases ACMP3 internal bias current by 30%
+  - name: ACMP4_CMP_IGEN_TRIM_UP
+    bit_range:
+    - 7
+    - 7
+    description: increases ACMP4 internal bias current by 30%
+  - name: ACMP1_SAMPLE_SYNC_EN
+    bit_range:
+    - 8
+    - 8
+    description: ACMP1 sample_lv source select
+  - name: ACMP2_SAMPLE_SYNC_EN
+    bit_range:
+    - 9
+    - 9
+    description: ACMP2 sample_lv source select
+  - name: ACMP3_SAMPLE_SYNC_EN
+    bit_range:
+    - 10
+    - 10
+    description: ACMP3 sample_lv source select
+  - name: ACMP4_SAMPLE_SYNC_EN
+    bit_range:
+    - 11
+    - 11
+    description: ACMP4 sample_lv source select
+  - name: CM7_CFGITCMSZ
+    bit_range:
+    - 19
+    - 16
+    description: ITCM total size configuration
+  - name: CM7_CFGDTCMSZ
+    bit_range:
+    - 23
+    - 20
+    description: DTCM total size configuration
+  side_effects: null
+- id: GPR15
+  address_offset: 60
+  size: 32
+  access: READ_ONLY
+  reset_value: 4294967295
+  fields: []
+  side_effects: null
+- id: GPR16
+  address_offset: 64
+  size: 32
+  access: READ_WRITE
+  reset_value: 2097155
+  fields:
+  - name: INIT_ITCM_EN
+    bit_range:
+    - 0
+    - 0
+    description: ITCM enable initialization out of reset
+  - name: INIT_DTCM_EN
+    bit_range:
+    - 1
+    - 1
+    description: DTCM enable initialization out of reset
+  - name: FLEXRAM_BANK_CFG_SEL
+    bit_range:
+    - 2
+    - 2
+    description: FlexRAM bank config source select
+  side_effects: null
+- id: GPR17
+  address_offset: 68
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: FLEXRAM_BANK_CFG
+    bit_range:
+    - 31
+    - 0
+    description: FlexRAM bank config value
+  side_effects: null
+- id: GPR18
+  address_offset: 72
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: LOCK_M7_APC_AC_R0_BOT
+    bit_range:
+    - 0
+    - 0
+    description: lock M7_APC_AC_R0_BOT field for changes
+  - name: M7_APC_AC_R0_BOT
+    bit_range:
+    - 31
+    - 3
+    description: APC end address of memory region-0
+  side_effects: null
+- id: GPR19
+  address_offset: 76
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: LOCK_M7_APC_AC_R0_TOP
+    bit_range:
+    - 0
+    - 0
+    description: lock M7_APC_AC_R0_TOP field for changes
+  - name: M7_APC_AC_R0_TOP
+    bit_range:
+    - 31
+    - 3
+    description: APC start address of memory region-0
+  side_effects: null
+- id: GPR20
+  address_offset: 80
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: LOCK_M7_APC_AC_R1_BOT
+    bit_range:
+    - 0
+    - 0
+    description: lock M7_APC_AC_R1_BOT field for changes
+  - name: M7_APC_AC_R1_BOT
+    bit_range:
+    - 31
+    - 3
+    description: APC end address of memory region-1
+  side_effects: null
+- id: GPR21
+  address_offset: 84
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: LOCK_M7_APC_AC_R1_TOP
+    bit_range:
+    - 0
+    - 0
+    description: lock M7_APC_AC_R1_TOP field for changes
+  - name: M7_APC_AC_R1_TOP
+    bit_range:
+    - 31
+    - 3
+    description: APC start address of memory region-1
+  side_effects: null
+- id: GPR22
+  address_offset: 88
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: LOCK_M7_APC_AC_R2_BOT
+    bit_range:
+    - 0
+    - 0
+    description: lock M7_APC_AC_R2_BOT field for changes
+  - name: M7_APC_AC_R2_BOT
+    bit_range:
+    - 31
+    - 3
+    description: APC end address of memory region-2
+  side_effects: null
+- id: GPR23
+  address_offset: 92
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: LOCK_M7_APC_AC_R2_TOP
+    bit_range:
+    - 0
+    - 0
+    description: lock M7_APC_AC_R2_TOP field for changes
+  - name: M7_APC_AC_R2_TOP
+    bit_range:
+    - 31
+    - 3
+    description: APC start address of memory region-2
+  side_effects: null
+- id: GPR24
+  address_offset: 96
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: LOCK_M7_APC_AC_R3_BOT
+    bit_range:
+    - 0
+    - 0
+    description: lock M7_APC_AC_R3_BOT field for changes
+  - name: M7_APC_AC_R3_BOT
+    bit_range:
+    - 31
+    - 3
+    description: APC end address of memory region-3
+  side_effects: null
+- id: GPR25
+  address_offset: 100
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: LOCK_M7_APC_AC_R3_TOP
+    bit_range:
+    - 0
+    - 0
+    description: lock M7_APC_AC_R3_TOP field for changes
+  - name: M7_APC_AC_R3_TOP
+    bit_range:
+    - 31
+    - 3
+    description: APC start address of memory region-3
+  side_effects: null
+interrupts: null
+timing: null

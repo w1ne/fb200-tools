@@ -1,0 +1,78 @@
+# fb200-tools: LabWired twin of the FLAMMA FB200
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+#
+# FLAMMA FB200 (Mooer-based bass multi-effects pedal) main board, NXP
+# MIMXRT1052DVL6B (SoC marking; docs/UI_AND_STORAGE.md, HARDWARE.md,
+# AUDIO_PATH.md). Pin and part facts below come from those documents; the
+# parts themselves are phase 2 (NAU88L21 codec, 3-digit 14-segment LED display,
+# 2x 74HC4051 knob multiplexers, BT201-style Bluetooth module, 40 WS2812 LEDs).
+#
+#   - boot image: vendor self-loading block 0 at FlexSPI 0x60010000; model
+#     library (block 1) at flash offset 0xD0000
+#   - NAU88L21 codec at I2C 0x54 on LPI2C1 (SD_B1_04/05); SAI1 audio 44.1 kHz;
+#     Bluetooth audio in on SAI3 RX
+#   - USB1: device 34DB:800F (USB Audio + vendor HID interface 3)
+#   - Bluetooth module on LPUART5 (B1_12 TX / B1_13 RX, 115200 8N1)
+#   - display: 3-digit 14-segment LEDs multiplexed by GPIO4_IO16..30 (segments,
+#     active high) and GPIO4_IO31 / GPIO3_IO18 / GPIO3_IO21 (digit selects)
+#   - 16 knob LEDs GPIO4_IO0..15 (active low); 40 WS2812 on FlexIO2 D02
+#   - footswitches A..D below; knobs through 74HC4051 (select GPIO2_IO17..19)
+#     into ADC1 IN3/IN4
+#
+# Board-level analog inputs (static until the parts exist):
+#   - ADC1 IN7 (AD_B1_02): supply monitor. The stock app treats < 2950/4095 as
+#     a power failure (saves settings and flips the B1_10/B1_15 latch) and
+#     > 3050/4095 as healthy; 2.8 V here.
+#   - ADC1 IN9 (AD_B1_04): battery. The stock app waits at boot until it reads
+#     >= 2870/4095 (or GPIO1_IO19, charger sense, is high); 2.5 V here.
+#   - ADC1 IN3/IN4: knob mux outputs, mid-scale.
+
+name: "fb200"
+chip: "chip/mimxrt1052.yaml"
+external_devices: []
+peripherals:
+  - id: "adc1"
+    type: "imxrt_adc"
+    base_address: 0
+    config:
+      input_mv: { 3: 1650, 4: 1650, 7: 2800, 9: 2500 }
+  # FlexIO2 functional clock as the stock image programs the CCM
+  # (CSCMR2.FLEXIO2_CLK_SEL = PLL3 480 MHz, CS1CDR PRED /5, PODF /2).
+  - id: "flexio2"
+    type: "imxrt_flexio"
+    base_address: 0
+    config:
+      clock_hz: 48000000
+board_io:
+  # Footswitches: 22k pull-up, active low (pads SD_B0_00/01/02, B1_08).
+  - id: "footswitch_a"
+    kind: "button"
+    peripheral: "gpio2"
+    pin: 24
+    signal: "input"
+    active_high: false
+  - id: "footswitch_b"
+    kind: "button"
+    peripheral: "gpio3"
+    pin: 13
+    signal: "input"
+    active_high: false
+  - id: "footswitch_c"
+    kind: "button"
+    peripheral: "gpio3"
+    pin: 14
+    signal: "input"
+    active_high: false
+  - id: "footswitch_d"
+    kind: "button"
+    peripheral: "gpio3"
+    pin: 12
+    signal: "input"
+    active_high: false
+connectors:
+  - type: "uart"
+    peripheral: "lpuart5"
+    endpoint: "host_console"

@@ -1,0 +1,426 @@
+peripheral: ROMC
+version: 0.1.0
+registers:
+- id: ROMPATCH7D
+  address_offset: 212
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: DATAX
+    bit_range:
+    - 31
+    - 0
+    description: Data Fix Registers - Stores the data used for 1-word data fix operations
+  side_effects: null
+- id: ROMPATCH6D
+  address_offset: 216
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: DATAX
+    bit_range:
+    - 31
+    - 0
+    description: Data Fix Registers - Stores the data used for 1-word data fix operations
+  side_effects: null
+- id: ROMPATCH5D
+  address_offset: 220
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: DATAX
+    bit_range:
+    - 31
+    - 0
+    description: Data Fix Registers - Stores the data used for 1-word data fix operations
+  side_effects: null
+- id: ROMPATCH4D
+  address_offset: 224
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: DATAX
+    bit_range:
+    - 31
+    - 0
+    description: Data Fix Registers - Stores the data used for 1-word data fix operations
+  side_effects: null
+- id: ROMPATCH3D
+  address_offset: 228
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: DATAX
+    bit_range:
+    - 31
+    - 0
+    description: Data Fix Registers - Stores the data used for 1-word data fix operations
+  side_effects: null
+- id: ROMPATCH2D
+  address_offset: 232
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: DATAX
+    bit_range:
+    - 31
+    - 0
+    description: Data Fix Registers - Stores the data used for 1-word data fix operations
+  side_effects: null
+- id: ROMPATCH1D
+  address_offset: 236
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: DATAX
+    bit_range:
+    - 31
+    - 0
+    description: Data Fix Registers - Stores the data used for 1-word data fix operations
+  side_effects: null
+- id: ROMPATCH0D
+  address_offset: 240
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: DATAX
+    bit_range:
+    - 31
+    - 0
+    description: Data Fix Registers - Stores the data used for 1-word data fix operations
+  side_effects: null
+- id: ROMPATCHCNTL
+  address_offset: 244
+  size: 32
+  access: READ_WRITE
+  reset_value: 138412032
+  fields:
+  - name: DATAFIX
+    bit_range:
+    - 7
+    - 0
+    description: Data Fix Enable - Controls the use of the first 8 address comparators for 1-word data fix or for code patch routine
+  - name: DIS
+    bit_range:
+    - 29
+    - 29
+    description: ROMC Disable -- This bit, when set, disables all ROMC operations
+  side_effects: null
+- id: ROMPATCHENH
+  address_offset: 248
+  size: 32
+  access: READ_ONLY
+  reset_value: 0
+  fields: []
+  side_effects: null
+- id: ROMPATCHENL
+  address_offset: 252
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: ENABLE
+    bit_range:
+    - 15
+    - 0
+    description: Enable Address Comparator - This bit enables the corresponding address comparator to trigger an event
+  side_effects: null
+- id: ROMPATCH0A
+  address_offset: 256
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: THUMBX
+    bit_range:
+    - 0
+    - 0
+    description: THUMB Comparator Select - Indicates that this address will trigger a THUMB opcode patch or an Arm opcode patch
+  - name: ADDRX
+    bit_range:
+    - 22
+    - 1
+    description: Address Comparator Registers - Indicates the memory address to be watched
+  side_effects: null
+- id: ROMPATCH1A
+  address_offset: 260
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: THUMBX
+    bit_range:
+    - 0
+    - 0
+    description: THUMB Comparator Select - Indicates that this address will trigger a THUMB opcode patch or an Arm opcode patch
+  - name: ADDRX
+    bit_range:
+    - 22
+    - 1
+    description: Address Comparator Registers - Indicates the memory address to be watched
+  side_effects: null
+- id: ROMPATCH2A
+  address_offset: 264
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: THUMBX
+    bit_range:
+    - 0
+    - 0
+    description: THUMB Comparator Select - Indicates that this address will trigger a THUMB opcode patch or an Arm opcode patch
+  - name: ADDRX
+    bit_range:
+    - 22
+    - 1
+    description: Address Comparator Registers - Indicates the memory address to be watched
+  side_effects: null
+- id: ROMPATCH3A
+  address_offset: 268
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: THUMBX
+    bit_range:
+    - 0
+    - 0
+    description: THUMB Comparator Select - Indicates that this address will trigger a THUMB opcode patch or an Arm opcode patch
+  - name: ADDRX
+    bit_range:
+    - 22
+    - 1
+    description: Address Comparator Registers - Indicates the memory address to be watched
+  side_effects: null
+- id: ROMPATCH4A
+  address_offset: 272
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: THUMBX
+    bit_range:
+    - 0
+    - 0
+    description: THUMB Comparator Select - Indicates that this address will trigger a THUMB opcode patch or an Arm opcode patch
+  - name: ADDRX
+    bit_range:
+    - 22
+    - 1
+    description: Address Comparator Registers - Indicates the memory address to be watched
+  side_effects: null
+- id: ROMPATCH5A
+  address_offset: 276
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: THUMBX
+    bit_range:
+    - 0
+    - 0
+    description: THUMB Comparator Select - Indicates that this address will trigger a THUMB opcode patch or an Arm opcode patch
+  - name: ADDRX
+    bit_range:
+    - 22
+    - 1
+    description: Address Comparator Registers - Indicates the memory address to be watched
+  side_effects: null
+- id: ROMPATCH6A
+  address_offset: 280
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: THUMBX
+    bit_range:
+    - 0
+    - 0
+    description: THUMB Comparator Select - Indicates that this address will trigger a THUMB opcode patch or an Arm opcode patch
+  - name: ADDRX
+    bit_range:
+    - 22
+    - 1
+    description: Address Comparator Registers - Indicates the memory address to be watched
+  side_effects: null
+- id: ROMPATCH7A
+  address_offset: 284
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: THUMBX
+    bit_range:
+    - 0
+    - 0
+    description: THUMB Comparator Select - Indicates that this address will trigger a THUMB opcode patch or an Arm opcode patch
+  - name: ADDRX
+    bit_range:
+    - 22
+    - 1
+    description: Address Comparator Registers - Indicates the memory address to be watched
+  side_effects: null
+- id: ROMPATCH8A
+  address_offset: 288
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: THUMBX
+    bit_range:
+    - 0
+    - 0
+    description: THUMB Comparator Select - Indicates that this address will trigger a THUMB opcode patch or an Arm opcode patch
+  - name: ADDRX
+    bit_range:
+    - 22
+    - 1
+    description: Address Comparator Registers - Indicates the memory address to be watched
+  side_effects: null
+- id: ROMPATCH9A
+  address_offset: 292
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: THUMBX
+    bit_range:
+    - 0
+    - 0
+    description: THUMB Comparator Select - Indicates that this address will trigger a THUMB opcode patch or an Arm opcode patch
+  - name: ADDRX
+    bit_range:
+    - 22
+    - 1
+    description: Address Comparator Registers - Indicates the memory address to be watched
+  side_effects: null
+- id: ROMPATCH10A
+  address_offset: 296
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: THUMBX
+    bit_range:
+    - 0
+    - 0
+    description: THUMB Comparator Select - Indicates that this address will trigger a THUMB opcode patch or an Arm opcode patch
+  - name: ADDRX
+    bit_range:
+    - 22
+    - 1
+    description: Address Comparator Registers - Indicates the memory address to be watched
+  side_effects: null
+- id: ROMPATCH11A
+  address_offset: 300
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: THUMBX
+    bit_range:
+    - 0
+    - 0
+    description: THUMB Comparator Select - Indicates that this address will trigger a THUMB opcode patch or an Arm opcode patch
+  - name: ADDRX
+    bit_range:
+    - 22
+    - 1
+    description: Address Comparator Registers - Indicates the memory address to be watched
+  side_effects: null
+- id: ROMPATCH12A
+  address_offset: 304
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: THUMBX
+    bit_range:
+    - 0
+    - 0
+    description: THUMB Comparator Select - Indicates that this address will trigger a THUMB opcode patch or an Arm opcode patch
+  - name: ADDRX
+    bit_range:
+    - 22
+    - 1
+    description: Address Comparator Registers - Indicates the memory address to be watched
+  side_effects: null
+- id: ROMPATCH13A
+  address_offset: 308
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: THUMBX
+    bit_range:
+    - 0
+    - 0
+    description: THUMB Comparator Select - Indicates that this address will trigger a THUMB opcode patch or an Arm opcode patch
+  - name: ADDRX
+    bit_range:
+    - 22
+    - 1
+    description: Address Comparator Registers - Indicates the memory address to be watched
+  side_effects: null
+- id: ROMPATCH14A
+  address_offset: 312
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: THUMBX
+    bit_range:
+    - 0
+    - 0
+    description: THUMB Comparator Select - Indicates that this address will trigger a THUMB opcode patch or an Arm opcode patch
+  - name: ADDRX
+    bit_range:
+    - 22
+    - 1
+    description: Address Comparator Registers - Indicates the memory address to be watched
+  side_effects: null
+- id: ROMPATCH15A
+  address_offset: 316
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: THUMBX
+    bit_range:
+    - 0
+    - 0
+    description: THUMB Comparator Select - Indicates that this address will trigger a THUMB opcode patch or an Arm opcode patch
+  - name: ADDRX
+    bit_range:
+    - 22
+    - 1
+    description: Address Comparator Registers - Indicates the memory address to be watched
+  side_effects: null
+- id: ROMPATCHSR
+  address_offset: 520
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 5
+    - 0
+    description: ROMC Source Number - Binary encoding of the number of the address comparator which has an address match in the most recent patch event on ROMC AHB
+  - name: SW
+    bit_range:
+    - 17
+    - 17
+    description: ROMC AHB Multiple Address Comparator matches Indicator - Indicates that multiple address comparator matches occurred
+  side_effects: null
+interrupts: null
+timing: null

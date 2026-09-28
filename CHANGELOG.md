@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **LabWired twin** of the board as YAML (`labwired/`): MIMXRT1052 chip, FB200
+  board, a smoke gate for the open smoke firmware and a stock-boot gate that
+  boots the unmodified vendor firmware to USB enumeration. `tools/labwired_stock.py`
+  builds the stock ELF from your own `.mr`. See `docs/LABWIRED.md`.
 - **Footswitch light rings** (the 40 RGB LEDs, 10 in each footswitch dome), as the
   stock LED code: preset mode lights the loaded slot's dome in its colour from the
   app (colour and level per slot), live mode lights a dome per module that is on,

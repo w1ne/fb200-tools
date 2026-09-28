@@ -1,0 +1,68 @@
+peripheral: IOMUXC_SNVS_GPR
+version: 0.1.0
+registers:
+- id: GPR0
+  address_offset: 0
+  size: 32
+  access: READ_ONLY
+  reset_value: 0
+  fields: []
+  side_effects: null
+- id: GPR1
+  address_offset: 4
+  size: 32
+  access: READ_ONLY
+  reset_value: 0
+  fields: []
+  side_effects: null
+- id: GPR2
+  address_offset: 8
+  size: 32
+  access: READ_ONLY
+  reset_value: 0
+  fields: []
+  side_effects: null
+- id: GPR3
+  address_offset: 12
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: LPSR_MODE_ENABLE
+    bit_range:
+    - 0
+    - 0
+    description: Set to enable LPSR mode.
+  - name: DCDC_STATUS_CAPT_CLR
+    bit_range:
+    - 1
+    - 1
+    description: DCDC captured status clear
+  - name: POR_PULL_TYPE
+    bit_range:
+    - 3
+    - 2
+    description: POR_B pad control
+  - name: DCDC_IN_LOW_VOL
+    bit_range:
+    - 16
+    - 16
+    description: DCDC_IN low voltage detect.
+  - name: DCDC_OVER_CUR
+    bit_range:
+    - 17
+    - 17
+    description: DCDC output over current alert
+  - name: DCDC_OVER_VOL
+    bit_range:
+    - 18
+    - 18
+    description: DCDC output over voltage alert
+  - name: DCDC_STS_DC_OK
+    bit_range:
+    - 19
+    - 19
+    description: DCDC status OK
+  side_effects: null
+interrupts: null
+timing: null
