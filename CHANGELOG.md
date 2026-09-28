@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Desktop app PoC (`app/`, `fb200-app`):** a local web UI (Starlette, 127.0.0.1) to
+  edit the pedal like the vendor app - presets (list, select, rename, save), the 7
+  effect blocks, delay, EQ, user IRs (import with the `process_ir` options, delete),
+  drums, tuner, output and global settings - and an assistant panel: type "make it
+  brighter" and a Claude agent (default `claude-sonnet-5`, or `claude-opus-5-5`) calls
+  the MCP tools, shows each step, measures with `audio_test` and charts the octave
+  bands. Tools that store to flash (`save_preset`, `rename_preset`, `ir_import`,
+  `ir_delete`, `settings`, console `save`/`factory`) wait for a user click. The tool
+  schema is the MCP server's `tools/list` (in process). Install: `pip install
+  '.[app]'`. See `app/README.md`. Not yet tried on a real pedal.
+- **MCP tools:** `parameter_docs` (also the resource `fb200://parameter-docs`: every
+  field's range, unit and sound meaning, plus tone recipes, from `fb200/params.py`),
+  `preset_list` (40 names, HID `0x96`), `rename_preset` (`0x99`), `ir_delete`,
+  `settings` (the `0xB0` block: input gain, global cab, BT audio, light ring);
+  `ir_import` takes the `process_ir` options (channel, trim, lowcut, highcut,
+  minphase, normalize).
 - **Reamping over USB:** console `usb in` routes the computer's USB playback into the
   effects chain input instead of the instrument (`usb mix`: summed with it; `usb out`:
   to the analog output only, the default and the stock behaviour). Play a DI track or a
