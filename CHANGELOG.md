@@ -61,6 +61,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Cold code runs from OCRAM:** console, UI, preset storage, protocol, USB setup and
+  init drivers moved out of ITCM into OCRAM (loaded from the slot data blob at boot).
+  The ITCM payload went from 120 kB to 72 kB of its 121.8 kB limit; the audio path
+  stays in ITCM (`firmware/tools/hot_path.py` checks it). A slot without its data
+  goes back to recovery.
+
 - **Cab IR on the FFT convolver:** the 512-tap cab runs as a partitioned FFT
   convolution, not a direct FIR. No added latency. About a quarter of the cab CPU
   (estimate; measure with `prof`). Sound unchanged (stock parity gates). An IR change

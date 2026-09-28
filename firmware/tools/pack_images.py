@@ -47,12 +47,13 @@ def main() -> int:
         return Path(f"{prefix}.{kind}.bin").read_bytes()
 
     try:
+        # The app's data blob carries its cold code (console included:
+        # linker.ld .ocramtext), so it is required and holds the commands.
+        data = part(args.app, "dtcmdata")
         images.require_update_commands("recovery", part(args.recovery, "blob"))
-        images.require_update_commands("app", part(args.app, "blob"))
+        images.require_update_commands("app", part(args.app, "blob") + data)
         rec = images.build_recovery(part(args.recovery, "vectors"), part(args.recovery, "blob"),
                                     part(args.recovery, "copier"))
-        data_path = Path(f"{args.app}.dtcmdata.bin")
-        data = data_path.read_bytes() if data_path.exists() else b""
         slot = images.build_slot(part(args.app, "vectors"), part(args.app, "blob"), data)
         images.check_slot(slot)
         out = args.outdir

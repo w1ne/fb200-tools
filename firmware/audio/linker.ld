@@ -16,12 +16,30 @@ MEMORY
    * stock's 0x5AA0-byte OCRAM data to 0x20200000 at boot (its load table
    * entry 3, docs/FIRMWARE_BRINGUP.md); nothing of ours reads it. We start
    * above it. Not kept over a warm reset (recovery.c): NOLOAD, code clears
-   * what it uses (delay_init); .ocramdata is copied at every boot. */
-  OCRAM  (rw)  : ORIGIN = 0x20210000, LENGTH = 0x70000
+   * what it uses (delay_init); .ocramtext and .ocramdata are copied at
+   * every boot. */
+  OCRAM  (rwx) : ORIGIN = 0x20210000, LENGTH = 0x70000
 }
 
 SECTIONS
 {
+  /* App only: cold code, run from OCRAM (docs/FIRMWARE_BRINGUP.md, "Hot and
+   * cold code"). The input list is COLD_SRC in the Makefile, generated into
+   * cold.ld (empty for recovery). Code and const data of those files, loaded
+   * from the slot data blob (F:0x41000, see .ocramdata below) and copied by
+   * stage2_main, which also makes it visible to instruction fetches. First in
+   * SECTIONS: the first matching pattern wins, so .blob's *(.text*) does not
+   * take these files. Calls between ITCM and OCRAM go through linker veneers
+   * (out of BL range). */
+  .ocramtext : AT(0x60041000) {
+    . = ALIGN(32);
+    __ocramtext_start__ = .;
+    INCLUDE cold.ld
+    . = ALIGN(32);
+    __ocramtext_end__ = .;
+  } > OCRAM
+  __ocramtext_load__ = LOADADDR(.ocramtext);
+
   .vectors 0x0 : { KEEP(*(.vectors)) } > ITCM AT> FLASH
 
   .blob 0x400 : AT(0x600107d4) {
@@ -48,11 +66,11 @@ SECTIONS
    * audio during flash writes. Load image in flash right after the app
    * slot's ITCM image (F:0x41000, below the stock data at 0x61000;
    * src/dsp/stock_data.h), one blob that the app slot header carries with
-   * its length and CRC (recovery.h): .ocramdata, then .dtcmdata.
+   * its length and CRC (recovery.h): .ocramtext, .ocramdata, .dtcmdata.
    * .ocramdata: the 512-point rfft tables of the cab's long-IR tail
    * (dsp/conv2.c, ~4.9 kB). DTCM and ITCM have no room for them; the tail's
    * own buffers are in OCRAM too. Listed first: first match wins. */
-  .ocramdata : AT(0x60041000) {
+  .ocramdata : AT(LOADADDR(.ocramtext) + SIZEOF(.ocramtext)) {
     . = ALIGN(4);
     __ocramdata_start__ = .;
     *CommonTables.c.o(.rodata.twiddleCoef_256 .rodata.twiddleCoef_rfft_512
