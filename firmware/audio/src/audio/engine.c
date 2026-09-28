@@ -109,16 +109,20 @@ static bool s_tuner_mute = true;        /* S+0x2e, stock default 1 */
 static dsp_knob_t s_in_gain;            /* S+0x1a, smoothed like the stock */
 /* the stock chain (docs/PARITY.md M2): amp (+ tone stack) -> cab, mono */
 static amp_t s_amp;
-static cab_t s_cab;
-static conv2_tail_t s_cab_tail __attribute__((section(".ocram")));   /* long IRs (M5) */
+/* CPU-only state moved out of DTCM to make room for the delay line (memory
+ * map: docs/FIRMWARE_BRINGUP.md): the cab's head spectra to OCRAM (cached),
+ * the reverb to the ITCM above the code. */
+static cab_t s_cab __attribute__((section(".ocram")));
+/* long IRs (M5): 96 kB, in the low DTCM (linker.ld .dtcm_lo) */
+static conv2_tail_t s_cab_tail __attribute__((section(".dtcm_lo")));
 static gate_t s_gate;
 static comp_t s_comp;
 static mod_t s_mod;
-static reverb_t s_rev;
-/* Our bass delay (docs/PARITY.md M4). Its 96 kB line does not fit in DTCM:
- * OCRAM, linker.ld .ocram (cached; one line access per sample). */
+static reverb_t s_rev __attribute__((section(".itcm_bss")));
+/* Our bass delay (docs/PARITY.md M4). Its 88 kB line: the DTCM between
+ * .bss and the stack (linker.ld .dtcm_hi). */
 static delay_t s_dly;
-static int16_t s_dly_line[DELAY_LEN] __attribute__((section(".ocram")));
+static int16_t s_dly_line[DELAY_LEN] __attribute__((section(".dtcm_hi")));
 static bool s_dly_en;
 /* Our bass EQ (docs/PARITY.md M4), after the cab. In the preset with our
  * marker (preset.h P_EQ_DATA); without it (every stock preset) off. Set from the

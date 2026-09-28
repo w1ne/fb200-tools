@@ -13,13 +13,13 @@
  * 6 dB/oct low-pass at 1000 * 10^(k/100) Hz (1..10 kHz).
  *
  * The line is int16 (x 16384: +-2.0 full scale, truncated toward zero, so a
- * tail always dies out to exact zeros): 1 s at 48 kHz = 96 kB. That does not
- * fit in DTCM: the caller gives the line (the engine's is in OCRAM, linker.ld
- * .ocram); delay_t itself (~110 B) stays in DTCM. */
+ * tail always dies out to exact zeros): 1 s at 44.1 kHz = 88 kB. The caller
+ * gives the line (the engine's: linker.ld .dtcm_hi); delay_t itself (~110 B)
+ * is in .bss. */
 #include <stdint.h>
 #include "dsp.h"
 
-#define DELAY_FS_MAX 48000
+#define DELAY_FS_MAX 44100   /* AUDIO_FS: the pedal runs at 44.1 kHz only */
 #define DELAY_MS_MIN 20u
 #define DELAY_MS_MAX 1000u
 #define DELAY_LEN (DELAY_FS_MAX * DELAY_MS_MAX / 1000u + 4u)   /* samples */
