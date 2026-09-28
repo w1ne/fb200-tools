@@ -77,10 +77,60 @@ def _cmd_ir_delete(args) -> int:
     return 0
 
 
-def _cmd_ir_import(args) -> int:
-    from fb200.wav import wav_to_ir
+def _blend_arg(value: str) -> tuple[str, float]:
+    path, sep, mix = value.rpartition(":")
+    try:
+        weight = float(mix)
+    except ValueError:
+        weight = -1.0
+    if not sep or not path or not 0.0 <= weight <= 1.0:
+        raise argparse.ArgumentTypeError(f"expected FILE:MIX with MIX 0..1, got {value!r}")
+    return path, weight
 
-    samples = wav_to_ir(args.wav)
+
+def _add_ir_process_args(p: argparse.ArgumentParser) -> None:
+    from fb200.wav import CHANNELS, MAX_TAPS
+
+    g = p.add_argument_group("processing (defaults: channel 0, 44.1 kHz, 1024 samples, as stock)")
+    g.add_argument("--channel", choices=CHANNELS, default="left",
+                   help="left (channel 0), right, or sum (mean of channels)")
+    g.add_argument("--trim", action="store_true",
+                   help="cut silence before the onset (-60 dB rel. peak, 8 samples pre-roll)")
+    g.add_argument("--taps", type=int, metavar="N",
+                   help=f"truncate to N taps (1..{MAX_TAPS}) with a half-Hann fade-out; "
+                        "the pedal plays 512")
+    g.add_argument("--lowcut", type=float, metavar="HZ", help="2nd-order Butterworth high pass")
+    g.add_argument("--highcut", type=float, metavar="HZ", help="2nd-order Butterworth low pass")
+    g.add_argument("--blend", type=_blend_arg, metavar="FILE:MIX",
+                   help="mix a second IR in (aligned by onset), e.g. other.wav:0.3")
+    g.add_argument("--minphase", action="store_true",
+                   help="cepstral minimum phase (needs numpy: pip install 'fb200-tools[ir]')")
+    g.add_argument("--normalize", action="store_true", help="scale the peak to 1.0")
+
+
+def _process_ir(args) -> list[float]:
+    from fb200.wav import process_ir
+
+    return process_ir(args.wav, channel=args.channel, taps=args.taps, trim=args.trim,
+                      lowcut=args.lowcut, highcut=args.highcut, blend=args.blend,
+                      minphase=args.minphase, normalize=args.normalize)
+
+
+def _cmd_ir_process(args) -> int:
+    from fb200.wav import write_wav
+
+    samples = _process_ir(args)
+    write_wav(args.out, samples)
+    print(f"wrote {args.out} ({len(samples)} taps, 44.1 kHz float)", file=sys.stderr)
+    return 0
+
+
+def _cmd_ir_import(args) -> int:
+    from fb200.wav import IR_LENGTH
+
+    if args.taps is not None and args.taps > IR_LENGTH:
+        raise InvalidArgumentError(f"a pedal slot holds {IR_LENGTH} taps; use --taps <= {IR_LENGTH}")
+    samples = _process_ir(args)
     name = args.name or Path(args.wav).stem
 
     def progress(done: int, total: int) -> None:
@@ -402,7 +452,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_import.add_argument("slot", type=_slot_arg)
     p_import.add_argument("wav")
     p_import.add_argument("--name")
+    _add_ir_process_args(p_import)
     p_import.set_defaults(func=_cmd_ir_import)
+
+    p_process = ir_sub.add_parser("process", help="process a WAV IR into a file (no pedal)")
+    p_process.add_argument("wav")
+    p_process.add_argument("-o", "--out", required=True, help="output WAV (mono float, 44.1 kHz)")
+    _add_ir_process_args(p_process)
+    p_process.set_defaults(func=_cmd_ir_process)
 
     p_delete = ir_sub.add_parser("delete", help="delete a slot")
     p_delete.add_argument("slot", type=_slot_arg)

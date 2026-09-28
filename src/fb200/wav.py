@@ -284,7 +284,8 @@ def minimum_phase(x: list[float]) -> list[float]:
     n = len(x)
     if n == 0:
         return []
-    nfft = 1 << (8 * n - 1).bit_length()
+    # a long FFT keeps cepstral aliasing small (about 1e-6 of the peak magnitude)
+    nfft = 1 << max(18, (32 * n - 1).bit_length())
     mag = np.abs(np.fft.fft(np.asarray(x, dtype=float), nfft))
     peak = mag.max()
     if peak == 0.0:
@@ -355,7 +356,8 @@ def process_ir(source, *, channel: str = "left", taps: int | None = None,
     if trim:
         y = y[max(0, onset(y, trim_db) - preroll):]
     if minphase:
-        y = minimum_phase(y)
+        # room for the minimum-phase tail, which may exceed a short input
+        y = minimum_phase(y + [0.0] * (length - len(y)))
     if len(y) > length:
         cut_content = any(v != 0.0 for v in y[length:])
         y = y[:length]

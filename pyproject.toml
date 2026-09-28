@@ -14,6 +14,8 @@ dependencies = []
 
 [project.optional-dependencies]
 hid = ["hidapi>=0.14"]
+# `fb200 ir import|process --minphase`
+ir = ["numpy>=1.26"]
 dev = ["pytest>=8", "ruff>=0.6", "numpy>=1.26", "scipy>=1.11", "sounddevice>=0.4.6"]
 # stock-DSP parity tests (pytest -m stock, tools/nightly_stock.sh; also need fb200-stock.mr)
 stock = ["unicorn>=2.1", "capstone>=5.0", "numpy>=1.26", "pytest-xdist>=3"]
