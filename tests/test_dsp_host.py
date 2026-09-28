@@ -75,7 +75,7 @@ def test_amp_cab_suite():
     test_stock_dsp_parity.py (needs the vendor .mr)."""
     out = FW / "build" / "amp_cab_host_test"
     out.parent.mkdir(parents=True, exist_ok=True)
-    mods = [FW / "src" / "dsp" / f for f in ("amp.c", "tone.c", "cab.c")] + STOCK_SRC
+    mods = [FW / "src" / "dsp" / f for f in ("amp.c", "tone.c", "cab.c", "conv.c")] + STOCK_SRC
     subprocess.run(
         ["cc", "-O2", "-Wall", "-Wextra", "-I", str(FW / "src"),
          str(FW / "tests" / "amp_cab_host_test.c"), *map(str, mods), *cmsis_dsp_args(),

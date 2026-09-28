@@ -8,16 +8,20 @@
 
 static float frand(void) { return (float)rand() / (float)RAND_MAX * 2.0f - 1.0f; }
 
+#define MAX_TAPS 2048                    /* 43 ms at 48 kHz (M5 wants 4096) */
+static float s_h[CONV_PARTS(MAX_TAPS)][CONV_N], s_x[CONV_PARTS(MAX_TAPS)][CONV_N];
+
 static void test_conv(size_t taps)
 {
     static conv_t c;
     enum { LEN = 4096 };
-    static float ir[CONV_MAX_TAPS], x[LEN], y[LEN];
+    static float ir[MAX_TAPS], x[LEN], y[LEN];
     for (size_t i = 0; i < taps; i++) ir[i] = frand() * expf(-(float)i / 300.0f);
     for (size_t i = 0; i < LEN; i++) x[i] = frand();
-    assert(conv_init(&c) == 0);
-    assert(conv_load(&c, ir, taps) == 0);
-    for (size_t b = 0; b < LEN; b += DSP_BLOCK) conv_process(&c, x + b, y + b);
+    assert(conv_init(&c, s_h, s_x, CONV_PARTS(MAX_TAPS)) == 0);
+    assert(conv_set_ir(&c, ir, MAX_TAPS + 1) != 0);
+    assert(conv_set_ir(&c, ir, taps) == 0);
+    for (size_t b = 0; b < LEN; b += DSP_BLOCK) conv_process(&c, x + b, y + b, DSP_BLOCK);
     double maxerr = 0;
     for (size_t n = 0; n < LEN; n++) {
         double ref = 0;
@@ -27,6 +31,42 @@ static void test_conv(size_t taps)
     }
     printf("conv %zu taps: max err %.2e\n", taps, maxerr);
     assert(maxerr < 1e-4);
+}
+
+/* Unit impulse after init; part blocks (1..DSP_BLOCK + 5 samples, in place)
+ * give the same output as full blocks; conv_reset clears the history. */
+static void test_conv_blocks(void)
+{
+    static conv_t a, b;
+    enum { LEN = 2000, TAPS = 300 };
+    static float ir[TAPS], x[LEN], ya[LEN], yb[LEN];
+    for (size_t i = 0; i < LEN; i++) x[i] = yb[i] = frand();
+    assert(conv_init(&a, s_h, s_x, CONV_PARTS(MAX_TAPS)) == 0);
+    conv_process(&a, x, ya, 3 * DSP_BLOCK);
+    for (size_t i = 0; i < 3 * DSP_BLOCK; i++) assert(fabsf(ya[i] - x[i]) < 1e-6f);
+
+    static float h2[CONV_PARTS(TAPS)][CONV_N], x2[CONV_PARTS(TAPS)][CONV_N];
+    for (size_t i = 0; i < TAPS; i++) ir[i] = frand() * expf(-(float)i / 60.0f);
+    assert(conv_init(&a, s_h, s_x, CONV_PARTS(MAX_TAPS)) == 0);
+    assert(conv_init(&b, h2, x2, CONV_PARTS(TAPS)) == 0);   /* capacity = IR length */
+    assert(conv_set_ir(&a, ir, TAPS) == 0 && conv_set_ir(&b, ir, TAPS) == 0);
+    conv_process(&a, x, ya, LEN);
+    for (size_t i = 0, len = 1; i < LEN; i += len, len = len % (DSP_BLOCK + 5) + 1) {
+        if (len > LEN - i) len = LEN - i;
+        conv_process(&b, yb + i, yb + i, len);
+    }
+    double maxerr = 0;
+    for (size_t n = 0; n < LEN; n++) maxerr = fmax(maxerr, fabs((double)ya[n] - yb[n]));
+    printf("conv part blocks: max err %.2e\n", maxerr);
+    assert(maxerr < 1e-5);
+
+    conv_reset(&b);                       /* no history: first block = x * ir only */
+    conv_process(&b, x, yb, DSP_BLOCK);
+    for (size_t n = 0; n < DSP_BLOCK; n++) {
+        double ref = 0;
+        for (size_t k = 0; k <= n; k++) ref += (double)ir[k] * x[n - k];
+        assert(fabs(ref - yb[n]) < 1e-5);
+    }
 }
 
 /* |H(e^jw)| of one CMSIS stage {b0,b1,b2,a1,a2} (a negated). */
@@ -71,7 +111,8 @@ int main(void)
     test_conv(1);
     test_conv(DSP_BLOCK);
     test_conv(1000);
-    test_conv(CONV_MAX_TAPS);
+    test_conv(MAX_TAPS);
+    test_conv_blocks();
     test_biquad();
     printf("dsp blocks host tests OK\n");
     return 0;
