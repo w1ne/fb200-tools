@@ -12,8 +12,8 @@
  * conv2.c), and played one frame later again: 2 x 256 = 512 samples of delay,
  * which is exactly the head length. So the sum has no added latency.
  *
- * Storage: conv2_t holds the head (16 kB of spectra, 8 kB each for h and x,
- * as cab_t does today) and the state. The tail arrays (~66 kB) are a separate
+ * Storage: conv2_t holds the head (8 kB of spectra, 4 kB each for h and x,
+ * as cab_t does today) and the state. The tail arrays (66 kB) are a separate
  * conv2_tail_t so the caller can put them in OCRAM. */
 #include <stddef.h>
 #include "arm_math.h"
