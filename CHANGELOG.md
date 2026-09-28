@@ -12,7 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Two-stage convolver for long IRs (M5, library only):** `dsp/conv2.c` runs
   IRs up to 4096 taps with no added latency: the 512-tap head on the current
   convolver, the rest in 256-sample partitions spread over the 8 blocks of each
-  frame. Host tests against a direct FIR. Not yet used by the cab.
+  frame. Host tests against a direct FIR.
+- **Cab on the two-stage convolver (M5 step P1b):** the cab can play IRs up to
+  4096 taps (`cab_set_ir_len`; stock and user slots stay 512 taps for now). With
+  <= 512 taps the tail does no work: same sound (bit-identical) and same CPU as
+  before. A long IR loads without an audio stall: one tail FFT per block, then an
+  exact swap at a frame boundary (~15-25 ms after the change). From a short IR the
+  new tail starts empty and fades in over its length. The tail buffers (96 kB) and
+  the 512-point FFT tables (4.9 kB) are in OCRAM. Console: `cab long <taps>` loads
+  a synthetic test IR (0: back to the preset's cab), for `prof` on the pedal.
 - **Better IR import** (host): `fb200 ir import` resamples with a Kaiser windowed
   sinc (aliasing below -60 dB; the linear resampler is gone) and takes
   `--channel`, `--trim`, `--taps N` (up to 4096, half-Hann fade-out),

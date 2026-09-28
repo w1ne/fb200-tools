@@ -266,9 +266,9 @@ Budgets on this chip: 600 MHz / 44.1 kHz = 13.6k cycles per sample; RAM
   bass chain additions: crossover clean-blend drive, 5-7 band EQ + HPF/LPF,
   delay (the stock has none: its delay fields do nothing; first version
   done, see [below](#m4-bass-delay)), better tuner.
-- **M5 - IR engine:** up to 4096 taps (the cab already runs on the
-  partitioned convolver `dsp/conv.c`; raise `CAB_PARTS`. Each 32 taps cost
-  512 B of spectra, so 4096 taps need 64 kB: OCRAM), WAV import, 50+ slots, low/high cut, dual-IR blend.
+- **M5 - IR engine:** up to 4096 taps (the cab runs on the two-stage
+  convolver, [below](#m5-long-irs-in-the-cab); open: IR storage and
+  transfer for long IRs, P2), WAV import, 50+ slots, low/high cut, dual-IR blend.
 - **M6 - open ecosystem:** done: documented protocol (`PROTOCOL.md`),
   browser firmware update (v0.6.0, WebHID + Web Serial). Open:
   class-compliant USB MIDI, WebMIDI/WebHID editor (self-describing blocks),
@@ -278,6 +278,54 @@ Budgets on this chip: 600 MHz / 44.1 kHz = 13.6k cycles per sample; RAM
   the editor, A1 -> A2-Lite distillation tool on the host.
 - **M8 - bass effects:** mono octaver (poly later), envelope filter/synth,
   multiband compressor; ADPCM looper (~8-16 s in RAM); AIDA-X/RTNeural.
+
+### M5: long IRs in the cab
+
+Status: step P1b on the host (2026-09-28), not tried on the pedal. Stock
+and user slots are still 512 taps; `cab_set_ir_len` takes up to 4096.
+
+**Design** (`dsp/conv2.c`, `dsp/cab.c`). The cab is a `conv2_t`: head =
+taps 0..511 on the 32-sample partitioned convolver (`conv.c`, as before),
+tail = taps 512..4095 in 256-sample partitions on a 512-point FFT, one
+slice of the work per block, 512 samples late = no added latency.
+
+- **Tail off (<= 512 taps, every stock cab and user slot):** no tail work at
+  all, not even the input history. Output bit-identical to the old cab,
+  cost the same (instruction counts, `tools/conv2_cycles.py`: 17507 per
+  block vs 17490).
+- **Tail on, 4096 taps:** per block (slice 0..7) 44.5k 27.1k 27.1k 27.1k
+  27.1k 31.8k 31.8k 46.9k instructions; the block budget is 435k cycles
+  (600 MHz, 44.1 kHz, 32 samples). Tail data is in OCRAM (D-cache): expect
+  more cycles than instructions there; check with `prof`.
+- **IR change:** `conv2_set_ir` costs ~60-86k instructions (the 16 head
+  FFTs, as a 512-tap change before; it was ~510k for 4096 taps: an audio
+  dropout). <= 512 taps: at once, exact, tail off. Longer: the tail spectra
+  are computed one 512-point FFT per block into the idle half of a double
+  buffer (never in the two blocks that already run an FFT), then head and
+  tail swap together. Tail on before: exact swap at a frame boundary (the
+  new tail starts to accumulate at slice 0, one frame before the head
+  swaps), ~15-25 ms after the call; worst block while loading 52.5k.
+  Tail off before (short -> long): swap after 14 blocks, and the new tail
+  starts with an empty history: taps 512.. fade in over the tail length
+  (up to 81 ms). Accepted: it only happens at a cab change. A long IR's
+  gain changes with the IR.
+- **Why not a crossfade or a main-loop job:** a crossfade needs two
+  convolvers running; a main-loop job needs a hook in the main loop and has
+  no fixed swap point. Doing one FFT per block in the audio path is
+  deterministic and host-testable (exact swaps are tested against a
+  direct FIR).
+
+**Memory.** DTCM: +64 B (`cab_t` +84 B; TinyUSB's 2 kB-aligned `_dcd_data`
+now comes first in `.bss`, where the section alignment pads anyway, so it
+no longer costs up to 2 kB of padding). OCRAM: tail 96 kB (`s_cab_tail`),
+IR staging 16 kB (`s_ir`, 4096 taps for `cab long`), and the 512-point
+rfft tables (4.9 kB, `linker.ld` `.ocramdata`: copied from the slot data
+at boot, with the DTCM tables; ITCM and DTCM have no room). ITCM code:
++2.6 kB.
+
+**Console:** `cab long <taps>` puts a synthetic IR (noise, -60 dB at 4096
+taps) in the cab until the next cab change; `cab long 0` goes back to the
+preset's cab. With `prof` it measures the real cost on the pedal.
 
 ### M4: bass delay
 
