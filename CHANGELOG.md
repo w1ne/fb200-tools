@@ -56,8 +56,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exact swap at a frame boundary (~15-25 ms after the change). From a short IR the
   new tail starts empty and fades in over its length. Console: `cab long <taps>`
   loads a synthetic test IR (0: back to the preset's cab), for `prof` on the pedal.
-  **Off on the pedal for now** (see Fixed): the tail (96 kB) and its FFT tables
-  (4.9 kB) do not fit in RAM yet.
 - **Better IR import** (host): `fb200 ir import` resamples with a Kaiser windowed
   sinc (aliasing below -60 dB; the linear resampler is gone) and takes
   `--channel`, `--trim`, `--taps N` (up to 4096, half-Hann fade-out),
@@ -82,28 +80,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   split (IOMUXC_GPR17 = 0xFFAAAAA9, read back on the pedal) gives ITCM 128 kB, DTCM
   352 kB and OCRAM 32 kB at 0x20200000. Our linker script declared 512 kB of OCRAM at
   0x20210000 (an RT1062 layout), where the pedal has nothing: writes are dropped,
-  reads return 0, code there faults. Now `linker.ld` has the real 32 kB (with an
-  `ASSERT`), a test checks that every section of both images lies in real memory,
+  reads return 0, code there faults. Now `linker.ld` has the real regions (with
+  `ASSERT`s), a test checks that every section of both images lies in real memory,
   and the boot emulation, the stock emulators and the LabWired chip model map only
   the real RAM (docs/FIRMWARE_BRINGUP.md, "Memory map").
 - **The app crashed at boot** (unreleased): its cold code ran from the missing OCRAM.
-  All code runs from ITCM again (121024 of 121800 bytes). `firmware/tools/hot_path.py`
-  stays, as the check for moving cold code out of ITCM later. A slot without its
-  data still goes back to recovery.
+  The cold code (console, UI, preset storage, protocol, clock and pin setup, init
+  drivers) now runs in place from flash (XIP, the slot data area); the audio path and
+  the flash write path stay in ITCM (`firmware/tools/hot_path.py` checks both). An app
+  update runs from RAM only once it starts erasing (`fw_session`): send `reset` when it
+  is done, as before. A slot without its data still goes back to recovery.
+- **RAM reclaimed:** the low DTCM that the stock data used to fill (our images load
+  none there) holds the long-IR tail, the DTCM above `.bss` the delay line (8 kB kept
+  for the stack), the ITCM above the code the reverb state. The crash dump moved to
+  0x20018A00 (an older recovery shows "no crash dump" for a newer app).
 - **Bass delay: the repeats never played on the pedal in v0.8.0** (its line was in
-  the missing OCRAM: only the dry signal came out). The line is now in the real OCRAM;
-  **the max time is 342 ms** (was 1000 ms) until more RAM is found. The console and
-  the MCP `set_delay` clamp to it; a preset keeps its stored time (format unchanged)
-  and plays it clamped. `delay on` on a stock preset now sets 300 ms (was 350).
+  the missing OCRAM: only the dry signal came out). The line is now in DTCM, max time
+  1000 ms (sized for 44.1 kHz, the pedal's only rate). `delay on` on a stock preset
+  now sets 300 ms (was 350).
 - **User IR slots (cab 11-19)** (unreleased): the IR was staged in the missing OCRAM,
   so the cab got the IR only while the D-cache still held it, else zeros (silence).
-  The 512-tap staging buffer (2 kB) is in the real OCRAM now.
+  The staging buffer is in the real OCRAM now.
 - **Bass EQ** (unreleased): its state was in the missing OCRAM (it held only while
   in the D-cache). Now in the real OCRAM.
-- **Long IRs are off** until more RAM is found: `cab_set_ir_len` over 512 taps fails,
-  `cab long` over 512 answers "not available" (the MCP `cab_long` reports an error),
-  and neither the tail nor the 512-point FFT tables are linked. The code and its host
-  tests stay (`ENGINE_IR_TAPS` in `src/audio/engine.h`).
+- **Long IRs** fit in the real RAM (tail in the low DTCM, FFT tables in OCRAM):
+  `ENGINE_IR_TAPS` (`src/audio/engine.h`) is 4096. A build with 512 links neither the
+  tail nor the tables; there `cab long` over 512 answers "not available" (the MCP
+  `cab_long` reports an error).
 
 ### Changed
 

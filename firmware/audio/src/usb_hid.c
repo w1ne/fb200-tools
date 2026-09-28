@@ -7,6 +7,7 @@
 #include "tusb.h"
 #ifndef FB200_RECOVERY
 #include "proto/proto.h"
+#include "debug/selfupdate.h"
 #endif
 
 #ifndef FB200_RECOVERY
@@ -48,7 +49,8 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_
     (void)buf;
     (void)bufsize;
 #else
-    if (bufsize == 0) return;
+    /* proto_feed is cold code (XIP): gone during an app update */
+    if (bufsize == 0 || fw_xip_gone()) return;
     uint8_t n = buf[0];
     if (n > bufsize - 1u) n = (uint8_t)(bufsize - 1u);
     proto_feed(PROTO_USB, buf + 1, n);

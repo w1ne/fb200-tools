@@ -15,13 +15,12 @@ run it with a Python that has it:
 Symbols read from the ELF (via arm-none-eabi-nm): stage2, stage2_main,
 app_main. With --app-elf (two-stage image, docs/BOOTLOADER.md §4) the ELF is
 the recovery build and the run continues through recovery's boot decision and
-copier until the app's own app_main.
+copier until the app's own app_main, then (with the app slot) into the app's
+cold code, run in place from flash (linker.ld .xiptext), and back.
 
-Memory is mapped as the pedal has it (i.MX RT1052, FlexRAM split by
-IOMUXC_GPR17 = 0xFFAAAAA9, measured on the pedal; docs/FIRMWARE_BRINGUP.md,
-"Memory map"): ITCM 128 kB, DTCM 352 kB, OCRAM 32 kB. An access outside them
-stops the run (on the pedal it reads 0 or is dropped, or bus-faults for an
-instruction fetch).
+RAM is mapped as the pedal has it (IOMUXC_GPR17 = 0xFFAAAAA9, measured):
+ITCM 128 kB, DTCM 352 kB, OCRAM 32 kB. An access anywhere else stops the
+run.
 """
 
 from __future__ import annotations
@@ -38,9 +37,9 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from fb200.firmware import MrFile
 
-ITCM_BASE, ITCM_SIZE = 0x0, 0x20000             # 4 x 32 kB banks
+ITCM_BASE, ITCM_SIZE = 0x0, 0x20000             # 4 FlexRAM banks
 DTCM_BASE, DTCM_SIZE = 0x20000000, 0x58000      # 11 banks
-OCRAM_BASE, OCRAM_SIZE = 0x20200000, 0x8000     # 1 bank: nothing at 0x20208000..
+OCRAM_BASE, OCRAM_SIZE = 0x20200000, 0x8000     # 1 bank
 PERIPH_BASE, PERIPH_SIZE = 0x40000000, 0x10000000
 FLASH_BASE, FLASH_SIZE = 0x60000000, 0x800000
 SCB_BASE, SCB_SIZE = 0xE0000000, 0x100000
@@ -95,7 +94,12 @@ def main() -> int:
     syms = elf_symbols(args.elf)
     stage2, stage2_main, app_main = syms["stage2"], syms["stage2_main"], syms["app_main"]
     copier = syms.get("copier")
-    app_app_main = elf_symbols(args.app_elf)["app_main"] if args.app_elf else None
+    app_syms = elf_symbols(args.app_elf) if args.app_elf else {}
+    app_app_main = app_syms.get("app_main")
+    # The app's cold code (linker.ld .xiptext) runs in place from the slot
+    # data area. The run goes on until app_main has called into it and come
+    # back to ITCM through the veneers.
+    cold = range(app_syms.get("__xiptext_start__", 0), app_syms.get("__xiptext_end__", 0))
     if args.app_elf and copier is None:
         raise SystemExit("--app-elf needs a recovery ELF (no copier symbol)")
 
@@ -126,6 +130,12 @@ def main() -> int:
         elif "copier" in hits and address == app_app_main:
             hits.add("app app_main")
             reached_app[0] = True
+            if not cold:
+                uc_.emu_stop()
+        elif "app app_main" in hits and address in cold:
+            hits.add("app XIP code")
+        elif "app XIP code" in hits and address < ITCM_SIZE:
+            hits.add("back in ITCM")
             uc_.emu_stop()
         elif address == app_main and "app_main" not in hits:
             hits.add("app_main")
@@ -169,12 +179,24 @@ def main() -> int:
     names = ["stage2", "stage2_main", "app_main"]
     if app_app_main is not None:
         names += ["copier", "app app_main"]
+    if cold:
+        names += ["app XIP code", "back in ITCM"]
     for name in names:
         print(f"  reached {name}: {name in hits}")
     if "reset" in hits:
         print("  software reset requested")
     crumbs = struct.unpack("<4I", bytes(uc.mem_read(0x400F8028, 16)))   # SRC_GPR3..6
     print("  crumbs: " + " ".join(f"{c:08x}" for c in crumbs))
+    copied = True
+    if cold and args.app_slot and "app app_main" in hits:
+        slot = args.app_slot.read_bytes()
+        for name in ("ocramdata", "dtcmdata"):
+            start, end = app_syms[f"__{name}_start__"], app_syms[f"__{name}_end__"]
+            load = app_syms[f"__{name}_load__"] - 0x60020000
+            want = slot[load:load + end - start]
+            ok = bytes(uc.mem_read(start, end - start)) == want and len(want) == end - start
+            print(f"  app .{name} copied: {ok}")
+            copied = copied and ok
     if error:
         print(f"emulation stopped with: {error}")
     unsafe = []
@@ -186,7 +208,7 @@ def main() -> int:
             unsafe.append(f"{addr:#010x} at pc {at:#010x}")
     for u in unsafe:
         print(f"  UNSAFE early peripheral access: {u}")
-    ok = reached_app[0] and not error and not unsafe and all(n in hits for n in names)
+    ok = reached_app[0] and not error and not unsafe and copied and all(n in hits for n in names)
     print("DRY RUN OK" if ok else "DRY RUN FAILED")
     return 0 if ok else 1
 

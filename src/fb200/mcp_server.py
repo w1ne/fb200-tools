@@ -218,7 +218,7 @@ class PedalTools:
         effects: preset [0-39] | save | delay [on|off] [time] [fb] [mix] [lowcut] [tone] |
           eq [on|off] | eq hpf <20-200 Hz|0> | eq lpf <2000-20000 Hz|0> |
           eq <band 1-5> <30-10000 Hz> <gain -15..15 dB> [q 0.3-4] (into the preset) |
-          cab long <taps 0-512> (synthetic IR for measurements, 0 = the preset's cab) |
+          cab long <taps 0-4096> (synthetic IR for measurements, 0 = the preset's cab) |
           tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>] | stock
         ui: ui | uimon on|off | disp <text> | kled <0-15> on|off | power |
           rgb 0xRRGGBB [led] | factory [yes] (resets ALL presets)
@@ -334,8 +334,8 @@ class PedalTools:
     def set_delay(self, on: bool | None = None, time_ms: int | None = None,
                   feedback: int | None = None, mix: int | None = None,
                   lowcut: int | None = None, tone: int | None = None) -> dict:
-        """Change the bass delay (console `delay`). time 20..342 ms (the pedal
-        clamps; RAM-bound, dsp/delay.h DELAY_MS_MAX), feedback,
+        """Change the bass delay (console `delay`). time 20..1000 ms (the pedal
+        clamps to its DELAY_MS_MAX, RAM-bound, dsp/delay.h), feedback,
         mix, lowcut (20..500 Hz on the repeats), tone (100 = off) 0..100.
         Omitted values keep their value. No arguments: read only."""
         values = [time_ms, feedback, mix, lowcut, tone]
@@ -429,8 +429,8 @@ class PedalTools:
         taps (1..4096; noise, -60 dB at 4096) in the cab until the next cab
         change, e.g. to measure the long-IR CPU cost with `cpu_profile`.
         0 goes back to the preset's cab. Sounds like noise: not for playing.
-        Firmware without long IRs (not enough RAM yet) answers "not available"
-        over 512 taps: an error."""
+        Firmware built without long IRs (engine.h ENGINE_IR_TAPS = 512) answers
+        "not available" over 512 taps: an error."""
         if not 0 <= taps <= CAB_MAX_TAPS:
             raise InvalidArgumentError(f"taps must be 0..{CAB_MAX_TAPS}")
         text = self.pedal.check(f"cab long {taps}")

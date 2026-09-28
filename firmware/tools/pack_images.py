@@ -47,11 +47,12 @@ def main() -> int:
         return Path(f"{prefix}.{kind}.bin").read_bytes()
 
     try:
-        # The app's data blob (const tables, linker.ld .ocramdata and
-        # .dtcmdata) is required: stage2_main refuses a slot without it.
+        # The app's data blob carries its cold code (console included:
+        # linker.ld .xiptext) and const tables, so it is required and holds
+        # the commands; stage2_main refuses a slot without it.
         data = part(args.app, "dtcmdata")
         images.require_update_commands("recovery", part(args.recovery, "blob"))
-        images.require_update_commands("app", part(args.app, "blob"))
+        images.require_update_commands("app", part(args.app, "blob") + data)
         rec = images.build_recovery(part(args.recovery, "vectors"), part(args.recovery, "blob"),
                                     part(args.recovery, "copier"))
         slot = images.build_slot(part(args.app, "vectors"), part(args.app, "blob"), data)

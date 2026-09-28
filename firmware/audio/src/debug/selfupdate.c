@@ -7,8 +7,13 @@
  * read of flash, including a speculative one, hangs the core. Seen on
  * hardware 2026-09-27.)
  *
- * All code runs from ITCM and all data lives in DTCM, so flash can be erased
- * and programmed while the application runs. */
+ * This file runs from ITCM and its data lives in DTCM, so flash can be
+ * erased and programmed while the application runs. The app's cold code runs
+ * from flash (XIP, linker.ld .xiptext, in the app slot's data area):
+ * nothing that runs while the flash is busy may be there, and an app update
+ * erases that very code. So fw_begin(FW_APP) never returns to its caller: it
+ * ends in fw_session(), which runs only RAM code until the reset.
+ * firmware/tools/hot_path.py checks both (flash-write roots). */
 #include <stdint.h>
 #include <string.h>
 #include "fsl_device_registers.h"
@@ -17,6 +22,11 @@
 #include "cdc_log.h"
 #include "selfupdate.h"
 #include "recovery.h"
+#include "console.h"
+#ifndef FB200_RECOVERY
+#include "audio/engine.h"
+#include "audio/usb_audio.h"
+#endif
 
 #define FLASH_AHB    0x60000000u
 /* Regions (flash offsets, docs/BOOTLOADER.md §4): the app slot, the
@@ -44,6 +54,9 @@ static uint32_t page_buf[PAGE / 4];
 static uint32_t fw_off, fw_len, fw_crc, fw_rx, page_fill, last_rx_ms;
 static int active;
 static int lut_ready;
+static volatile int xip_gone;   /* an app update has erased the cold code */
+
+int fw_xip_gone(void) { return xip_gone; }
 
 /* Read-command word 0 of FCB sequence 0: opcode0 = command, opcode1 = RADDR
  * with the address width in operand1. */
@@ -118,13 +131,24 @@ static int wait_idle(uint32_t timeout_ms)
     return 0;
 }
 
-/* Drop stale AHB prefetch/cache lines so reads see the new contents. */
+/* Drop stale AHB prefetch/cache lines so reads see the new contents. While
+ * the flash was busy, a speculative fetch or prefetch of any flash address
+ * (XIP code included) may have cached garbage: reset the FlexSPI AHB
+ * buffers, and drop the whole I-cache and the D-cache lines of the XIP code
+ * as well as of the written range. */
 static void refresh_ahb(uint32_t offset, uint32_t len)
 {
+#ifndef FB200_RECOVERY
+    extern uint8_t __xiptext_start__[], __xiptext_end__[];
+#endif
     FLEXSPI->MCR0 |= FLEXSPI_MCR0_SWRESET_MASK;
     while (FLEXSPI->MCR0 & FLEXSPI_MCR0_SWRESET_MASK) {
     }
     SCB_InvalidateDCache_by_Addr((void *)(FLASH_AHB + offset), (int32_t)len);
+#ifndef FB200_RECOVERY
+    SCB_InvalidateDCache_by_Addr(__xiptext_start__, (int32_t)(__xiptext_end__ - __xiptext_start__));
+#endif
+    SCB_InvalidateICache();
 }
 
 void fw_info(void)
@@ -168,11 +192,18 @@ void fw_begin(fw_target_t target, uint32_t len, uint32_t crc)
     log_printf("fw: erasing 0x%08x..0x%08x\r\n", (unsigned)(FLASH_AHB + base),
                (unsigned)(FLASH_AHB + end));
     cdc_log_task();
+#ifndef FB200_RECOVERY
+    if (target == FW_APP) xip_gone = 1;   /* from here on: fw_session(), never return */
+#endif
     for (uint32_t a = base; a < end; a += SECTOR) {
         wdog_feed();
         if (!write_enable() || ip(SEQ_ERASE, a, kFLEXSPI_Command, NULL, 0) != kStatus_Success ||
             !wait_idle(2000u)) {
             log_printf("fw: erase FAILED at 0x%08x\r\n", (unsigned)a);
+            refresh_ahb(base, end - base);
+#ifndef FB200_RECOVERY
+            if (xip_gone) fw_session();
+#endif
             return;
         }
         tud_task();
@@ -187,7 +218,49 @@ void fw_begin(fw_target_t target, uint32_t len, uint32_t crc)
     last_rx_ms = tusb_time_millis_api();
     active = 1;
     log_printf("fw ready\r\n");
+#ifndef FB200_RECOVERY
+    if (xip_gone) fw_session();
+#endif
 }
+
+#ifndef FB200_RECOVERY
+/* The rest of an app update: the stream, then `reset`. Runs only RAM code
+ * (hot_path.py): the main loop's cold tasks are gone with the old slot, and
+ * the new slot's cold code belongs to the new app. The audio keeps running
+ * (engine_task and usb_audio_task are ITCM code). HID reports are dropped
+ * (usb_hid.c). */
+__attribute__((noreturn)) void fw_session(void)
+{
+    static char line[16];
+    unsigned n = 0;
+    for (;;) {
+        wdog_feed();
+        tud_task();
+        if (active) {
+            fw_rx_task();
+        } else {
+            while (tud_cdc_available()) {
+                char c = (char)tud_cdc_read_char();
+                if (c != '\r' && c != '\n') {
+                    if (n < sizeof line - 1u) line[n++] = c;
+                    continue;
+                }
+                line[n] = 0;
+                if ((n == 5u && memcmp(line, "reset", 5) == 0) || (n == 6u && memcmp(line, "reboot", 6) == 0)) {
+                    log_printf("rebooting\r\n");
+                    cdc_log_task();
+                    console_reboot();
+                }
+                if (n) log_printf("fw: app update in progress: only `reset` works now\r\n");
+                n = 0;
+            }
+        }
+        cdc_log_task();
+        usb_audio_task();
+        engine_task();
+    }
+}
+#endif
 
 int fw_active(void) { return active; }
 
@@ -252,7 +325,7 @@ int flash_store(uint32_t offset, const void *data, uint32_t len)
      * A+D recovery depends on it. */
     if (sector == 0x00086000u) return -1;
     if (offset < STORE_BASE || offset + len > STORE_LIMIT || len == 0u ||
-        offset + len > sector + SECTOR || active) {
+        offset + len > sector + SECTOR || active || xip_gone) {
         return -1;
     }
     memcpy(sector_buf, (const void *)(FLASH_AHB + sector), SECTOR);

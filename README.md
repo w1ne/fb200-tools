@@ -47,8 +47,8 @@ factory reset, and the footswitch light rings (live-mode modules, colours from t
 save blink, rhythm tempo flash). On the pedal so far: the light ring of the selected slot.
 
 **Better than stock so far:**
-- A bass delay (the stock has none: its delay settings do nothing): 20-342 ms (RAM-bound
-  for now), feedback, mix, low cut on the repeats, tone. Stock presets keep their sound
+- A bass delay (the stock has none: its delay settings do nothing): 20-1000 ms, feedback,
+  mix, low cut on the repeats, tone. Stock presets keep their sound
   ([`docs/PARITY.md`](docs/PARITY.md#m4-bass-delay)).
 - A bass EQ (the stock has none): HPF, 5 bands, LPF, after the cab; set from the console
   or MCP and stored in the preset (stock presets keep it off)

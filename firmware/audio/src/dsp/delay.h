@@ -14,22 +14,18 @@
  *
  * The line is int16 (x 16384: +-2.0 full scale, truncated toward zero, so a
  * tail always dies out to exact zeros): 2 B per sample, 88 kB for 1 s at
- * 44.1 kHz. It does not fit in DTCM: the caller gives the line (the
- * engine's is in OCRAM, linker.ld .ocram); delay_t itself (~110 B) stays in
- * DTCM.
+ * 44.1 kHz. The caller gives the line (the engine's: the DTCM between .bss
+ * and the stack, linker.ld .dtcm_hi); delay_t itself (~110 B) is in .bss.
  *
- * DELAY_MS_MAX is set by RAM: OCRAM is 32 kB (linker.ld), shared with the
- * engine's user IR staging (2 kB) and EQ (508 B), which leaves 342 ms. The
- * designed range was 1000 ms (v0.8.0 declared a 96 kB line in OCRAM that the
- * pedal does not have). Raise it when more RAM is found; the link fails if
- * the line does not fit. A preset keeps its stored time (format unchanged)
- * and plays it clamped to DELAY_MS_MAX. */
+ * DELAY_MS_MAX is set by RAM (memory map: docs/FIRMWARE_BRINGUP.md). The
+ * link fails if the line does not fit. A preset keeps its stored time
+ * (format unchanged) and plays it clamped to DELAY_MS_MAX. */
 #include <stdint.h>
 #include "dsp.h"
 
-#define DELAY_FS_MAX 44100u      /* = AUDIO_FS (audio_config.h) */
+#define DELAY_FS_MAX 44100u      /* = AUDIO_FS (audio_config.h): the pedal runs at 44.1 kHz only */
 #define DELAY_MS_MIN 20
-#define DELAY_MS_MAX 342          /* RAM-bound, see above (no suffix: printed with STR) */
+#define DELAY_MS_MAX 1000         /* RAM-bound, see above (no suffix: printed with STR) */
 #define DELAY_LEN (DELAY_FS_MAX * DELAY_MS_MAX / 1000u + 4u)   /* samples */
 #define DELAY_SCALE 16384.0f
 /* settings for a preset that never had our delay (console `delay on`) */

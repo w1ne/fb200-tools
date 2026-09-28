@@ -109,16 +109,18 @@ static bool s_tuner_mute = true;        /* S+0x2e, stock default 1 */
 static dsp_knob_t s_in_gain;            /* S+0x1a, smoothed like the stock */
 /* the stock chain (docs/PARITY.md M2): amp (+ tone stack) -> cab, mono */
 static amp_t s_amp;
-static cab_t s_cab;
-/* RAM: OCRAM is 32 kB (linker.ld; the pedal has nothing above 0x20208000).
- * It holds s_ir, s_eq and the delay line; their sizes are ENGINE_IR_TAPS
- * (engine.h) and DELAY_MS_MAX (dsp/delay.h). Change them there when more
- * RAM is found; the link fails if they do not fit. */
+static cab_t s_cab __attribute__((section(".ocram")));
+/* RAM (memory map: docs/FIRMWARE_BRINGUP.md): CPU-only state moved out of
+ * DTCM to make room for the delay line: the cab's head spectra and s_ir to
+ * OCRAM (cached), the reverb to the ITCM above the code, the long-IR tail to
+ * the low DTCM. Sizes: ENGINE_IR_TAPS (engine.h) and DELAY_MS_MAX
+ * (dsp/delay.h); the link fails if they do not fit. */
 #define ENGINE_LONG_IR (ENGINE_IR_TAPS > CAB_TAPS)
 _Static_assert(ENGINE_IR_TAPS >= CAB_TAPS && ENGINE_IR_TAPS <= CAB_MAX_TAPS, "ENGINE_IR_TAPS");
 _Static_assert(AUDIO_FS <= DELAY_FS_MAX, "the delay line is sized for DELAY_FS_MAX");
 #if ENGINE_LONG_IR
-static conv2_tail_t s_cab_tail __attribute__((section(".ocram")));   /* long IRs (M5) */
+/* long IRs (M5): 96 kB, in the low DTCM (linker.ld .dtcm_lo) */
+static conv2_tail_t s_cab_tail __attribute__((section(".dtcm_lo")));
 #define CAB_INIT(c) cab_init_long((c), &s_cab_tail)
 #else
 #define CAB_INIT(c) cab_init(c)
@@ -126,12 +128,11 @@ static conv2_tail_t s_cab_tail __attribute__((section(".ocram")));   /* long IRs
 static gate_t s_gate;
 static comp_t s_comp;
 static mod_t s_mod;
-static reverb_t s_rev;
-/* Our bass delay (docs/PARITY.md M4). Its line (DELAY_LEN int16, 30 kB for
- * 342 ms) does not fit in DTCM: OCRAM, linker.ld .ocram (cached; one line
- * access per sample). */
+static reverb_t s_rev __attribute__((section(".itcm_bss")));
+/* Our bass delay (docs/PARITY.md M4). Its line (DELAY_LEN int16, 88 kB for
+ * 1 s): the DTCM between .bss and the stack (linker.ld .dtcm_hi). */
 static delay_t s_dly;
-static int16_t s_dly_line[DELAY_LEN] __attribute__((section(".ocram")));
+static int16_t s_dly_line[DELAY_LEN] __attribute__((section(".dtcm_hi")));
 static bool s_dly_en;
 /* Our bass EQ (docs/PARITY.md M4), after the cab. In the preset with our
  * marker (preset.h P_EQ_DATA); without it (every stock preset) off. Set from the
@@ -143,8 +144,7 @@ static eq_t s_eq __attribute__((section(".ocram")));
 static bool s_amp_en, s_cab_en, s_gate_en, s_comp_en, s_mod_en, s_rev_en;
 static int s_amp_model = -1, s_cab_type = -1;
 static float s_master = 1.0f, s_master_target = 1.0f;
-/* user IR staging, read only when a slot loads: OCRAM, so DTCM keeps the
- * cab's convolver spectra (dsp/cab.h). Also `cab long`. */
+/* user IR staging, read only when a slot loads: OCRAM. Also `cab long`. */
 static float s_ir[ENGINE_IR_TAPS] __attribute__((section(".ocram")));
 static bool s_testgen_in;               /* testgen feeds the chain input */
 static int s_usb_route;                 /* ENGINE_USB_OUT / _IN / _MIX */
