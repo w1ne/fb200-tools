@@ -42,6 +42,35 @@ int conv_set_ir(conv_t *c, const float *ir, size_t taps)
     return 0;
 }
 
+/* acc[k0..k0+3] over n partitions: x rows descend, h rows ascend. The four
+ * sums stay in registers across the partitions (no acc load/store per
+ * partition) and are four independent FMA chains. Per sum the partition order
+ * and the operations are those of the plain loop (a += x0*h0 ...), so the
+ * result does not depend on this grouping. dc: floats 0, 1 are DC and
+ * Nyquist (real). */
+static inline __attribute__((always_inline)) void
+mac4(float *restrict acc, const float *restrict x, const float *restrict h, unsigned n, int dc)
+{
+    float a0 = acc[0], a1 = acc[1], a2 = acc[2], a3 = acc[3];
+    for (; n; n--, x -= CONV_N, h += CONV_N) {
+        float x0 = x[0], x1 = x[1], x2 = x[2], x3 = x[3];
+        float h0 = h[0], h1 = h[1], h2 = h[2], h3 = h[3];
+        if (dc) {
+            a0 = a0 + x0 * h0;
+            a1 = a1 + x1 * h1;
+        } else {
+            a0 = a0 + x0 * h0 - x1 * h1;          /* two FMAs each */
+            a1 = a1 + x0 * h1 + x1 * h0;
+        }
+        a2 = a2 + x2 * h2 - x3 * h3;
+        a3 = a3 + x2 * h3 + x3 * h2;
+    }
+    acc[0] = a0;
+    acc[1] = a1;
+    acc[2] = a2;
+    acc[3] = a3;
+}
+
 /* One step of n <= DSP_BLOCK - fill samples. Packed spectra (CMSIS
  * rfft_fast): [DC, Nyquist, re1, im1, ...]; DC and Nyquist are real, so bin
  * 0 is two real products. A part block zero-pads the rest of the current
@@ -50,32 +79,33 @@ int conv_set_ir(conv_t *c, const float *ir, size_t taps)
 static void step(conv_t *c, const float *in, float *out, size_t n)
 {
     float buf[CONV_N], acc[CONV_N];
-    memcpy(c->in + DSP_BLOCK + c->fill, in, n * sizeof(float));
-    memcpy(buf, c->in, sizeof buf);           /* rfft_fast overwrites its input */
+    arm_copy_f32(in, c->in + DSP_BLOCK + c->fill, (uint32_t)n);
+    arm_copy_f32(c->in, buf, CONV_N);         /* rfft_fast overwrites its input */
     arm_rfft_fast_f32(&c->fft, buf, c->x[c->head], 0);
 
-    /* CMSIS has no complex multiply-accumulate: fused here, it saves a tmp
-     * pass (mult to tmp, then add) over every partition */
-    memset(acc, 0, sizeof acc);
-    float *restrict a = acc;
-    unsigned i = c->head;
-    for (unsigned p = 0; p < c->parts; p++) {
-        const float *restrict x = c->x[i], *restrict h = c->h[p];
-        a[0] += x[0] * h[0];
-        a[1] += x[1] * h[1];
-        for (unsigned k = 2; k < CONV_N; k += 2) {
-            float xr = x[k], xi = x[k + 1], hr = h[k], hi = h[k + 1];
-            a[k]     = a[k] + xr * hr - xi * hi;          /* two FMAs each */
-            a[k + 1] = a[k + 1] + xr * hi + xi * hr;
+    /* CMSIS has no complex multiply-accumulate: fused here, bin-major.
+     * Partition p pairs h[p] with x[(head - p) mod cap]: rows head..0, then
+     * cap-1 down (two runs of adjacent rows). */
+    unsigned n1 = c->head + 1 < c->parts ? c->head + 1 : c->parts;
+    unsigned n2 = c->parts - n1;
+    const float *x1 = c->x[c->head], *x2 = c->x[c->cap - 1];
+    const float *h1 = c->h[0], *h2 = c->h[n1];
+    for (unsigned k = 0; k < CONV_N; k += 4) {
+        acc[k] = acc[k + 1] = acc[k + 2] = acc[k + 3] = 0.0f;
+        if (k == 0) {
+            mac4(acc, x1, h1, n1, 1);
+            mac4(acc, x2, h2, n2, 1);
+        } else {
+            mac4(acc + k, x1 + k, h1 + k, n1, 0);
+            mac4(acc + k, x2 + k, h2 + k, n2, 0);
         }
-        i = i ? i - 1 : c->cap - 1;
     }
 
     arm_rfft_fast_f32(&c->fft, acc, buf, 1);
-    memcpy(out, buf + DSP_BLOCK + c->fill, n * sizeof(float));   /* overlap-save */
+    arm_copy_f32(buf + DSP_BLOCK + c->fill, out, (uint32_t)n);   /* overlap-save */
     c->fill += (unsigned)n;
     if (c->fill == DSP_BLOCK) {
-        memcpy(c->in, c->in + DSP_BLOCK, DSP_BLOCK * sizeof(float));
+        arm_copy_f32(c->in + DSP_BLOCK, c->in, DSP_BLOCK);
         c->head = c->head + 1 == c->cap ? 0 : c->head + 1;
         c->fill = 0;
     }
