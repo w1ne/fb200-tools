@@ -52,14 +52,16 @@ static void step(conv_t *c, const float *in, float *out, size_t n)
     /* CMSIS has no complex multiply-accumulate: fused here, it saves a tmp
      * pass (mult to tmp, then add) over every partition */
     memset(acc, 0, sizeof acc);
+    float *restrict a = acc;
     unsigned i = c->head;
     for (unsigned p = 0; p < c->parts; p++) {
-        const float *x = c->x[i], *h = c->h[p];
-        acc[0] += x[0] * h[0];
-        acc[1] += x[1] * h[1];
+        const float *restrict x = c->x[i], *restrict h = c->h[p];
+        a[0] += x[0] * h[0];
+        a[1] += x[1] * h[1];
         for (unsigned k = 2; k < CONV_N; k += 2) {
-            acc[k]     += x[k] * h[k] - x[k + 1] * h[k + 1];
-            acc[k + 1] += x[k] * h[k + 1] + x[k + 1] * h[k];
+            float xr = x[k], xi = x[k + 1], hr = h[k], hi = h[k + 1];
+            a[k]     = a[k] + xr * hr - xi * hi;          /* two FMAs each */
+            a[k + 1] = a[k + 1] + xr * hi + xi * hr;
         }
         i = i ? i - 1 : c->cap - 1;
     }

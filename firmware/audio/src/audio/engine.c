@@ -120,7 +120,9 @@ static bool s_dly_en;
 static bool s_amp_en, s_cab_en, s_gate_en, s_comp_en, s_mod_en, s_rev_en;
 static int s_amp_model = -1, s_cab_type = -1;
 static float s_master = 1.0f, s_master_target = 1.0f;
-static float s_ir[CAB_TAPS];
+/* user IR staging, read only when a slot loads: OCRAM, so DTCM keeps the
+ * cab's convolver spectra (dsp/cab.h) */
+static float s_ir[CAB_TAPS] __attribute__((section(".ocram")));
 static bool s_testgen_in;               /* testgen feeds the chain input */
 static uint32_t s_cyc_max, s_cyc_sum, s_cyc_n;   /* DWT cycles per block */
 /* `prof`: DWT cycles per chain stage, summed over blocks (engine_profile) */
