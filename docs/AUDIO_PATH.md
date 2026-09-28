@@ -83,7 +83,48 @@ and input front-end enable).
   R6B=0000, R72=0170 (ADC L/R power, VREF=VMID), R74=0502 (MICBIAS),
   R7E=0101 (PGA 0 dB). Host-tested (`tests/test_codec_init.py`). The stock
   never touches the codec after init.
-- `src/audio/engine.c`: codec ADC -> (DSP chain, later) -> codec DAC, USB
+- `src/audio/engine.c`: codec ADC -> DSP chain -> codec DAC, USB
   capture fed from the same stream, host playback monitored into the DAC.
+  See "USB playback routing" below.
 - Console: `codec` (dump key registers + re-init), `creg <reg> [val]`
   (16-bit register access), `usb` and (soon) `sai` stats.
+
+## USB playback routing (reamping)
+
+Console `usb [out|in|mix]` (`usb` alone prints `route=` with the stats). The
+engine pulls the host playback once per block, drift-compensated as before
+(`usb_audio_trim` / `usb_audio_pull16`), before the chain input:
+
+| Route | Chain input (the stock L + R of the ADC) | DAC | USB capture |
+| --- | --- | --- | --- |
+| `out` (default, stock) | instrument | chain + playback | chain |
+| `in` (reamping) | playback, (L + R) / 2 | chain | chain |
+| `mix` | instrument + playback (L + R) / 2 | chain | chain |
+
+`in` replaces the instrument: a reamp wants only the DI track in the chain,
+not the idle instrument noise. The playback mono mean (L + R) / 2 keeps a mono
+file played on both channels at its own level. When the host does not stream,
+the engine passes zeros: `in` gives silence, `mix` the instrument. `tin`
+(test generator into the chain) overrides both. The tuner hears the chain
+input, so also the playback. The route is not saved (reboot: `out`).
+
+Latency, USB playback -> USB capture, inside the pedal:
+
+- Playback ring (`usb_audio.c`, drained by the engine): the engine starts
+  pulling at once when the host opens the stream, so the ring runs near its
+  minimum, about one USB frame of audio + one engine block (44-45 + 32
+  frames, 1-2 ms at 44.1 kHz). With a host clock faster than the codec clock
+  the fill grows until the trim holds it at `MAX_RING_FILL` = 480 frames
+  (10.9 ms). `usb` shows the current `play_fill`.
+- Engine: 0. The pull, the chain and the capture push run in the same
+  32-frame block; the effects buffer nothing (the cab convolver included):
+  only filter group delay, e.g. the amp's 3x oversampling interpolation
+  (about one sample).
+- Capture: the capture ring is drained on every main-loop pass (up to 64
+  frames per pass) into the TinyUSB FIFO: about one USB frame (~1 ms).
+
+So the pedal adds roughly 2-3 ms, at most ~12 ms, and it changes when the
+drift compensation inserts or drops a frame. The host (CoreAudio / driver
+buffers) adds more. Do not align with a constant: `audio_test` (MCP) returns
+`delay_ms` from the cross-correlation of the played and captured signal
+(`fb200.audio.delay_frames`).

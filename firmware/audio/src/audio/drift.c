@@ -35,3 +35,17 @@ uint32_t drift_trim(uint32_t cap, uint32_t head, uint32_t *tail,
     *drops += dropped;
     return dropped;
 }
+
+void drift_play_to_input(float *l, float *r, const int16_t *play, size_t n,
+                         int replace)
+{
+    for (size_t i = 0; i < n; i++) {
+        float m = ((float)play[i * 2 + 0] + (float)play[i * 2 + 1]) * (0.5f / 32768.0f);
+        if (replace) {
+            l[i] = m;
+            r[i] = 0.0f;
+        } else {
+            l[i] += m;
+        }
+    }
+}

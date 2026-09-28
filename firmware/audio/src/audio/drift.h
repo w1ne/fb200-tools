@@ -19,4 +19,12 @@ size_t drift_fill(const int16_t *ring, uint32_t cap, uint32_t *tail,
 uint32_t drift_trim(uint32_t cap, uint32_t head, uint32_t *tail,
                     uint32_t max_fill, uint32_t *drops);
 
+/* Host playback into the chain input (reamping, console `usb in|mix`). The
+ * chain input is L + R of the ADC block; the stereo int16 playback goes in as
+ * its mono mean (L + R) / 2, so a file played on both channels enters at its
+ * own level. replace != 0: l = mean, r = 0 (the instrument is dropped);
+ * replace == 0: l += mean (instrument + playback). */
+void drift_play_to_input(float *l, float *r, const int16_t *play, size_t n,
+                         int replace);
+
 #endif
