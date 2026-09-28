@@ -32,6 +32,7 @@
 #include "audio/bt_audio.h"
 #include "dsp/stock_data.h"
 #include "dsp/delay.h"
+#include "dsp/eq.h"
 #include "proto/proto.h"
 #endif
 
@@ -120,6 +121,8 @@ static void cmd_help(void)
              "  bt    : bt | bt send <AT+...> | btaudio\r\n"
              "  music : stock | tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>]\r\n"
              "  delay : delay [on|off] [time 20-1000 ms] [fb 0-100] [mix 0-100] [lowcut 0-100] [tone 0-100]\r\n"
+             "  eq    : eq [on|off] | eq hpf <20-200 Hz|0> | eq lpf <2000-20000 Hz|0>\r\n"
+             "          eq <band 1-5> <30-10000 Hz> <gain -15..15 dB> [q 0.3-4]\r\n"
              "  tests : crash | hang\r\n"
 #endif
              "  debug : stats | src | hb on|off | clocks | crumbs | crashdump | crashclear\r\n"
@@ -177,6 +180,73 @@ static void cmd_delay(int argc, char **argv)
     log_printf("delay %s%s: time %u ms fb %u mix %u lowcut %u (%d Hz) tone %u%s\r\n",
                en ? "on" : "off", marked ? "" : " (stock preset, never plays)",
                v[0], v[1], v[2], v[3], (int)hz, v[4], v[4] >= 100u ? " (off)" : "");
+}
+
+/* Signed decimal: "-4.5", "3", "0.71". */
+static float parse_dec(const char *s, int *ok)
+{
+    float v = 0.0f, scale = 1.0f, sign = 1.0f;
+    int digits = 0, point = 0;
+    *ok = 0;
+    if (!s) return 0.0f;
+    if (*s == '-' || *s == '+') { if (*s == '-') sign = -1.0f; s++; }
+    for (; *s; s++) {
+        if (*s == '.' && !point) { point = 1; continue; }
+        if (*s < '0' || *s > '9') return 0.0f;
+        if (point) { scale *= 0.1f; v += (float)(*s - '0') * scale; }
+        else v = v * 10.0f + (float)(*s - '0');
+        digits++;
+    }
+    *ok = digits > 0;
+    return sign * v;
+}
+
+/* x with 1 or 2 decimals and the sign: "-4.5", "+3.0", "0.71" */
+static void print_dec(const char *pre, float x, int decimals, int plus)
+{
+    int m = decimals == 2 ? 100 : 10;
+    int t = (int)(x * (float)m + (x < 0.0f ? -0.5f : 0.5f));
+    int a = t < 0 ? -t : t;
+    log_printf(decimals == 2 ? "%s%s%d.%02d" : "%s%s%d.%d", pre, t < 0 ? "-" : plus ? "+" : "",
+               a / m, a % m);
+}
+
+/* eq [on|off] | eq hpf <hz> | eq lpf <hz> | eq <band> <hz> <gain dB> [q]: our
+ * EQ after the cab (dsp/eq.h). Not in the preset: off after boot. */
+static void cmd_eq(int argc, char **argv)
+{
+    eq_t *e = engine_eq();
+    int ok = 1, ok2 = 1, ok3 = 1, ok4 = 1;
+    if (argc > 1 && (streq(argv[1], "on") || streq(argv[1], "off"))) {
+        eq_set_on(e, streq(argv[1], "on"));
+    } else if (argc > 2 && (streq(argv[1], "hpf") || streq(argv[1], "lpf"))) {
+        float hz = streq(argv[2], "off") ? 0.0f : parse_dec(argv[2], &ok);
+        if (ok && streq(argv[1], "hpf")) eq_set_hpf(e, hz);
+        else if (ok) eq_set_lpf(e, hz);
+    } else if (argc > 3) {
+        uint32_t b = parse_num(argv[1], &ok);
+        float hz = parse_dec(argv[2], &ok2), g = parse_dec(argv[3], &ok3), q = EQ_Q_DEF;
+        if (argc > 4) q = parse_dec(argv[4], &ok4);
+        ok = ok && ok2 && ok3 && ok4 && b >= 1u && b <= EQ_BANDS;
+        if (ok) eq_set_band(e, b - 1u, hz, g, q);
+    } else if (argc > 1) {
+        ok = 0;
+    }
+    if (!ok) {
+        log_printf("usage: eq [on|off] | eq hpf <20-200 Hz|0> | eq lpf <2000-20000 Hz|0> | "
+                   "eq <band 1-5> <30-10000 Hz> <gain -15..15 dB> [q 0.3-4]\r\n");
+        return;
+    }
+    log_printf("eq %s%s: hpf ", e->on ? "on" : "off", e->on && e->bypass ? " (flat)" : "");
+    if (e->hpf > 0.0f) log_printf("%d Hz", (int)(e->hpf + 0.5f)); else log_printf("off");
+    log_printf(" lpf ");
+    if (e->lpf > 0.0f) log_printf("%d Hz\r\n", (int)(e->lpf + 0.5f)); else log_printf("off\r\n");
+    for (unsigned b = 0; b < EQ_BANDS; b++) {
+        log_printf("  %u: %d Hz", b + 1u, (int)(e->f[b] + 0.5f));
+        print_dec(" ", e->g[b], 1, 1);
+        print_dec(" dB q ", e->q[b], 2, 0);
+        log_printf("\r\n");
+    }
 }
 
 static void cmd_ui(void)
@@ -576,6 +646,7 @@ static void dispatch(char *cmd)
     }
     else if (streq(argv[0], "save")) ui_save();
     else if (streq(argv[0], "delay")) cmd_delay(argc, argv);
+    else if (streq(argv[0], "eq")) cmd_eq(argc, argv);
     else if (streq(argv[0], "factory")) {
         if (argc > 1 && streq(argv[1], "yes"))
             log_printf("factory reset: %s\r\n", proto_factory_reset() == 0 ? "ok" : "FAILED");

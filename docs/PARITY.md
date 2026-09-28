@@ -33,6 +33,7 @@ Status words:
 | Master volume, smoothed | DONE | `engine.c` (`s_master`), knob k15 |
 | Input gain (global `S+0x1a`, app, -55..+6 dB) | DONE | `dsp/gain.c` `gain_input_stock` (stock table dB steps, within 1 ulp; `dsp_host_test.c`), stock smoother in `engine.c`; 0 dB keeps the bit-parity value |
 | Delay (preset fields `0x8c..0x94`, protocol `0x85`) | BETTER | the stock DSP ignores them (emulation). Ours plays them only in presets with our marker, so stock presets sound the same: [M4 delay](#m4-bass-delay) |
+| Bass EQ (not in the stock) | BETTER (host) | ours: HPF + 5 bands + LPF after the cab, console only, off after boot: [M4 EQ](#m4-bass-eq) |
 | Module order (`0xbc`) | not needed | the stock ignores it (emulation); stored by `proto.c` `0xA0` |
 | Sample rate 44.1 kHz | DONE | `audio_config.h` `AUDIO_FS`; stock clock tree |
 
@@ -263,7 +264,8 @@ Budgets on this chip: 600 MHz / 44.1 kHz = 13.6k cycles per sample; RAM
   checks above (incl. the light rings), then the test session (gap 1).
 - **M4 - better core (after parity):** 48 kHz / 24-bit engine (needed for
   NAM; stock assets resampled offline), latency <3 ms, CPU/RAM profiler;
-  bass chain additions: crossover clean-blend drive, 5-7 band EQ + HPF/LPF,
+  bass chain additions: crossover clean-blend drive, 5-7 band EQ + HPF/LPF
+  (first version done: 5 bands + HPF/LPF, see [below](#m4-bass-eq)),
   delay (the stock has none: its delay fields do nothing; first version
   done, see [below](#m4-bass-delay)), better tuner.
 - **M5 - IR engine:** up to 4096 taps (the cab runs on the two-stage
@@ -412,6 +414,70 @@ a time change glides and settles on the exact sample count; the preset rule
 
 Open: footswitch/knob control of the delay (none now), the light bar for
 it, a type map for `0x8e`, tap tempo.
+
+### M4: bass EQ
+
+Status: first version on the host (2026-09-28), not tried on the pedal.
+
+**Chain.** `dsp/eq.c`, mono, in place, **after the cab, before MOD** (the
+usual place on a bass pedal: it shapes the amp + cab tone, and MOD, delay and
+reverb get the shaped signal). 7 biquads: HPF 12 dB/oct 20-200 Hz, 5 peaking
+bands (30-10000 Hz, +-15 dB, Q 0.3-4; defaults 40, 100, 250, 800, 3000 Hz at
+0 dB, Q 1), LPF 12 dB/oct 2-20 kHz. RBJ cookbook designs in double, rounded
+to float once. No shelves: a band at 30-40 Hz with a low Q or the HPF does
+that job; add them if players ask.
+
+**Not in the preset** (yet): off after boot, set from the console. A preset
+field needs a free place and a rule like the delay marker (open).
+
+**Changes do not click.** Each stage glides to a new setting in 16 blocks
+(11.6 ms): frequency and Q in octaves, gain in dB, a new design every block,
+and inside the block the coefficients step every sample (stable: the biquad
+stability triangle is convex). A settled stage runs CMSIS-DSP
+`arm_biquad_cascade_df1_f32`. DF1, not `df2T`: the DF1 state is the signal
+itself, so a coefficient change does not leave an old-filter state behind; in
+a model of an LPF glide (2 -> 20 kHz, 200 Hz sine) df2T put clicks at
+-47 dB, DF1 at -83 dB. A straight line from the old to the new coefficients
+(no redesign) was worse than a hard switch for a notch Q change.
+
+**Off = the stock chain, bit-exact.** A band at 0 dB, a filter at 0 and
+`eq off` are neutral (b = a; the HPF/LPF fade their numerator to the
+denominator). A neutral stage that has settled is skipped: it does not touch
+the signal and only keeps its last two samples, so it starts again without a
+jump. That also keeps the float rounding noise of idle low stages (~-75 dB
+each) out of the signal.
+
+**RAM.** `eq_t` is 508 B, in OCRAM (`engine.c` `s_eq`, `.ocram`). In DTCM
+.bss it pushed the 2 kB-aligned USB buffer `_dcd_data` up by 2 kB and DTCM
+overflowed: .bss has only ~8 B before that boundary (1408 B free after it).
+Build: ITCM `.blob` 112760 -> 117056 B (+4.2 kB), `.dtcmdata` 5632 and `.bss`
+210536 unchanged, `.ocram` 98056 -> 98564 B.
+
+**CPU** (instructions per 32-sample block, Cortex-M7 build `-O2`, Unicorn;
+budget 435k cycles): off 198; 7 stages settled 2.5k (~0.6 % at CPI 1); all 7
+gliding (`eq on` with 7 settings) 8.6k plus 42 double divides, ~2-4 %, for
+16 blocks; one band gliding 3.5k. `prof` shows it as `eq`. Check on the pedal
+with `prof` and `cpu`.
+
+**Console** (for tests on the pedal): `eq` (state), `eq on|off`,
+`eq hpf <20-200 Hz|0>`, `eq lpf <2000-20000 Hz|0>`,
+`eq <band 1-5> <hz> <gain dB> [q]` (e.g. `eq 2 100 -4.5 1.4`).
+
+**Tests** (`tests/test_dsp_host.py::test_eq_suite`, `audio/tests/eq_host_test.c`,
+44.1 and 48 kHz): the measured response (the DFT of the impulse response
+through `eq_process`) of every band, the HPF and the LPF vs the RBJ target in
+double within 0.1 dB where the target is above -24 dB (worst 0.07 dB over a
+grid of 30-10000 Hz, Q 0.3-4, +-15 dB; 0.03 dB for all 7 at once), and the
+analog prototype at f0 (the peak gain, the -3.01 dB point) within 0.1 dB;
+flat = bit-exact (off, on + flat, back to flat, `eq off`); no clicks: a sine
+through 10 parameter changes, the output above 8 kHz stays below -70 dB re
+its peak (worst -76 dB; negative controls: a 1 % step added at the change
+reads -48 to -63 dB, a hard coefficient switch fails 2 of the 10); stable:
+every stage at its limits, 20 s of random changes every 1-40 blocks, a
+silence ends in exact zeros.
+
+Open: preset storage and app control, pedal knobs/footswitch for it,
+shelves if wanted, the pedal check.
 
 ## Why ours is better
 

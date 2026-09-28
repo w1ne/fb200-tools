@@ -50,6 +50,8 @@ save blink, rhythm tempo flash). On the pedal so far: the light ring of the sele
 - A bass delay (the stock has none: its delay settings do nothing): 20-1000 ms, feedback,
   mix, low cut on the repeats, tone. Stock presets keep their sound
   ([`docs/PARITY.md`](docs/PARITY.md#m4-bass-delay)).
+- A bass EQ (the stock has none): HPF, 5 bands, LPF, after the cab; console only for now
+  ([`docs/PARITY.md`](docs/PARITY.md#m4-bass-eq)).
 - Updates over USB without holding A+D.
 - The display names the knob you turn (`GAn`, `CAb`, …) and marks knobs that have not
   picked up yet.
@@ -138,6 +140,7 @@ fb200 ir process my-cab.wav -o out.wav --trim --taps 512   # process to a file, 
 fb200 console [cmd ...]             # open-firmware USB console (interactive without args)
 fb200 console "factory yes"         # factory reset: presets, settings, IR list
 fb200 console "delay on 350"        # bass delay: [on|off] [time] [fb] [mix] [lowcut] [tone]
+fb200 console "eq 1 40 3"           # bass EQ: eq [on|off] | hpf <hz> | lpf <hz> | <band 1-5> <hz> <dB> [q]
 fb200 console prof                  # CPU cycles per chain stage
 fb200 update app latest             # open-firmware USB update (or a file)
 fb200 update stock FB200.mr         # write the stock sound data (once)

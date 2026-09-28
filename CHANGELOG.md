@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Bass EQ** (not in the stock): HPF 20-200 Hz, 5 peaking bands (30-10000 Hz,
+  +-15 dB, Q 0.3-4), LPF 2-20 kHz, after the cab. Changes glide in 12 ms, no clicks.
+  Off after boot and bit-exact when off or flat; not in the preset yet. Console:
+  `eq [on|off]`, `eq hpf|lpf <hz>`, `eq <band> <hz> <dB> [q]` (docs/PARITY.md M4).
 - **Two-stage convolver for long IRs (M5, library only):** `dsp/conv2.c` runs
   IRs up to 4096 taps with no added latency: the 512-tap head on the current
   convolver, the rest in 256-sample partitions spread over the 8 blocks of each
