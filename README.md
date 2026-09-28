@@ -6,8 +6,8 @@
 [FLAMMA FB200](https://www.flamma.shop/products/flamma-fb200-bass-guitar-intelligent-combined-multi-effects-pedal)
 bass multi-effects pedal.** It sounds like the stock firmware, keeps your presets and the
 official app working, and adds what the stock firmware lacks: USB updates without a
-button combo, a debug console, crash reports, better display feedback, and drums in
-your recordings. + whatwher you wan top add to it. Now the software is yours to modify.
+button combo, a debug console, crash reports, better display feedback, drums in
+your recordings and a bass delay. Add what you want: the software is yours to modify.
 
 ![The FB200 running the open firmware](images/in-use.jpg)
 
@@ -20,18 +20,18 @@ Its firmware is closed and frozen. This project aims to:
 
 - **match the stock firmware.** Every stock effect was ported and checked against an
   emulation of the stock DSP code.
-- **then improve on it.** The plan: 48 kHz / 24-bit audio, longer cab IRs with WAV
-  import, a delay, a clean-blend drive for bass, a web editor, and NAM amp captures.
+- **then improve on it.** Done: a bass delay. The plan: 48 kHz / 24-bit audio, longer
+  cab IRs with WAV import, a clean-blend drive for bass, a web editor, and NAM amp captures.
   See [`docs/PARITY.md`](docs/PARITY.md) and
   [`docs/ROADMAP_RESEARCH.md`](docs/ROADMAP_RESEARCH.md).
 
-## Status (v0.6)
+## Status (v0.8)
 
 Verified on a real pedal:
 
 | Area | What works |
 | --- | --- |
-| **Sound** | Stock chain: noise gate → compressor → 10 amp models + 4-band tone stack → 10 cab IRs + 9 user-IR slots → 12 modulations → 5 reverbs. Parity against the stock DSP: amp and tone bit-exact, the rest within -105 dB. |
+| **Sound** | Stock chain: noise gate → compressor → 10 amp models + 4-band tone stack → 10 cab IRs + 9 user-IR slots → 12 modulations → 5 reverbs. Parity against the stock DSP: amp and tone bit-exact, the rest within -105 dB. The heaviest preset uses 27% of the CPU on average, 31% at peak. |
 | **Front panel** | 3-digit display, 16 knobs with LEDs, 4 footswitches with the stock actions (slot select, bank chords, stomp mode, tuner, save). |
 | **Presets** | Your stock presets load and save in the stock format and survive switching firmware |
 | **Drums & tuner** | Stock drum machine (40 rhythms, played from the samples already in your pedal's flash) and stock YIN tuner |
@@ -40,12 +40,16 @@ Verified on a real pedal:
 | **Power** | Battery level, charger sense, status LED |
 | **Updates & recovery** | USB updates with no button combo. A resident recovery keeps the USB console after a crash or hang. Crash dumps survive a reset. |
 
-New since then, tested on the host but **not yet on a pedal**: save to any slot and to
-another bank, the stock rhythm-mode buttons, drum/tuner/rhythm-mode commands from the app,
-input gain, tuner calibration and mute, factory reset, the footswitch light rings (slot,
-live-mode modules, colours from the app, save blink, rhythm tempo flash).
+New in 0.7 and 0.8, tested on the host but **not yet checked on a pedal**: the bass
+delay, save to any slot and to another bank, the stock rhythm-mode buttons,
+drum/tuner/rhythm-mode commands from the app, input gain, tuner calibration and mute,
+factory reset, and the footswitch light rings (live-mode modules, colours from the app,
+save blink, rhythm tempo flash). On the pedal so far: the light ring of the selected slot.
 
 **Better than stock so far:**
+- A bass delay (the stock has none: its delay settings do nothing): 20-1000 ms, feedback,
+  mix, low cut on the repeats, tone. Stock presets keep their sound
+  ([`docs/PARITY.md`](docs/PARITY.md#m4-bass-delay)).
 - Updates over USB without holding A+D.
 - The display names the knob you turn (`GAn`, `CAb`, …) and marks knobs that have not
   picked up yet.
@@ -55,7 +59,7 @@ live-mode modules, colours from the app, save blink, rhythm tempo flash).
 - Drum hits start on time (the stock plays each one up to 31 ms early).
 - The Bluetooth audio switch from the app survives a reboot (the stock turns it back on).
 
-Still open: the light rings on a pedal, a test session with the phone app, a 48 kHz option, and
+Still open: the pedal checks above, a test session with the phone app, a 48 kHz option, and
 the "better" roadmap. The code runs on the stock hardware only.
 
 ## Flashing
@@ -132,6 +136,8 @@ fb200 ir list                       # IR slots
 fb200 ir import 3 my-cab.wav        # convert and upload a WAV IR to slot 3
 fb200 console [cmd ...]             # open-firmware USB console (interactive without args)
 fb200 console "factory yes"         # factory reset: presets, settings, IR list
+fb200 console "delay on 350"        # bass delay: [on|off] [time] [fb] [mix] [lowcut] [tone]
+fb200 console prof                  # CPU cycles per chain stage
 fb200 update app latest             # open-firmware USB update (or a file)
 fb200 update stock FB200.mr         # write the stock sound data (once)
 fb200 crash --elf fb200-app.elf     # read and symbolize the last crash dump
