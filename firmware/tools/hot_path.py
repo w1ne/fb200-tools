@@ -28,10 +28,9 @@ from __future__ import annotations
 import argparse
 import re
 import subprocess
-import sys
 from pathlib import Path
 
-ITCM = range(0x0, 0x20000)
+ITCM = range(0x20000)
 OCRAM = range(0x20200000, 0x20280000)
 HOT_ENTRY = ("engine_task", "usb_audio_task")
 HOT_PATTERN = re.compile(r"^audiod_")

@@ -63,7 +63,7 @@ def elf_symbols(variant: str = "app") -> dict[str, int]:
     elf = fwbuild.build(FW, variant) / f"fb200-{variant}.elf"
     out = subprocess.run(["arm-none-eabi-nm", str(elf)], check=True, capture_output=True,
                          text=True).stdout
-    return {n: int(a, 16) for a, _t, n in re.findall(r"^([0-9a-f]{8}) (\S) (\S+)$", out, re.M)}
+    return {n: int(a, 16) for a, _t, n in re.findall(r"^([0-9a-f]{8}) (\S) (\S+)$", out, re.MULTILINE)}
 
 
 ITCM = range(0x400, 0x1F000)
@@ -115,7 +115,7 @@ def test_recovery_has_no_ocram_code():
     assert (out / "fb200-recovery.dtcmdata.bin").read_bytes() == b""
     nm = subprocess.run(["arm-none-eabi-nm", str(out / "fb200-recovery.elf")], check=True,
                         capture_output=True, text=True).stdout
-    code = re.findall(r"^([0-9a-f]{8}) [tTwW] (\S+)$", nm, re.M)
+    code = re.findall(r"^([0-9a-f]{8}) [tTwW] (\S+)$", nm, re.MULTILINE)
     assert code and all(int(a, 16) < 0x20000 for a, _n in code)
 
 
@@ -146,7 +146,7 @@ def dry_run(tmp_path, data: bool) -> str:
         pytest.skip("fb200-stock.mr not found (set FB200_STOCK_MR)")
     from fb200 import images
     rec_dir, app_dir = fwbuild.build(FW, "recovery"), fwbuild.build(FW)
-    part = lambda d, v, k: (d / f"fb200-{v}.{k}.bin").read_bytes()  # noqa: E731
+    part = lambda d, v, k: (d / f"fb200-{v}.{k}.bin").read_bytes()
     rec = images.build_recovery(part(rec_dir, "recovery", "vectors"),
                                 part(rec_dir, "recovery", "blob"),
                                 part(rec_dir, "recovery", "copier"))
@@ -158,7 +158,7 @@ def dry_run(tmp_path, data: bool) -> str:
         [sys.executable, str(ROOT / "firmware" / "tools" / "boot_dry_run.py"),
          "--elf", str(rec_dir / "fb200-recovery.elf"), "--app-elf", str(app_dir / "fb200-app.elf"),
          "--app-slot", str(tmp_path / "app.slot"), "--max-instructions", "40000000",
-         str(tmp_path / "twostage.mr")], capture_output=True, text=True).stdout
+         str(tmp_path / "twostage.mr")], capture_output=True, text=True, check=False).stdout
 
 
 def test_boot_runs_ocram_code(tmp_path):

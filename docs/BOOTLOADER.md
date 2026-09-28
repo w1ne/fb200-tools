@@ -74,7 +74,7 @@ and every app failure, stays on USB.
 | `0x600107D4` | `0x007D4` | recovery blob (loader entry 0 -> ITCM `0x400`, entry `0x4D6`) |
 | `0x6001F000` | `0x0F000` | copier (staged by recovery to ITCM `0x1F000`) |
 | `0x60020000` | `0x10000` | app slot: header `FBAP`/len/CRC32 (0x100), vectors (0x400), blob |
-| `0x60041000` | - | app const tables (CMSIS), copied to OCRAM and DTCM at boot (slot header v2) |
+| `0x60041000` | - | app data blob: cold code (`.ocramtext`) and const tables (CMSIS), copied to OCRAM and DTCM at boot (slot header v2; [hot and cold code](FIRMWARE_BRINGUP.md#hot-and-cold-code-audio-app)) |
 | `0x60061000` | - | stock sound data `FBSD` (`src/dsp/stock_data.h`), written once by `fwstock` |
 
 - The published images contain no vendor bytes. The recovery image leaves

@@ -86,6 +86,34 @@ The stock loader keeps working on our image because the load table, the
 vendor boot region and entries 1-4 payloads are untouched; only the bytes the
 loader copies to ITCM 0x400 are ours.
 
+### Hot and cold code (audio app)
+
+The ITCM payload has a hard limit: 0x1dbc8 bytes (the vendor loader's entry
+0, `tests/test_audio_image.py`). The audio app does not fit in it any more,
+so it runs code that is not on the audio path from OCRAM:
+
+- **Hot (ITCM):** everything an ISR, `engine_task` or `usb_audio_task` can
+  reach, the TinyUSB audio class driver (`audiod_*`), driver callbacks, and
+  on purpose the main loop (`main.c`), boot (`startup.c`), the fault path
+  (`vectors.c`, `recovery.c`) and `crc32.c`.
+- **Cold (OCRAM, linker `.ocramtext`):** the files in `COLD_SRC`
+  (`firmware/audio/Makefile`): console, self-update, logging, UI and
+  display, preset storage, protocol, USB descriptors and the CDC/HID class
+  drivers, clock and pin setup, and SDK drivers used only at init or from
+  the main loop.
+- **Rule:** a file goes to `COLD_SRC` only if nothing in it is reachable from
+  a hot root. `firmware/tools/hot_path.py` follows direct calls, tail calls,
+  veneers and callback addresses from the hot roots and fails if any
+  reachable function is in OCRAM; `tests/test_audio_image.py` runs it and
+  has a negative control.
+- **Load:** `.ocramtext` is the first part of the slot data blob (flash
+  0x60041000: `.ocramtext`, `.ocramdata`, `.dtcmdata`; the slot header
+  carries its length and CRC). `stage2_main` refuses a slot whose data is
+  shorter than this build needs (fault crumb, reset into recovery, which
+  stays on the console), copies the three parts, makes OCRAM executable if
+  the MPU is on, and cleans/invalidates the caches and turns the I-cache on.
+- **Recovery** has no OCRAM code: it runs everything from ITCM.
+
 ## 4. Why earlier attempts failed
 
 Before the contract was understood, images were built as plain flash-executable
