@@ -117,7 +117,9 @@ Latency, USB playback -> USB capture, inside the pedal:
   the fill grows until the trim holds it at `MAX_RING_FILL` = 480 frames
   (10.9 ms). `usb` shows the current `play_fill`.
 - Engine: 0. The pull, the chain and the capture push run in the same
-  32-frame block; the effects are zero-latency (the cab convolver included).
+  32-frame block; the effects buffer nothing (the cab convolver included):
+  only filter group delay, e.g. the amp's 3x oversampling interpolation
+  (about one sample).
 - Capture: the capture ring is drained on every main-loop pass (up to 64
   frames per pass) into the TinyUSB FIFO: about one USB frame (~1 ms).
 
