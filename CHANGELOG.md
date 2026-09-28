@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-09-28
+
+Bass delay, footswitch light rings as the stock, and the DSP chain at less than
+half the CPU (CMSIS-DSP loop unrolling). Sound unchanged.
+
 ### Added
 
 - **Bass delay** (not in the stock): 20-1000 ms, feedback, mix, low cut on the
