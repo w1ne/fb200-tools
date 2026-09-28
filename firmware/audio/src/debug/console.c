@@ -111,8 +111,9 @@ static void cmd_help(void)
 {
     log_puts("commands:\r\n"
 #ifndef FB200_RECOVERY
-             "  audio : usb | sai | codec | creg <reg> [val] | gain [db] | mute [on|off]\r\n"
+             "  audio : usb [out|in|mix] | sai | codec | creg <reg> [val] | gain [db] | mute [on|off]\r\n"
              "          testgen off|sine|white|impulse [freq] | tin <same> (into the chain, -20 dBFS)\r\n"
+             "          usb in = reamping: host playback into the chain (mix: + instrument, out: default)\r\n"
              "          meters on|off | x | cpu\r\n"
              "  led   : led on|off|scan | ledpin <gpio> <pin>\r\n"
              "  ui    : ui | uimon on|off | disp <text> | kled <0-15> on|off | power\r\n"
@@ -269,13 +270,24 @@ static void cmd_stats(void)
 }
 
 #ifndef FB200_RECOVERY
-static void cmd_usb(void)
+static const char *const usb_routes[] = {"out", "in", "mix"};
+
+/* `usb [out|in|mix]`: host playback to the DAC (default), into the chain
+ * input instead of the instrument (reamping), or summed with it. */
+static void cmd_usb(const char *route)
 {
+    if (route) {
+        int r = -1;
+        for (int i = 0; i < 3; i++) if (streq(route, usb_routes[i])) r = i;
+        if (r < 0) { log_printf("usage: usb [out|in|mix]\r\n"); return; }
+        engine_set_usb_route(r);
+        log_printf("usb route %s\r\n", usb_routes[r]);
+    }
     uint32_t pf, cf, ovf, unf;
     uint8_t spk_alt, mic_alt;
     usb_audio_stats(&pf, &cf, &ovf, &unf, &spk_alt, &mic_alt);
-    log_printf("usb: spk_alt=%u mic_alt=%u play_fill=%lu cap_fill=%lu ovf=%lu unf=%lu\r\n",
-               (unsigned)spk_alt, (unsigned)mic_alt, (unsigned long)pf,
+    log_printf("usb: route=%s spk_alt=%u mic_alt=%u play_fill=%lu cap_fill=%lu ovf=%lu unf=%lu\r\n",
+               usb_routes[engine_get_usb_route()], (unsigned)spk_alt, (unsigned)mic_alt, (unsigned long)pf,
                (unsigned long)cf, (unsigned long)ovf, (unsigned long)unf);
     uint8_t mute;
     int16_t vol;
@@ -517,7 +529,7 @@ static void dispatch(char *cmd)
     if (streq(argv[0], "help")) cmd_help();
     else if (streq(argv[0], "stats")) cmd_stats();
 #ifndef FB200_RECOVERY
-    else if (streq(argv[0], "usb")) cmd_usb();
+    else if (streq(argv[0], "usb")) cmd_usb(argv[1]);
     else if (streq(argv[0], "codec")) cmd_codec();
     else if (streq(argv[0], "sai")) cmd_sai();
     else if (streq(argv[0], "gain") || streq(argv[0], "g")) cmd_gain(argv[1]);

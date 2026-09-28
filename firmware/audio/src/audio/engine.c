@@ -16,6 +16,7 @@
 #ifndef ENGINE_HOST_TEST
 #include "audio/sai.h"
 #include "audio/usb_audio.h"
+#include "audio/drift.h"
 #include "audio/bt_audio.h"
 #include "audio/codec.h"
 #include "dsp/dsp.h"
@@ -124,6 +125,7 @@ static float s_master = 1.0f, s_master_target = 1.0f;
  * cab's convolver spectra (dsp/cab.h) */
 static float s_ir[CAB_TAPS] __attribute__((section(".ocram")));
 static bool s_testgen_in;               /* testgen feeds the chain input */
+static int s_usb_route;                 /* ENGINE_USB_OUT / _IN / _MIX */
 static uint32_t s_cyc_max, s_cyc_sum, s_cyc_n;   /* DWT cycles per block */
 /* `prof`: DWT cycles per chain stage, summed over blocks (engine_profile) */
 enum { P_IN, P_TUNER, P_GATE, P_COMP, P_AMP, P_CAB, P_MOD, P_DELAY, P_REVERB, P_MIX,
@@ -281,6 +283,8 @@ float engine_get_gain_db(void)
 }
 
 void engine_testgen_input(bool on) { s_testgen_in = on; }
+void engine_set_usb_route(int route) { s_usb_route = route; }
+int engine_get_usb_route(void) { return s_usb_route; }
 
 void engine_cycles(uint32_t *avg, uint32_t *max, uint32_t *budget)
 {
@@ -399,6 +403,21 @@ void engine_task(void)
      * needed for bit parity, tests/test_stock_dsp_parity.py). */
     uint32_t t0 = DWT->CYCCNT;
     s_prof_t = t0;
+    /* Host playback, drift-compensated, only while the host streams. Pulled
+     * here, in the same block as the capture push: `usb in|mix` adds no
+     * block latency (docs/AUDIO_PATH.md). */
+    if (usb_audio_playing()) {
+        (void)usb_audio_trim(MAX_RING_FILL, &s_stats.fifo_drops);
+        (void)usb_audio_pull16(play, n, last, &s_stats.fifo_inserts);
+    } else {
+        memset(play, 0, n * 2 * sizeof play[0]);
+        last[0] = last[1] = 0;
+    }
+    if (s_usb_route != ENGINE_USB_OUT) {   /* reamping: playback into the chain */
+        drift_play_to_input(s_block.data[0], s_block.data[1], play, n,
+                            s_usb_route == ENGINE_USB_IN);
+        memset(play, 0, n * 2 * sizeof play[0]);   /* not also dry into the DAC */
+    }
     float x[ENGINE_FRAMES];
     if (s_testgen_in && s_testgen.mode != TESTGEN_OFF) {   /* test signal into the chain */
         memset(&s_block, 0, sizeof s_block);
@@ -474,16 +493,6 @@ void engine_task(void)
         usb_audio_push(fb, n);
     }
     PROF(P_USB_IN);
-
-
-    /* Host playback, drift-compensated, only while the host streams. */
-    if (usb_audio_playing()) {
-        (void)usb_audio_trim(MAX_RING_FILL, &s_stats.fifo_drops);
-        (void)usb_audio_pull16(play, n, last, &s_stats.fifo_inserts);
-    } else {
-        memset(play, 0, n * 2 * sizeof play[0]);
-        last[0] = last[1] = 0;
-    }
 
     for (size_t i = 0; i < n; i++) {
         float l = s_block.data[0][i] + (float)play[i * 2 + 0] * (1.0f / 32768.0f);
