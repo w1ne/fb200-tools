@@ -178,7 +178,7 @@ $(TARGET)/%.S.o: %.S
 	$(CC) $(CFLAGS) -c $< -o $@
 
 layout: deps $(TARGET).elf
-	$(NM) $(TARGET).elf | grep -E '(_estack|__bss_|__blob_end__|stage2|app_main)' | sort > $(BUILD)/layout.txt
+	$(NM) $(TARGET).elf | grep -E '(_estack|__bss_|__blob_end__|__ocramdata_|__dtcmdata_|stage2|app_main)' | sort > $(BUILD)/layout.txt
 	cat $(BUILD)/layout.txt
 
 clean:

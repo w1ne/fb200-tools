@@ -36,6 +36,20 @@ def test_vectors_and_entry():
     assert len(blob) <= 0x1DBC8          # vendor entry 0 payload limit
 
 
+def test_data_blob_is_ocramdata_then_dtcmdata():
+    """The slot data blob (flash 0x60041000) holds the .ocramdata tables, then
+    the .dtcmdata tables; stage2_main copies each from its load address."""
+    build()
+    syms = symbols()
+    ocram = syms["__ocramdata_end__"] - syms["__ocramdata_start__"]
+    dtcm = syms["__dtcmdata_end__"] - syms["__dtcmdata_start__"]
+    assert syms["__ocramdata_load__"] == 0x60041000
+    assert syms["__dtcmdata_load__"] == 0x60041000 + ocram
+    assert syms["__dtcmdata_start__"] == 0x20018B44     # the startup probes this word
+    data = (fwbuild.build(FW) / "fb200-app.dtcmdata.bin").read_bytes()
+    assert len(data) == ocram + dtcm
+
+
 def test_bss_uses_the_stock_memset_region():
     build()
     syms = symbols()
