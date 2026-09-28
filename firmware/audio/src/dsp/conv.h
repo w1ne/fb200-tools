@@ -1,25 +1,31 @@
 #ifndef FB200_DSP_CONV_H
 #define FB200_DSP_CONV_H
 /* Uniformly partitioned overlap-save convolution (cab IRs) on CMSIS-DSP's
- * arm_rfft_fast_f32. Partition = DSP_BLOCK, FFT = 2 * DSP_BLOCK, so it adds
- * no latency; callers must pass exactly DSP_BLOCK samples per call. */
+ * arm_rfft_fast_f32. Partition = DSP_BLOCK, FFT = 2 * DSP_BLOCK: no latency.
+ * The caller owns the spectra storage (CONV_PARTS(taps) rows each), so every
+ * instance reserves only the IR length it needs. */
 #include <stddef.h>
 #include "arm_math.h"
 #include "dsp.h"
 
-#define CONV_N         (2 * DSP_BLOCK)   /* 64: conv_init uses the 64-point FFT */
-#define CONV_MAX_PARTS 64                        /* 2048 taps: 43 ms at 48 kHz */
-#define CONV_MAX_TAPS  (CONV_MAX_PARTS * DSP_BLOCK)
+#define CONV_N            (2 * DSP_BLOCK)   /* 64: conv_init uses the 64-point FFT */
+#define CONV_PARTS(taps)  (((taps) + DSP_BLOCK - 1) / DSP_BLOCK)
 
 typedef struct {
     arm_rfft_fast_instance_f32 fft;
-    unsigned parts, head;
-    float h[CONV_MAX_PARTS][CONV_N];             /* IR partition spectra (packed) */
-    float x[CONV_MAX_PARTS][CONV_N];             /* input spectra ring (FDL) */
-    float prev[DSP_BLOCK];                       /* previous input block */
+    float (*h)[CONV_N];          /* cap IR partition spectra (packed) */
+    float (*x)[CONV_N];          /* cap input spectra: ring (FDL), newest at head */
+    unsigned cap, parts, head, fill;
+    float in[CONV_N];            /* previous block | current block (fill samples) */
 } conv_t;
 
-int conv_init(conv_t *c);                        /* 0 on success */
-int conv_load(conv_t *c, const float *ir, size_t taps);   /* taps <= CONV_MAX_TAPS */
-void conv_process(conv_t *c, const float *in, float *out); /* DSP_BLOCK samples */
+/* h, x: cap rows each. Starts as a unit impulse with a clear history. */
+int conv_init(conv_t *c, float (*h)[CONV_N], float (*x)[CONV_N], unsigned cap);
+/* New IR (taps <= cap * DSP_BLOCK). Keeps the input history, as a FIR that
+ * swaps its coefficients: no reset, no click. 0 on success. */
+int conv_set_ir(conv_t *c, const float *ir, size_t taps);
+void conv_reset(conv_t *c);      /* clear the input history */
+/* Any n, in place allowed. Full blocks (fill 0, n = DSP_BLOCK) are the fast
+ * path; a part block costs a full block and stays exact (see conv.c). */
+void conv_process(conv_t *c, const float *in, float *out, size_t n);
 #endif

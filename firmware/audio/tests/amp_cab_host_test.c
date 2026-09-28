@@ -62,6 +62,41 @@ static void test_cab_fir(void)
     assert(maxerr < 1e-5);
 }
 
+/* An IR change mid-stream keeps the input history, as the old direct FIR
+ * (arm_fir_f32) that swaps its coefficients at the same block: no reset. */
+static void test_cab_swap(void)
+{
+    enum { LEN = 4000, SWAP = 40 * DSP_BLOCK };
+    static cab_t cab;
+    static float ir[2][CAB_TAPS], rev[CAB_TAPS], st[CAB_TAPS + DSP_BLOCK - 1];
+    static float x[LEN], y[LEN], ref[LEN];
+    for (int t = 0; t < 2; t++)
+        for (int i = 0; i < CAB_TAPS; i++) ir[t][i] = frand() * expf(-(float)i / (60.0f + 100 * t));
+    for (int i = 0; i < LEN; i++) x[i] = y[i] = frand();
+    arm_fir_instance_f32 fir;
+    for (int i = 0; i < CAB_TAPS; i++) rev[i] = ir[0][CAB_TAPS - 1 - i];
+    arm_fir_init_f32(&fir, CAB_TAPS, rev, st, DSP_BLOCK);
+    cab_init(&cab);
+    cab_set_ir(&cab, ir[0], 0.2f);
+    for (int i = 0; i < LEN; i += DSP_BLOCK) {
+        if (i == SWAP) {
+            cab_set_ir(&cab, ir[1], 0.2f);
+            for (int k = 0; k < CAB_TAPS; k++) rev[k] = ir[1][CAB_TAPS - 1 - k];
+        }
+        unsigned len = LEN - i < DSP_BLOCK ? (unsigned)(LEN - i) : DSP_BLOCK;
+        cab_process(&cab, y + i, len);
+        arm_fir_f32(&fir, x + i, ref + i, len);
+        arm_scale_f32(ref + i, (float)(0.2 * 1.15), ref + i, len);
+    }
+    double maxerr = 0, peak = 0;
+    for (int n = 0; n < LEN; n++) {
+        maxerr = fmax(maxerr, fabs((double)ref[n] - y[n]));
+        peak = fmax(peak, fabs(ref[n]));
+    }
+    printf("cab IR swap vs direct FIR: max err %.2e (peak %.2f)\n", maxerr, peak);
+    assert(peak > 0.1 && maxerr < 1e-5);
+}
+
 /* double-precision reference of the stock user-IR gain */
 static double ref_gain(const float *ir)
 {
@@ -98,6 +133,7 @@ int main(void)
 {
     test_passthrough();
     test_cab_fir();
+    test_cab_swap();
     test_user_ir_gain();
     printf("amp cab host tests OK\n");
     return 0;
