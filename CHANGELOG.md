@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Bass delay** (not in the stock): 20-1000 ms, feedback, mix, low cut on the
+  repeats (20-500 Hz), tone. Between MOD and reverb. Stock presets keep their sound:
+  the stock delay fields play only in presets with our marker (docs/PARITY.md M4).
+  Console: `delay [on|off] [time] [fb] [mix] [lowcut] [tone]`.
 - **LabWired twin** of the board as YAML (`labwired/`): MIMXRT1052 chip, FB200
   board, a smoke gate for the open smoke firmware and a stock-boot gate that
   boots the unmodified vendor firmware to USB enumeration. `tools/labwired_stock.py`
@@ -18,6 +22,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   app (colour and level per slot), live mode lights a dome per module that is on,
   the tuner turns them off, rhythm mode shows A/B held, the tempo on C and play on
   D. A save blinks the saved slot's dome for 1 s. Frames go out only on a change.
+
+### Changed
+
+- **DSP 2.4x less CPU:** CMSIS-DSP is built with its loop unrolling; the cab IR
+  runs 3.2x faster. Preset 0 (amp + cab) 36% -> 15% CPU; the heaviest preset 27%
+  average, 31% peak. Sound unchanged (amp + tone bit-exact with the stock, amp +
+  tone + cab -110 dB). Console: `prof` shows the cycles per chain stage.
+- Tests: `pytest` runs in under a minute; the slow stock-DSP parity tests are
+  `pytest -m stock`, run nightly by `tools/nightly_stock.sh`.
 
 ## [0.7.0] - 2026-09-27
 

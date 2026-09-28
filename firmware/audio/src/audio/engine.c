@@ -9,6 +9,7 @@
  * the real chain (EQ, amp sim, ...) lands in later milestones. */
 #include <string.h>
 #include "audio/engine.h"
+#include "debug/cdc_log.h"
 #include "audio/audio_config.h"
 
 
@@ -29,6 +30,7 @@
 #include "dsp/comp.h"
 #include "dsp/mod.h"
 #include "dsp/reverb.h"
+#include "dsp/delay.h"
 #include "preset/preset.h"
 #include "fsl_sai.h"
 #include "tusb.h"
@@ -110,12 +112,23 @@ static gate_t s_gate;
 static comp_t s_comp;
 static mod_t s_mod;
 static reverb_t s_rev;
+/* Our bass delay (docs/PARITY.md M4). Its 96 kB line does not fit in DTCM:
+ * OCRAM, linker.ld .ocram (cached; one line access per sample). */
+static delay_t s_dly;
+static int16_t s_dly_line[DELAY_LEN] __attribute__((section(".ocram")));
+static bool s_dly_en;
 static bool s_amp_en, s_cab_en, s_gate_en, s_comp_en, s_mod_en, s_rev_en;
 static int s_amp_model = -1, s_cab_type = -1;
 static float s_master = 1.0f, s_master_target = 1.0f;
 static float s_ir[CAB_TAPS];
 static bool s_testgen_in;               /* testgen feeds the chain input */
 static uint32_t s_cyc_max, s_cyc_sum, s_cyc_n;   /* DWT cycles per block */
+/* `prof`: DWT cycles per chain stage, summed over blocks (engine_profile) */
+enum { P_IN, P_TUNER, P_GATE, P_COMP, P_AMP, P_CAB, P_MOD, P_DELAY, P_REVERB, P_MIX,
+       P_DRUMS, P_USB_IN, P_OUT, P_COUNT };
+static uint32_t s_prof[P_COUNT], s_prof_n, s_prof_t;
+#define PROF(stage) do { uint32_t now_ = DWT->CYCCNT; s_prof[stage] += now_ - s_prof_t; \
+                         s_prof_t = now_; } while (0)
 static uint32_t s_drop_tx_blocks;
 static uint32_t s_meter_last_ms;
 
@@ -145,6 +158,7 @@ void engine_init(void)
     comp_init(&s_comp, (float)AUDIO_FS);
     mod_init(&s_mod, (float)AUDIO_FS);
     reverb_init(&s_rev, (float)AUDIO_FS);
+    delay_init(&s_dly, (float)AUDIO_FS, s_dly_line);
     static drums_data_t rhythms;
     if (g_stock) drums_data_from_stock(&rhythms, g_stock);
     drums_init(&s_drums, (const void *)DRUMS_BANK_ADDR, g_stock ? &rhythms : NULL);  /* NULL: silent */
@@ -164,6 +178,7 @@ void engine_dsp_reset(void)
     comp_init(&s_comp, (float)AUDIO_FS);
     mod_init(&s_mod, (float)AUDIO_FS);
     reverb_init(&s_rev, (float)AUDIO_FS);
+    delay_init(&s_dly, (float)AUDIO_FS, s_dly_line);
     s_amp_model = s_cab_type = -1;
     s_reapply = true;
 }
@@ -221,6 +236,14 @@ void engine_apply_preset(const preset_t *p, unsigned master)
     s_rev_en = pget(p, P_REV_EN) != 0;
     reverb_set_params(&s_rev, pget(p, P_REV_TYPE), pget(p, P_REV_LEVEL), pget(p, P_REV_DECAY),
                       pget(p, P_REV_AE), pget(p, P_REV_A8));
+    /* Stock presets have the delay "on" but the stock never plays it: only
+     * presets with our marker play (preset.h preset_delay_on). Switching it
+     * on starts from a silent line, not from old audio. */
+    bool dly = preset_delay_on(p);
+    if (dly && !s_dly_en) delay_clear(&s_dly);
+    delay_set_params(&s_dly, pget(p, P_DLY_TIME), pget(p, P_DLY_FB), pget(p, P_DLY_MIX),
+                     pget(p, P_DLY_LOWCUT), pget(p, P_DLY_TONE));
+    s_dly_en = dly;
     s_master_target = (float)(master > 100u ? 100u : master) * 0.01f;
 }
 void engine_apply_settings(const settings_t *s)
@@ -263,6 +286,22 @@ void engine_cycles(uint32_t *avg, uint32_t *max, uint32_t *budget)
     *max = s_cyc_max;
     *budget = (uint32_t)((uint64_t)SystemCoreClock * ENGINE_FRAMES / AUDIO_FS);
     s_cyc_sum = s_cyc_n = s_cyc_max = 0;
+}
+
+void engine_profile(void)
+{
+    static const char *const names[P_COUNT] = {
+        "in", "tuner", "gate", "comp", "amp", "cab", "mod", "delay", "reverb", "mix",
+        "drums", "usb-in", "out",
+    };
+    uint32_t n = s_prof_n ? s_prof_n : 1u;
+    for (int i = 0; i < P_COUNT; i++) {
+        log_printf("prof %s %lu cycles/block\r\n", names[i], (unsigned long)(s_prof[i] / n));
+        s_prof[i] = 0;
+    }
+    log_printf("prof over %lu blocks (budget %lu)\r\n", (unsigned long)s_prof_n,
+               (unsigned long)((uint64_t)SystemCoreClock * ENGINE_FRAMES / AUDIO_FS));
+    s_prof_n = 0;
 }
 
 void engine_set_testgen(int mode, float amp, float freq)
@@ -357,6 +396,7 @@ void engine_task(void)
      * 0 dB that is x 0.9999702 (a unity gain whose smoother stalls there -
      * needed for bit parity, tests/test_stock_dsp_parity.py). */
     uint32_t t0 = DWT->CYCCNT;
+    s_prof_t = t0;
     float x[ENGINE_FRAMES];
     if (s_testgen_in && s_testgen.mode != TESTGEN_OFF) {   /* test signal into the chain */
         memset(&s_block, 0, sizeof s_block);
@@ -364,17 +404,28 @@ void engine_task(void)
         for (size_t i = 0; i < n; i++) s_block.data[1][i] = 0.0f;   /* mono source on L */
     }
     for (size_t i = 0; i < n; i++) x[i] = s_block.data[0][i] + s_block.data[1][i];
+    PROF(P_IN);
     tuner_feed(&s_tuner, x, n);
+    PROF(P_TUNER);
     for (size_t i = 0; i < n; i++) x[i] *= dsp_knob_next(&s_in_gain);
-    /* stock chain (ITCM 0x7b60): gate -> comp -> amp -> cab -> mod -> reverb */
+    /* stock chain (ITCM 0x7b60): gate -> comp -> amp -> cab -> mod -> reverb;
+     * our delay goes between mod and reverb (off: the stock chain exactly) */
     if (s_gate_en) gate_process(&s_gate, x, (unsigned)n);
+    PROF(P_GATE);
     if (s_comp_en) comp_process(&s_comp, x, (unsigned)n);
+    PROF(P_COMP);
     if (s_amp_en) amp_process(&s_amp, x, (unsigned)n);
+    PROF(P_AMP);
     if (s_cab_en && !s_cab_bypass) cab_process(&s_cab, x, (unsigned)n);
+    PROF(P_CAB);
     if (s_mod_en) mod_process(&s_mod, x, (unsigned)n);
+    PROF(P_MOD);
+    if (s_dly_en) delay_process(&s_dly, x, (unsigned)n);
+    PROF(P_DELAY);
     float xl[ENGINE_FRAMES], xr[ENGINE_FRAMES];
     if (s_rev_en) reverb_process(&s_rev, x, xl, xr, (unsigned)n);   /* mono in, L/R out */
     else { memcpy(xl, x, n * sizeof x[0]); memcpy(xr, x, n * sizeof x[0]); }
+    PROF(P_REVERB);
     /* Never get stuck silent: one NaN/inf in a filter state keeps a chain
      * outputting NaN (which reaches the DAC as 0). Reset the DSP state and
      * re-apply the preset on the next main-loop pass. */
@@ -404,10 +455,12 @@ void engine_task(void)
     if (s_meters) {
         update_meters(&s_block, n);
     }
+    PROF(P_MIX);
 
     /* Drums before the capture tap: the stock leaves them out of the USB
      * recording; a user playing along wants them in (better than stock). */
     if (!s_tuner_on) drums_process_stereo(&s_drums, s_block.data[0], s_block.data[1], n);
+    PROF(P_DRUMS);
 
     /* USB capture: chain + Bluetooth audio + drums. */
     {
@@ -418,6 +471,7 @@ void engine_task(void)
         }
         usb_audio_push(fb, n);
     }
+    PROF(P_USB_IN);
 
 
     /* Host playback, drift-compensated, only while the host streams. */
@@ -438,6 +492,8 @@ void engine_task(void)
         out[i * 2 + 0] = (int16_t)(l * 32767.0f);
         out[i * 2 + 1] = (int16_t)(r * 32767.0f);
     }
+    PROF(P_OUT);
+    s_prof_n++;
     uint32_t dt = DWT->CYCCNT - t0;
     s_cyc_sum += dt;
     s_cyc_n++;

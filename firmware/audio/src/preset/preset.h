@@ -28,7 +28,21 @@ enum {
     P_MOD_P4 = 0x7e,
     P_REV_EN = 0xa4, P_REV_TYPE = 0xa6, P_REV_A8 = 0xa8, P_REV_LEVEL = 0xaa, P_REV_DECAY = 0xac,
     P_REV_AE = 0xae,
+    /* Delay block (fn 0x85): stock fields 0x8c..0x94, our fields 0x96..0x9a
+     * (see preset_delay_on) */
+    P_DLY_EN = 0x8c, P_DLY_TYPE = 0x8e, P_DLY_MIX = 0x90, P_DLY_FB = 0x92, P_DLY_TIME = 0x94,
+    P_DLY_MARK = 0x96, P_DLY_LOWCUT = 0x98, P_DLY_TONE = 0x9a,
 };
+
+/* The stock format has a delay block (fn 0x85: en, type, mix, feedback,
+ * time ms) that the stock DSP ignores, and every factory preset has it on
+ * (mix 9, feedback 18, 490 ms). Playing it would change every stock preset.
+ * So the delay plays only when our marker is also set: u16 0x4c44 ("DL") at
+ * 0x96, the first unused word of the delay block. It is 0 in every factory
+ * preset, and the stock audio path ignores it (tests/test_delay.py). Our
+ * delay sets it; the app's 0x85 block (0x8c..0x95) leaves it alone, so after
+ * that the app switches and edits the delay. docs/PARITY.md M4. */
+#define DLY_MARK 0x4c44u
 
 /* Global settings offsets. */
 enum { S_PRESET = 0x16, S_BT = 0x17, S_MASTER = 0x18, S_IN_GAIN = 0x1a, S_STOMP = 0x1f,
@@ -47,6 +61,11 @@ static inline void pset(preset_t *p, unsigned off, uint16_t v)
 {
     p->b[off] = (uint8_t)v;
     p->b[off + 1] = (uint8_t)(v >> 8);
+}
+
+static inline bool preset_delay_on(const preset_t *p)
+{
+    return pget(p, P_DLY_MARK) == DLY_MARK && pget(p, P_DLY_EN) != 0;
 }
 
 void preset_read(unsigned index, preset_t *out);         /* from flash */

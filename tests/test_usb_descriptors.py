@@ -6,6 +6,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import fwbuild
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,8 +25,7 @@ CS_AC_FEATURE_UNIT, CS_AC_CLOCK_SOURCE = 0x06, 0x0A
 
 
 def descriptor() -> bytes:
-    subprocess.run(["make", "clean", "build"], cwd=FW, check=True,
-                   capture_output=True)
+    fwbuild.build(FW)
     nm = subprocess.run(["arm-none-eabi-nm", str(ELF)], check=True,
                         capture_output=True, text=True).stdout
     addr = next(int(line.split()[0], 16) for line in nm.splitlines()

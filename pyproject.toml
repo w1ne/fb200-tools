@@ -15,8 +15,8 @@ dependencies = []
 [project.optional-dependencies]
 hid = ["hidapi>=0.14"]
 dev = ["pytest>=8", "ruff>=0.6", "numpy>=1.26", "scipy>=1.11", "sounddevice>=0.4.6"]
-# stock-DSP parity tests (tests/test_fx_parity.py; also need fb200-stock.mr)
-stock = ["unicorn>=2.1", "capstone>=5.0", "numpy>=1.26"]
+# stock-DSP parity tests (pytest -m stock, tools/nightly_stock.sh; also need fb200-stock.mr)
+stock = ["unicorn>=2.1", "capstone>=5.0", "numpy>=1.26", "pytest-xdist>=3"]
 
 [project.scripts]
 fb200 = "fb200.cli:main"
@@ -30,5 +30,8 @@ target-version = "py310"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["hardware: requires a connected FB200 pedal"]
-addopts = "-m 'not hardware'"
+markers = [
+    "hardware: requires a connected FB200 pedal",
+    "stock: slow stock-DSP emulation (unicorn + fb200-stock.mr); nightly: pytest -m stock",
+]
+addopts = "-m 'not hardware and not stock'"

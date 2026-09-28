@@ -5,10 +5,12 @@ user's own fb200-stock.mr and compare. They SKIP with a reason when the .mr or
 unicorn/capstone are missing and must pass when both are present.
 """
 
+import functools
 import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -16,7 +18,6 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 FW = ROOT / "firmware" / "audio"
-OUT = FW / "build" / "drums_tuner_host_test"
 sys.path.insert(0, str(Path(__file__).parent))
 
 import stock_emu
@@ -31,9 +32,10 @@ SRC = [FW / "tests" / "drums_tuner_host_test.c", FW / "src" / "dsp" / "drums.c",
 CFLAGS = ["-O2", "-Wall", "-Wextra", "-Werror", "-ffp-contract=off", "-I", str(FW / "src")]
 
 
+@functools.cache
 def build() -> Path:
-    exe = OUT
-    exe.parent.mkdir(parents=True, exist_ok=True)
+    """Once per process, in its own dir: parallel workers (pytest -n) do not collide."""
+    exe = Path(tempfile.mkdtemp(prefix="drums_tuner_")) / "drums_tuner_host_test"
     subprocess.run(["cc", *CFLAGS, *map(str, SRC), "-lm", "-o", str(exe)], check=True)
     return exe
 
@@ -68,7 +70,7 @@ def tone(f: float, secs: float, amp: float, pre: int) -> np.ndarray:
 
 
 def run_tuner(exe: Path, x: np.ndarray, a4: int = 440) -> list[dict]:
-    path = OUT.parent / "tuner_in.f32"
+    path = exe.parent / "tuner_in.f32"
     x.astype("<f4").tofile(path)
     out = subprocess.run([str(exe), "tuner", str(path), str(a4)], capture_output=True, text=True,
                          check=True).stdout
@@ -91,6 +93,7 @@ def test_blob_reads_the_stock_image(stock_blob):
     assert len(blob) == 59276 + 21 * 256
 
 
+@pytest.mark.stock
 @pytest.mark.parametrize("rhythm,bpm,secs,block", [(0, 110, 3.0, 32), (7, 180, 2.0, 8),
                                                    (39, 60, 3.0, 13), (21, 260, 1.5, 32)])
 def test_drums_match_stock(stock_blob, rhythm, bpm, secs, block):
@@ -99,9 +102,9 @@ def test_drums_match_stock(stock_blob, rhythm, bpm, secs, block):
     st = stock_emu.StockDrums(rhythm, bpm)
     n_blocks = int(FS * secs) // 8
     ref = st.render(n_blocks)
-    bank = OUT.parent / "drum_bank.bin"
+    bank = exe.parent / "drum_bank.bin"
     bank.write_bytes(st.bank_raw)                   # block 1 as flashed: header layout
-    out = OUT.parent / "drums_out.f32"
+    out = exe.parent / "drums_out.f32"
     subprocess.run([str(exe), "drums", str(bank), str(rhythm), str(bpm), str(n_blocks * 8),
                     str(out), str(block)], check=True,
                    env={**os.environ, "FB200_STOCK_BLOB": str(stock_blob)})
@@ -112,6 +115,7 @@ def test_drums_match_stock(stock_blob, rhythm, bpm, secs, block):
     assert diff <= 1e-6
 
 
+@pytest.mark.stock
 @pytest.mark.parametrize("name,freq,note", [("B0", 30.8677, 2), ("E1", 41.2034, 7),
                                             ("A2", 110.0, 12)])
 def test_tuner_matches_stock(name, freq, note):

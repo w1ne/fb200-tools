@@ -32,7 +32,7 @@ No vendor bytes are copied here, only addresses, field offsets and behaviour.
 | Compressor | one type, "CS Comp": THRESH, LEVEL knobs; attack/ratio from the app; `P+0x16` type **no effect** | [M] p.10, [E] |
 | MOD | 12 types: Phaser, Step Phaser, Flanger, Jet Flanger, Tremolo, Stutter Tremolo, Vibrato, Rotary, Analog Chorus, Multi Chorus, Ring Mod, Filter; RATE, MIX knobs; p3/p4 from the app; `P+0x80` **no effect** | [M] p.20, [E] |
 | Reverb | 5 types: Room, Hall, Plate, Spring, Mod; LEVEL knob; decay/tone from the app | [M] p.21 |
-| Delay | **none audible.** Protocol `0x85`, preset fields `P+0x8c..0x94` (7 types, 40-2500 ms) exist and every factory preset has it "on", but the DSP output does not change | [D] PROTOCOL §5.3, [E] (all 7 types), [M] (no delay listed) |
+| Delay | **none audible.** Protocol `0x85`, preset fields `P+0x8c..0x94` (7 types, 40-2500 ms) exist and every factory preset has it "on", but the DSP output does not change. Ours: opt-in, `PARITY.md` M4 | [D] PROTOCOL §5.3, [E] (all 7 types), [M] (no delay listed) |
 | Effect count | "19 effect models" = gate + comp + 12 MOD + 5 reverb | [M] p.4 |
 | Input gain | `S+0x1a`, 26-entry table (DTCM 0x20007770): 0 = mute, 1-11 = -55..-5 dB in 5 dB steps, 12 and 13 (default) = 0 dB, 14-25 = +0.5..+6 dB; smoothed y = t*0.001 + y*0.999 (callback 0x17ffe); set by the app (`B0`). `S+0x1d` indexes the same table (0x18020, use unknown) | [E] (`IN_GAIN_TAB`, output changes), [C], [D] |
 | Master | MASTER knob, `S+0x18` | [D] |
