@@ -44,6 +44,9 @@ extern volatile float g_meter_peak[2];
 void engine_set_tuner(bool on);
 bool engine_tuner_poll(tuner_result_t *out);   /* main loop */
 drums_t *engine_drums(void);
+/* Our EQ (dsp/eq.h), for the console `eq` (main loop, as engine_task). */
+struct eq_s;
+struct eq_s *engine_eq(void);
 /* Apply a preset (stock layout) and the master volume 0..100 to the chain. */
 #include "preset/preset.h"
 void engine_apply_preset(const preset_t *p, unsigned master);
