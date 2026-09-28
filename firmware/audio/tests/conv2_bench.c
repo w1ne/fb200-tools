@@ -27,6 +27,8 @@ void bench_setup(void)
 
 void bench_set_ir(unsigned taps) { (void)conv2_set_ir(&s_c, s_ir, taps); }
 
+int bench_pending(void) { return conv2_pending(&s_c); }
+
 /* One block through conv2 (next slice of the frame) */
 void bench_block(void)
 {
@@ -63,6 +65,7 @@ int main(void)
     static double t[CONV2_SLICES];
     bench_setup();
     bench_set_ir(CONV2_MAX_TAPS);
+    conv2_finish(&s_c);
     for (unsigned f = 0; f < FRAMES; f++)
         for (unsigned k = 0; k < CONV2_SLICES; k++) {
             double t0 = now();

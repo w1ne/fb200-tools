@@ -67,16 +67,22 @@ float cab_user_ir_gain(const float *ir)
     return sum == 0.0f ? 1.0f : 100.0f / sum;
 }
 
-void cab_process(cab_t *c, float *x, unsigned n)
+/* A long IR's gain takes over with the IR: it swaps at the end of a block
+ * (the engine's 32-sample blocks), or in conv2_finish */
+static void scale_swap(cab_t *c)
 {
-    if (!c->active || n == 0) return;
-    if (n > DSP_BLOCK) n = DSP_BLOCK;
-    conv2_process(&c->conv, x, x, n);
-    arm_scale_f32(x, c->scale, x, n);
-    /* a long IR swaps at the end of a block (32-sample blocks), so its gain
-     * takes over from the next one */
     if (c->scale_due && !conv2_pending(&c->conv)) {
         c->scale = c->next_scale;
         c->scale_due = 0;
     }
+}
+
+void cab_process(cab_t *c, float *x, unsigned n)
+{
+    if (!c->active || n == 0) return;
+    if (n > DSP_BLOCK) n = DSP_BLOCK;
+    scale_swap(c);
+    conv2_process(&c->conv, x, x, n);
+    arm_scale_f32(x, c->scale, x, n);
+    scale_swap(c);
 }
