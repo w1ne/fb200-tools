@@ -110,11 +110,15 @@ def read_wav(source) -> tuple[list[list[float]], int]:
     return [decoded[c::channels] for c in range(channels)], rate
 
 
-def write_wav(path, samples, sample_rate: int = IR_SAMPLE_RATE) -> None:
-    """Write mono 32-bit float WAV (format 3), readable by any IR loader."""
-    count = len(samples)
-    data = struct.pack(f"<{count}f", *samples)
-    fmt = struct.pack("<HHIIHHH", 3, 1, sample_rate, sample_rate * 4, 4, 32, 0)
+def write_wav(path, frames, sample_rate: int = IR_SAMPLE_RATE) -> None:
+    """Write 32-bit float WAV (format 3), readable by any IR loader. ``frames``:
+    samples (mono), or one tuple per frame (a channel each)."""
+    rows = [f if isinstance(f, (tuple, list)) else (f,) for f in frames]
+    channels = len(rows[0]) if rows else 1
+    count = len(rows)
+    data = struct.pack(f"<{count * channels}f", *(v for row in rows for v in row))
+    fmt = struct.pack("<HHIIHHH", 3, channels, sample_rate, sample_rate * 4 * channels,
+                      4 * channels, 32, 0)
     body = b"WAVE"
     body += b"fmt " + struct.pack("<I", len(fmt)) + fmt
     body += b"fact" + struct.pack("<II", 4, count)

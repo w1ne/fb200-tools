@@ -172,6 +172,36 @@ tests with `.venv/bin/pytest` (under a minute). The slow stock-DSP parity tests
 (`-m stock`: unicorn emulation of the stock firmware, need `.[stock]` and your
 `fb200-stock.mr` in `FB200_STOCK_MR`) run nightly: `tools/nightly_stock.sh`.
 
+## MCP server
+
+`fb200 mcp` lets an AI agent (Claude Code, Claude Desktop) drive the pedal with the open
+firmware over USB. It is an [MCP](https://modelcontextprotocol.io) server on stdio.
+
+```bash
+pip install 'fb200-tools[mcp]'          # add numpy sounddevice for audio_test
+claude mcp add fb200 -- fb200 mcp
+```
+
+| Tool | What it does |
+| --- | --- |
+| `pedal_status`, `pedal_info` | firmware, engine stats, current preset, USB audio state; versions |
+| `console` | run one console command (the tool description lists the command set) |
+| `preset`, `save_preset` | show or select preset 0..39; store the edit buffer |
+| `get_effects` | all effect blocks of the edit buffer |
+| `set_amp`, `set_cab`, `set_comp`, `set_gate`, `set_mod`, `set_reverb` | change fields of one block (app protocol, HID); returns the block read back |
+| `set_delay`, `set_output`, `drums`, `tuner` | bass delay, output gain and mute, drum machine, tuner |
+| `cpu_profile`, `crash_dump` | CPU cycles per chain stage (`prof`); the last crash dump |
+| `ir_list`, `ir_import` | user IR slots; import a WAV into a slot |
+| `audio_test` | play a test signal, capture the USB audio, return RMS, peak, THD (sine) or an octave-band response; can save a WAV |
+
+`audio_test` uses the firmware test generator (`tin`, into the chain input) by default,
+so the capture holds all effects. With `source="usb"` the host plays the signal. The
+firmware mixes USB playback into the analog output after the effects, not into the
+capture, so this mode hears the signal only if the firmware routes it into the chain.
+
+The tools do not flash firmware (use `fb200 update`). One lock serializes all access to
+the pedal. Edits change the live preset until `save_preset`.
+
 ## Documentation
 
 | Document | Contents |

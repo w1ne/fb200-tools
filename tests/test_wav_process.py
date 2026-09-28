@@ -10,6 +10,7 @@ import pytest
 
 from fb200 import cli
 from fb200.errors import WavError
+from fb200.pedal import FB200Device
 from fb200.wav import (
     IR_LENGTH,
     align_lag,
@@ -336,6 +337,8 @@ def test_cli_ir_process_default_is_stock_shape(tmp_path):
 
 
 class FakeDevice:
+    import_wav = FB200Device.import_wav      # the real conversion, fake upload
+
     def __init__(self):
         self.calls = []
         self.transport = type("T", (), {"close": lambda self: None})()
