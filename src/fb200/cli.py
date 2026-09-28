@@ -78,16 +78,11 @@ def _cmd_ir_delete(args) -> int:
 
 
 def _cmd_ir_import(args) -> int:
-    from fb200.wav import wav_to_ir
-
-    samples = wav_to_ir(args.wav)
-    name = args.name or Path(args.wav).stem
-
     def progress(done: int, total: int) -> None:
         print(f"\rframe {done}/{total}", end="", file=sys.stderr)
 
     with _with_device() as device:
-        device.ir_import(args.slot, name, samples, progress=progress)
+        name = device.import_wav(args.slot, args.wav, args.name, progress=progress)
     print(f"\nimported '{name}' into slot {args.slot}", file=sys.stderr)
     return 0
 
@@ -337,6 +332,13 @@ def _cmd_crash(args) -> int:
     return 0
 
 
+def _cmd_mcp(args) -> int:
+    from fb200.mcp_server import serve
+
+    serve(args.port)
+    return 0
+
+
 def _cmd_fw_twostage(args) -> int:
     from fb200 import images, release
 
@@ -477,6 +479,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_crash.add_argument("--elf", help="the ELF that crashed, e.g. firmware/audio/build/fb200-app.elf")
     p_crash.add_argument("--port")
     p_crash.set_defaults(func=_cmd_crash)
+
+    p_mcp = sub.add_parser("mcp", help="MCP server on stdio: an AI agent drives the pedal "
+                                       "(needs the mcp extra)")
+    p_mcp.add_argument("--port", help="CDC device (default: /dev/cu.usbmodemAUDIO*)")
+    p_mcp.set_defaults(func=_cmd_mcp)
 
     p_up = sub.add_parser("update", help="flash the open firmware over its USB console (no A+D)")
     p_up.add_argument("target", choices=["app", "recovery", "stock", "block0"],

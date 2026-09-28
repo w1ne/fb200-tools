@@ -98,12 +98,36 @@ def _resample_linear(samples: list[float], src_rate: int, dst_rate: int) -> list
     return out
 
 
+def read_wav(path, sample_rate: int = IR_SAMPLE_RATE) -> list[float]:
+    """Channel 0 of a WAV file, resampled to sample_rate."""
+    audio_format, channels, rate, bits, data = _read_wav(Path(path))
+    decoded = _decode(data, audio_format, bits)
+    return _resample_linear(decoded[0::channels], rate, sample_rate)
+
+
+def write_wav(path, frames, sample_rate: int) -> None:
+    """Write float frames (a list of samples, or of per-channel tuples) as
+    16-bit PCM."""
+    rows = [f if isinstance(f, (tuple, list)) else (f,) for f in frames]
+    channels = len(rows[0]) if rows else 1
+    pcm = bytearray()
+    for row in rows:
+        for v in row:
+            pcm += struct.pack("<h", max(-32768, min(32767, round(float(v) * 32767))))
+    fmt = struct.pack("<HHIIHH", 1, channels, sample_rate, sample_rate * channels * 2,
+                      channels * 2, 16)
+    body = b"WAVE" + b"fmt " + struct.pack("<I", len(fmt)) + fmt \
+        + b"data" + struct.pack("<I", len(pcm)) + bytes(pcm)
+    try:
+        Path(path).write_bytes(b"RIFF" + struct.pack("<I", len(body)) + body)
+    except OSError as exc:
+        raise WavError(f"cannot write {path}: {exc}") from exc
+
+
 def wav_to_ir(path, length: int = IR_LENGTH, sample_rate: int = IR_SAMPLE_RATE) -> list[float]:
     if length <= 0:
         raise WavError("invalid IR length")
-    audio_format, channels, rate, bits, data = _read_wav(Path(path))
-    decoded = _decode(data, audio_format, bits)
-    channel0 = _resample_linear(decoded[0::channels], rate, sample_rate)
+    channel0 = read_wav(path, sample_rate)
     out = [0.0] * length
     for i in range(min(len(channel0), length)):
         out[i] = channel0[i]

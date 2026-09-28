@@ -25,76 +25,15 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+from fb200.audio import exp_sweep, latency_ms, sweep_response, thd_plus_n
+
 FS = 48000
 SWEEP_F1, SWEEP_F2, SWEEP_DUR = 20.0, 20000.0, 5.0
 THD_FREQ, THD_AMP = 1000.0, 0.5  # -6 dBFS
 CAPTURE_PAD = 0.5  # extra capture time after playback
 
-
-# ---------------------------------------------------------------- signals
-
-
-def exp_sweep(fs: int, f1: float, f2: float, dur: float, amp: float) -> np.ndarray:
-    """Farina exponential sweep with short fades."""
-    n = int(fs * dur)
-    t = np.arange(n) / fs
-    k = np.log(f2 / f1)
-    x = amp * np.sin(2.0 * np.pi * f1 * dur / k * (np.exp(t / dur * k) - 1.0))
-    fade = min(int(0.01 * fs), n // 8)
-    if fade:
-        ramp = np.linspace(0.0, 1.0, fade)
-        x[:fade] *= ramp
-        x[-fade:] *= ramp[::-1]
-    return x
-
-
-def sweep_response(rec: np.ndarray, fs: int, f1: float, f2: float, dur: float,
-                   amp: float) -> tuple[np.ndarray, np.ndarray]:
-    """Frequency response via regularized frequency-domain deconvolution.
-
-    The excitation is known exactly, so dividing its spectrum out recovers the
-    system impulse response without inverse-filter approximations. The
-    regularization keeps the silent band edges from blowing up.
-    """
-    x = exp_sweep(fs, f1, f2, dur, amp)
-    n = 1 << int(np.ceil(np.log2(len(x) + len(rec))))
-    X = np.fft.rfft(x, n)
-    R = np.fft.rfft(rec, n)
-    H = R * np.conj(X) / (np.abs(X) ** 2 + 1e-3)
-    ir = np.fft.irfft(H, n)
-    start = len(x) - 1
-    win = ir[start:start + int(1.0 * fs)]
-    n_fft = 1 << 15
-    spec = np.fft.rfft(win * np.hanning(len(win)), n=n_fft)
-    freqs = np.fft.rfftfreq(n_fft, 1.0 / fs)
-    mag = 20.0 * np.log10(np.abs(spec) + 1e-12)
-    band = (freqs > 500) & (freqs < 4000)
-    mag -= np.mean(mag[band])
-    return freqs, mag
-
-
-def thd_plus_n(rec: np.ndarray, fs: int, freq: float) -> dict:
-    """THD+N and fundamental level for a steady sine capture."""
-    n = 1 << 16
-    seg = rec[-n:] if len(rec) >= n else rec
-    w = seg * np.hanning(len(seg))
-    spec = np.abs(np.fft.rfft(w)) ** 2
-    freqs = np.fft.rfftfreq(len(seg), 1.0 / fs)
-    fund = int(np.argmin(np.abs(freqs - freq)))
-    half = 3
-    fund_power = float(np.sum(spec[max(0, fund - half):fund + half + 1]))
-    total = float(np.sum(spec))
-    rest = max(total - fund_power, 0.0)
-    thdn = np.sqrt(rest / fund_power) if fund_power > 0 else float("inf")
-    # One-sided amplitude: 2*peak/coherent gain (the Hann lobe spreads the
-    # power over several bins, so use the peak bin, not the summed power).
-    peak = float(np.max(np.sqrt(spec[max(0, fund - 3):fund + 4])))
-    ref = 2.0 * peak / np.sum(np.hanning(len(seg)))
-    return {
-        "fundamental_dbfs": 20.0 * np.log10(ref + 1e-12),
-        "thd_plus_n_pct": 100.0 * thdn,
-        "thd_plus_n_db": 20.0 * np.log10(thdn + 1e-12),
-    }
+# The analysis (sweep, THD+N, latency) lives in src/fb200/audio.py.
 
 
 def a_weighting(fs: int):
@@ -124,13 +63,6 @@ def noise_metrics(rec: np.ndarray, fs: int) -> dict:
         "rms_dbfs": 20.0 * np.log10(rms + 1e-12),
         "rms_a_dbfs": 20.0 * np.log10(rms_a + 1e-12),
     }
-
-
-def latency_ms(play: np.ndarray, rec: np.ndarray, fs: int) -> float:
-    """Round-trip latency via cross-correlation of an impulse."""
-    corr = np.correlate(rec, play, mode="full")
-    lag = int(np.argmax(np.abs(corr))) - (len(play) - 1)
-    return 1000.0 * lag / fs
 
 
 # ---------------------------------------------------------------- device io
