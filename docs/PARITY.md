@@ -24,7 +24,7 @@ Status words:
 | --- | --- | --- |
 | Fixed chain gate -> comp -> amp -> cab -> MOD -> reverb -> master -> clip | DONE | `audio/engine.c` `engine_task`; played on the pedal (M2) |
 | 10 amp models + tone stack (bass, mid, mid freq, treble, gain, vol) | DONE | `dsp/amp.c`, `dsp/tone.c`; bit-exact, `tests/test_stock_dsp_parity.py` |
-| 10 cabs (512-tap FIR) | DONE | `dsp/cab.c`; -110 dB, `tests/test_stock_dsp_parity.py` |
+| 10 cabs (512-tap FIR) | DONE | `dsp/cab.c` on the partitioned FFT convolver `dsp/conv.c` (no latency); -110 dB, `tests/test_stock_dsp_parity.py` |
 | 9 user IR slots (cab 11-19) | DONE, BETTER | `engine.c` `load_user_ir`; an empty slot bypasses the cab (stock: silence) |
 | Noise gate | DONE | `dsp/gate.c`; bit-exact, `tests/test_fx_parity.py` |
 | Compressor "CS Comp" | DONE | `dsp/comp.c`; <= -135 dB, `tests/test_fx_parity.py` |
@@ -236,7 +236,8 @@ static instance of each):
 | all four | 15.7 kB | 62.6 kB |
 
 With the full chain in the engine (commit 189c2e0), DTCM is 211 of 219 kB
-(reverb and MOD delay lines): RAM is the tight limit.
+(reverb and MOD delay lines): RAM is the tight limit. With the cab on the
+FFT convolver it is 218 of 219 kB (the user IR staging buffer moved to OCRAM).
 
 ## Roadmap
 
@@ -265,8 +266,9 @@ Budgets on this chip: 600 MHz / 44.1 kHz = 13.6k cycles per sample; RAM
   bass chain additions: crossover clean-blend drive, 5-7 band EQ + HPF/LPF,
   delay (the stock has none: its delay fields do nothing; first version
   done, see [below](#m4-bass-delay)), better tuner.
-- **M5 - IR engine:** up to 4096 taps (partitioned convolution, already in
-  `dsp/conv.c`), WAV import, 50+ slots, low/high cut, dual-IR blend.
+- **M5 - IR engine:** up to 4096 taps (the cab already runs on the
+  partitioned convolver `dsp/conv.c`; raise `CAB_PARTS`. Each 32 taps cost
+  512 B of spectra, so 4096 taps need 64 kB: OCRAM), WAV import, 50+ slots, low/high cut, dual-IR blend.
 - **M6 - open ecosystem:** done: documented protocol (`PROTOCOL.md`),
   browser firmware update (v0.6.0, WebHID + Web Serial). Open:
   class-compliant USB MIDI, WebMIDI/WebHID editor (self-describing blocks),

@@ -40,7 +40,7 @@ int conv_set_ir(conv_t *c, const float *ir, size_t taps)
 /* One step of n <= DSP_BLOCK - fill samples. Packed spectra (CMSIS
  * rfft_fast): [DC, Nyquist, re1, im1, ...]; DC and Nyquist are real, so bin
  * 0 is two real products. A part block zero-pads the rest of the current
- * block: output j reads input j-31..j only, so the result is exact, and
+ * block: output j needs input up to j only, so the result is exact, and
  * x[head] is written again until the block is full. */
 static void step(conv_t *c, const float *in, float *out, size_t n)
 {

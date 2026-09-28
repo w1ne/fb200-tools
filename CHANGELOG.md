@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Cab IR on the FFT convolver:** the 512-tap cab runs as a partitioned FFT
+  convolution, not a direct FIR. No added latency. About a quarter of the cab CPU
+  (estimate; measure with `prof`). Sound unchanged (stock parity gates). An IR change
+  keeps the input history, as before. It uses 4 kB more DTCM.
+
 ## [0.8.0] - 2026-09-28
 
 Bass delay, footswitch light rings as the stock, and the DSP chain at less than
