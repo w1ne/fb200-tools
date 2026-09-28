@@ -158,13 +158,16 @@ class FB200Device:
         return True
 
     def import_wav(self, index: int, path, name: str | None = None,
-                   progress: Callable[[int, int], None] | None = None) -> str:
-        """Convert a WAV to the IR format and upload it; return the slot name."""
+                   progress: Callable[[int, int], None] | None = None, **options) -> str:
+        """Convert a WAV to the IR format and upload it; return the slot name.
+        ``options`` go to `fb200.wav.process_ir` (none: the stock conversion)."""
         from pathlib import Path
 
-        from fb200.wav import wav_to_ir
+        from fb200.wav import IR_LENGTH, process_ir
 
-        samples = wav_to_ir(path)
+        if (options.get("taps") or 0) > IR_LENGTH:
+            raise InvalidArgumentError(f"a pedal slot holds {IR_LENGTH} taps")
+        samples = process_ir(path, **options)
         name = sanitize_ir_name(name or Path(path).stem)
         self.ir_import(index, name, samples, progress=progress)
         return name

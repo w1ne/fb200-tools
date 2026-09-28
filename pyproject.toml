@@ -14,6 +14,8 @@ dependencies = []
 
 [project.optional-dependencies]
 hid = ["hidapi>=0.14"]
+# `fb200 ir import|process --minphase`
+ir = ["numpy>=1.26"]
 # `fb200 mcp`: MCP server for AI agents (audio_test also needs numpy + sounddevice)
 mcp = ["mcp>=1.0", "hidapi>=0.14"]
 dev = ["pytest>=8", "ruff>=0.6", "numpy>=1.26", "scipy>=1.11", "sounddevice>=0.4.6"]

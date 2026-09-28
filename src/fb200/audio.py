@@ -54,9 +54,10 @@ def make_signal(kind: str, seconds: float, freq: float = 1000.0, level_dbfs: flo
     if kind == "wav":
         if not wav_path:
             raise InvalidArgumentError("signal 'wav' needs wav_path")
-        from fb200.wav import read_wav
+        from fb200.wav import read_wav, resample
 
-        return np.asarray(read_wav(wav_path, fs), dtype=np.float64)
+        chans, rate = read_wav(wav_path)
+        return np.asarray(resample(chans[0], rate, fs), dtype=np.float64)
     raise InvalidArgumentError(f"unknown signal {kind!r} (sine, sweep, noise, wav)")
 
 
