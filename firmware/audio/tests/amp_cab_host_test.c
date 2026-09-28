@@ -97,6 +97,55 @@ static void test_cab_swap(void)
     assert(peak > 0.1 && maxerr < 1e-5);
 }
 
+/* Long IRs (cab_init_long, cab_set_ir_len): the IR and its gain change
+ * together when the load is done. From the flat start (tail off) the new
+ * tail fades in (sees input from the swap on); long -> long is an exact
+ * FIR swap. */
+static void test_cab_long(void)
+{
+    enum { LEN = 282 * DSP_BLOCK, REQ_A = 10 * DSP_BLOCK, REQ_B = 120 * DSP_BLOCK };
+    static conv2_tail_t tail;
+    static cab_t cab;
+    static float ir[2][CAB_MAX_TAPS], x[LEN], y[LEN];
+    static const unsigned taps[2] = {CAB_MAX_TAPS, 2000};
+    static const float gain[2] = {0.3f, 0.7f};
+    for (int t = 0; t < 2; t++)
+        for (unsigned i = 0; i < taps[t]; i++) ir[t][i] = frand() * expf(-(float)i / (700.0f + 300 * t));
+    for (int i = 0; i < LEN; i++) x[i] = y[i] = frand();
+    cab_init_long(&cab, &tail);
+    assert(cab_set_ir_len(&cab, ir[0], CAB_MAX_TAPS + 1, 1.0f) != 0);
+    const float one = 1.0f;
+    assert(cab_set_ir_len(&cab, &one, 1, 1.0f) == 0);   /* active from sample 0 */
+    uint32_t at[2] = {0, 0};
+    for (int i = 0; i < LEN; i += DSP_BLOCK) {
+        if (i == REQ_A) assert(cab_set_ir_len(&cab, ir[0], taps[0], gain[0]) == 0);
+        if (i == REQ_B) assert(cab_set_ir_len(&cab, ir[1], taps[1], gain[1]) == 0);
+        int loading = conv2_pending(&cab.conv);
+        cab_process(&cab, y + i, DSP_BLOCK);
+        /* swaps at a block end (conv2 counts only the samples it saw) */
+        if (loading && !conv2_pending(&cab.conv)) at[i >= REQ_B] = (uint32_t)i + DSP_BLOCK;
+    }
+    assert(at[0] > REQ_A && at[1] > REQ_B);
+    double maxerr = 0, peak = 0;
+    for (int n = 0; n < LEN; n++) {
+        double ref = x[n] * (float)1.15;    /* unit IR before the first long one */
+        int t = n >= (int)at[1] ? 1 : n >= (int)at[0] ? 0 : -1;
+        if (t >= 0) {
+            double acc = 0;
+            for (int k = 0; k < (int)taps[t] && k <= n; k++) {
+                if (t == 0 && k >= CONV2_HEAD_TAPS && n - k < (int)at[0]) break;   /* fade in */
+                acc += (double)ir[t][k] * x[n - k];
+            }
+            ref = acc * (float)((double)gain[t] * 1.15);
+        }
+        maxerr = fmax(maxerr, fabs(ref - y[n]));
+        peak = fmax(peak, fabs(ref));
+    }
+    printf("cab long IR: swaps at +%u, +%u samples, max err %.2e (peak %.2f)\n",
+           (unsigned)(at[0] - REQ_A), (unsigned)(at[1] - REQ_B), maxerr, peak);
+    assert(peak > 0.1 && maxerr < 1e-5 * peak);
+}
+
 /* double-precision reference of the stock user-IR gain */
 static double ref_gain(const float *ir)
 {
@@ -134,6 +183,7 @@ int main(void)
     test_passthrough();
     test_cab_fir();
     test_cab_swap();
+    test_cab_long();
     test_user_ir_gain();
     printf("amp cab host tests OK\n");
     return 0;

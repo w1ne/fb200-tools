@@ -110,6 +110,7 @@ static dsp_knob_t s_in_gain;            /* S+0x1a, smoothed like the stock */
 /* the stock chain (docs/PARITY.md M2): amp (+ tone stack) -> cab, mono */
 static amp_t s_amp;
 static cab_t s_cab;
+static conv2_tail_t s_cab_tail __attribute__((section(".ocram")));   /* long IRs (M5) */
 static gate_t s_gate;
 static comp_t s_comp;
 static mod_t s_mod;
@@ -130,7 +131,7 @@ static int s_amp_model = -1, s_cab_type = -1;
 static float s_master = 1.0f, s_master_target = 1.0f;
 /* user IR staging, read only when a slot loads: OCRAM, so DTCM keeps the
  * cab's convolver spectra (dsp/cab.h) */
-static float s_ir[CAB_TAPS] __attribute__((section(".ocram")));
+static float s_ir[CAB_MAX_TAPS] __attribute__((section(".ocram")));   /* + `cab long` */
 static bool s_testgen_in;               /* testgen feeds the chain input */
 static int s_usb_route;                 /* ENGINE_USB_OUT / _IN / _MIX */
 static uint32_t s_cyc_max, s_cyc_sum, s_cyc_n;   /* DWT cycles per block */
@@ -163,7 +164,7 @@ void engine_init(void)
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;   /* cycle counter for `stats` */
     DWT->CYCCNT = 0;
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
-    cab_init(&s_cab);
+    cab_init_long(&s_cab, &s_cab_tail);
     bt_audio_init();
     gate_init(&s_gate, (float)AUDIO_FS);
     comp_init(&s_comp, (float)AUDIO_FS);
@@ -185,7 +186,7 @@ static volatile bool s_reapply;
 void engine_dsp_reset(void)
 {
     amp_init(&s_amp, (float)AUDIO_FS);
-    cab_init(&s_cab);
+    cab_init_long(&s_cab, &s_cab_tail);
     gate_init(&s_gate, (float)AUDIO_FS);
     comp_init(&s_comp, (float)AUDIO_FS);
     mod_init(&s_mod, (float)AUDIO_FS);
@@ -214,7 +215,7 @@ static int load_user_ir(unsigned slot)
     const volatile uint8_t *used = (const volatile uint8_t *)(0x60000000u + 0x88000u);
     if (used[slot] != 1) return 0;
     const float *ir = (const float *)(0x60000000u + 0x89000u + slot * 0x2800u);
-    memcpy(s_ir, ir, sizeof s_ir);
+    memcpy(s_ir, ir, CAB_TAPS * sizeof s_ir[0]);
     for (unsigned i = 0; i < CAB_TAPS; i++)
         if (!(s_ir[i] > -1e6f && s_ir[i] < 1e6f)) s_ir[i] = 0.0f;   /* NaN/inf -> 0 */
     cab_set_ir(&s_cab, s_ir, cab_user_ir_gain(s_ir));
@@ -222,6 +223,26 @@ static int load_user_ir(unsigned slot)
 }
 
 static bool s_cab_bypass;   /* user IR slot selected but empty */
+
+/* `cab long <taps>` (console, for `prof` on the pedal): the first taps of
+ * a synthetic IR (noise, -60 dB at 4096) in the cab until the next cab
+ * change; 0 goes back to the preset's cab. */
+int engine_cab_long(unsigned taps)
+{
+    if (taps == 0) {
+        s_cab_type = -1;
+        s_reapply = true;
+        return 0;
+    }
+    uint32_t seed = 1;
+    float env = 1.0f;
+    for (unsigned i = 0; i < CAB_MAX_TAPS; i++, env *= 0.99832f) {
+        seed = seed * 1664525u + 1013904223u;
+        s_ir[i] = (float)(int32_t)seed * (1.0f / 2147483648.0f) * env;
+    }
+    s_cab_bypass = false;
+    return cab_set_ir_len(&s_cab, s_ir, taps, cab_user_ir_gain(s_ir));
+}
 
 void engine_apply_preset(const preset_t *p, unsigned master)
 {

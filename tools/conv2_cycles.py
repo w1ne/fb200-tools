@@ -51,7 +51,7 @@ def build(cross: str) -> dict[str, int]:
          "-O2", "-ffreestanding", "-fno-builtin", "-ffunction-sections", "-fdata-sections",
          "-DARM_MATH_LOOPUNROLL", "-DNDEBUG", "-std=gnu11", "-nostdlib", "-Wl,--gc-sections",
          "-Wl,-e,bench_setup", "-Wl,-u,bench_block", "-Wl,-u,bench_cab_block",
-         "-Wl,-u,bench_set_ir", "-Wl,-u,bench_fill", "-Wl,--no-warn-rwx-segments",
+         "-Wl,-u,bench_set_ir", "-Wl,-u,bench_fill", "-Wl,-u,bench_pending", "-Wl,--no-warn-rwx-segments",
          "-I", str(FW / "src"), "-I", str(dsp / "Include"), "-I", str(dsp / "PrivateInclude"),
          "-I", str(FW / ".deps" / "tinyusb" / "lib" / "CMSIS_6" / "CMSIS" / "Core" / "Include"),
          "-T", str(OUT / "bench.ld"), *map(str, srcs), "-lgcc", "-o", str(elf)],
@@ -83,6 +83,7 @@ class Bench:
         uc.hook_add(UC_HOOK_CODE, count)
 
     def call(self, name: str, arg: int = 0) -> int:
+        """instructions executed by the call"""
         A, uc = self.A, self.uc
         uc.reg_write(A.UC_ARM_REG_SP, SP)
         uc.reg_write(A.UC_ARM_REG_LR, RET | 1)
@@ -91,6 +92,11 @@ class Bench:
         uc.emu_start(self.syms[name] | 1, RET, count=50_000_000)
         return self.n
 
+    def ret(self, name: str) -> int:
+        """return value (r0) of the call"""
+        self.call(name)
+        return self.uc.reg_read(self.A.UC_ARM_REG_R0)
+
 
 def main() -> int:
     cross = os.environ.get("CROSS", "arm-none-eabi-")
@@ -98,17 +104,24 @@ def main() -> int:
     b.call("bench_setup")
     fill = b.call("bench_fill")
     cab = b.call("bench_cab_block") - fill
-    print(f"conv_t 512 taps (cab today): {cab} instr/block")
-    for taps in (512, 1024, 2048, 4096):
+    print(f"conv_t 512 taps (the cab before conv2): {cab} instr/block")
+    # IR changes in this order: tail off -> on, long -> long, on -> off
+    prev = 1
+    for taps in (512, 4096, 1024, 2048, 4096, 512):
         n = b.call("bench_set_ir", taps)
-        # a frame to settle, then one frame measured per slice
-        for _ in range(8):
+        load = []                       # blocks until the new IR plays
+        while b.ret("bench_pending"):
+            load.append(b.call("bench_block") - fill)
+        for _ in range(8):              # a frame to settle
             b.call("bench_block")
         per = [b.call("bench_block") - fill for _ in range(8)]
         worst = max(per)
-        print(f"conv2 {taps:4d} taps: set_ir {n} instr; per block (slice 0..7): "
-              + " ".join(str(p) for p in per)
-              + f"; worst {worst} (+{worst - cab} over the cab), mean {sum(per) / 8:.0f}")
+        print(f"conv2 {prev:4d} -> {taps:4d} taps: set_ir {n} instr", end="")
+        if load:
+            print(f"; load {len(load)} blocks, worst {max(load)}", end="")
+        print("; per block (slice 0..7): " + " ".join(str(p) for p in per)
+              + f"; worst {worst} (+{worst - cab} over conv_t), mean {sum(per) / 8:.0f}")
+        prev = taps
     return 0
 
 

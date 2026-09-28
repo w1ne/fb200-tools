@@ -92,10 +92,10 @@ def test_conv2_suite():
 
 def test_amp_cab_suite():
     """amp/tone/cab without the stock data (CI): pass-through, cab FIR vs
-    brute force, stock user-IR gain formula. Stock parity lives in
+    brute force, long IRs (gain swaps with the IR), stock user-IR gain formula. Stock parity lives in
     test_stock_dsp_parity.py (needs the vendor .mr)."""
     out = _build_dir() / "amp_cab_host_test"
-    mods = [FW / "src" / "dsp" / f for f in ("amp.c", "tone.c", "cab.c", "conv.c")] + STOCK_SRC
+    mods = [FW / "src" / "dsp" / f for f in ("amp.c", "tone.c", "cab.c", "conv2.c", "conv.c")] + STOCK_SRC
     subprocess.run(
         ["cc", "-O2", "-Wall", "-Wextra", "-I", str(FW / "src"),
          str(FW / "tests" / "amp_cab_host_test.c"), *map(str, mods), *cmsis_dsp_args(),
@@ -106,6 +106,7 @@ def test_amp_cab_suite():
     assert result.returncode == 0, result.stdout + result.stderr
     assert "amp cab host tests OK" in result.stdout
     assert "cab fir: max err" in result.stdout
+    assert "cab long IR: swaps at" in result.stdout
 
 
 def test_eq_suite():

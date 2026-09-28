@@ -54,11 +54,14 @@ void stage2_main(void)
     bss[0x358A4 / 4 - 1] = 0;
 
 #ifndef FB200_RECOVERY
-    /* Large const tables: flash (F:0x41000, after the app slot) -> DTCM
-     * (linker.ld .dtcmdata). After the writability probe above, which touches
-     * the first word of this region. */
-    extern uint32_t __dtcmdata_start__[], __dtcmdata_end__[];
-    const volatile uint32_t *from = (const volatile uint32_t *)0x60041000u;
+    /* Large const tables: flash (F:0x41000, after the app slot) -> DTCM and
+     * OCRAM (linker.ld .ocramdata, .dtcmdata). After the writability probe
+     * above, which touches the first word of the DTCM region. */
+    extern uint32_t __dtcmdata_start__[], __dtcmdata_end__[], __dtcmdata_load__[];
+    extern uint32_t __ocramdata_start__[], __ocramdata_end__[], __ocramdata_load__[];
+    const volatile uint32_t *from = (const volatile uint32_t *)__ocramdata_load__;
+    for (volatile uint32_t *to = __ocramdata_start__; to < __ocramdata_end__; ) *to++ = *from++;
+    from = (const volatile uint32_t *)__dtcmdata_load__;
     for (volatile uint32_t *to = __dtcmdata_start__; to < __dtcmdata_end__; ) *to++ = *from++;
 #endif
 

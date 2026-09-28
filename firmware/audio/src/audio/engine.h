@@ -54,5 +54,7 @@ void engine_apply_preset(const preset_t *p, unsigned master);
 void engine_apply_settings(const settings_t *s);
 void engine_dsp_reset(void);
 bool engine_needs_reapply(void);   /* after a DSP reset: apply the preset again */
+/* `cab long <taps>`: synthetic long IR in the cab (0: the preset's cab). 0 on success. */
+int engine_cab_long(unsigned taps);
 
 #endif

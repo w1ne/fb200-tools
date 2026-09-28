@@ -162,11 +162,12 @@ $(TARGET).elf: $(OBJS) linker.ld
 	$(CC) $(OBJS) $(LDFLAGS) -lgcc -o $@
 
 # .vectors goes to block 0 offset 0; .blob to offset 0x7d4 (LMA in linker.ld).
+# .dtcmdata.bin is the slot's data blob: .ocramdata + .dtcmdata (contiguous LMAs).
 $(TARGET).vectors.bin $(TARGET).blob.bin $(TARGET).copier.bin $(TARGET).dtcmdata.bin: $(TARGET).elf
 	$(OBJCOPY) -O binary -j .vectors $< $(TARGET).vectors.bin
 	$(OBJCOPY) -O binary -j .blob $< $(TARGET).blob.bin
 	$(OBJCOPY) -O binary -j .copier $< $(TARGET).copier.bin
-	$(OBJCOPY) -O binary -j .dtcmdata $< $(TARGET).dtcmdata.bin
+	$(OBJCOPY) -O binary -j .ocramdata -j .dtcmdata $< $(TARGET).dtcmdata.bin
 
 $(TARGET)/%.c.o: %.c
 	@mkdir -p $(dir $@)
@@ -177,7 +178,7 @@ $(TARGET)/%.S.o: %.S
 	$(CC) $(CFLAGS) -c $< -o $@
 
 layout: deps $(TARGET).elf
-	$(NM) $(TARGET).elf | grep -E '(_estack|__bss_|__blob_end__|stage2|app_main)' | sort > $(BUILD)/layout.txt
+	$(NM) $(TARGET).elf | grep -E '(_estack|__bss_|__blob_end__|__ocramdata_|__dtcmdata_|stage2|app_main)' | sort > $(BUILD)/layout.txt
 	cat $(BUILD)/layout.txt
 
 clean:
