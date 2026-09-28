@@ -9,11 +9,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Reamping over USB:** console `usb in` routes the computer's USB playback into the
+  effects chain input instead of the instrument (`usb mix`: summed with it; `usb out`:
+  to the analog output only, the default and the stock behaviour). Play a DI track or a
+  test sweep and record the processed sound from the USB capture. The MCP `audio_test`
+  with `source="usb"` uses it (and restores the routing) and reports the round-trip
+  `delay_ms`.
+- **Bass EQ** (not in the stock): HPF 20-200 Hz, 5 peaking bands (30-10000 Hz,
+  +-15 dB, Q 0.3-4), LPF 2-20 kHz, after the cab. Changes glide in 12 ms, no clicks.
+  Off after boot and bit-exact when off or flat; not in the preset yet. Console:
+  `eq [on|off]`, `eq hpf|lpf <hz>`, `eq <band> <hz> <dB> [q]` (docs/PARITY.md M4).
+- **Two-stage convolver for long IRs (M5, library only):** `dsp/conv2.c` runs
+  IRs up to 4096 taps with no added latency: the 512-tap head on the current
+  convolver, the rest in 256-sample partitions spread over the 8 blocks of each
+  frame. Host tests against a direct FIR. Not yet used by the cab.
+- **Better IR import** (host): `fb200 ir import` resamples with a Kaiser windowed
+  sinc (aliasing below -60 dB; the linear resampler is gone) and takes
+  `--channel`, `--trim`, `--taps N` (up to 4096, half-Hann fade-out),
+  `--lowcut`/`--highcut` (2nd-order Butterworth), `--blend other.wav:MIX`,
+  `--minphase` (numpy, extra `[ir]`) and `--normalize`. `fb200 ir process -o out.wav`
+  writes the processed IR without a pedal. API: `fb200.wav.process_ir()`. With no
+  options a 44.1 kHz WAV gives the same samples as before.
+- **MCP server** (`fb200 mcp`, `pip install 'fb200-tools[mcp]'`): an AI agent (Claude
+  Code, Claude Desktop) drives the pedal over USB. Tools for status, the console, effect
+  blocks, delay, drums, tuner, CPU profile, crash dump, user IRs and an audio test
+  (test signal in, USB capture out: RMS, peak, THD, octave-band response).
 - **LabWired stock first-boot gate** (`labwired/stock-first-boot.yaml`, long:
   about 30 min of CPU time). The unmodified vendor firmware boots from a blank
-  flash, does its factory reset (sector erase and page program of F:0x82000 and F:0xB0000,
-  magics `FB200` and `B01`) and sends the Bluetooth AT sequence on LPUART5
-  (`AT+TM` .. `AT+B401`) at about 11 s of device time. See `docs/LABWIRED.md`.
+  flash, does its factory reset (sector erase and page program of F:0x82000
+  and F:0xB0000, magics `FB200` and `B01`) and sends the Bluetooth AT
+  sequence on LPUART5 (`AT+TM` .. `AT+B401`) at about 11 s of device time.
+  See `docs/LABWIRED.md`.
+
+### Changed
+
+- **Cab IR on the FFT convolver:** the 512-tap cab runs as a partitioned FFT
+  convolution, not a direct FIR. No added latency. About a quarter of the cab CPU
+  (estimate; measure with `prof`). Sound unchanged (stock parity gates). An IR change
+  keeps the input history, as before. It uses 4 kB more DTCM.
 
 ## [0.8.0] - 2026-09-28
 

@@ -50,6 +50,8 @@ save blink, rhythm tempo flash). On the pedal so far: the light ring of the sele
 - A bass delay (the stock has none: its delay settings do nothing): 20-1000 ms, feedback,
   mix, low cut on the repeats, tone. Stock presets keep their sound
   ([`docs/PARITY.md`](docs/PARITY.md#m4-bass-delay)).
+- A bass EQ (the stock has none): HPF, 5 bands, LPF, after the cab; console only for now
+  ([`docs/PARITY.md`](docs/PARITY.md#m4-bass-eq)).
 - Updates over USB without holding A+D.
 - The display names the knob you turn (`GAn`, `CAb`, …) and marks knobs that have not
   picked up yet.
@@ -124,7 +126,10 @@ its LED **blinks** and the display shows the value with a dot. The LED is off wh
 effect is off in the preset.
 
 **USB audio:** choose "FB200 Audio I/O" in your DAW. It records the processed sound
-plus drums, and plays computer audio through the pedal.
+plus drums, and plays computer audio through the pedal. For reamping, `fb200 console
+"usb in"` sends the computer audio through the effects instead of the instrument: play
+a DI track, record the processed result (`usb mix` adds it to the instrument, `usb out`
+is the default).
 
 ## Host tools
 
@@ -134,20 +139,75 @@ The `fb200` command also works with the stock firmware:
 fb200 info                          # product, firmware, Bluetooth and hardware versions
 fb200 ir list                       # IR slots
 fb200 ir import 3 my-cab.wav        # convert and upload a WAV IR to slot 3
+fb200 ir process my-cab.wav -o out.wav --trim --taps 512   # process to a file, no pedal
 fb200 console [cmd ...]             # open-firmware USB console (interactive without args)
 fb200 console "factory yes"         # factory reset: presets, settings, IR list
 fb200 console "delay on 350"        # bass delay: [on|off] [time] [fb] [mix] [lowcut] [tone]
+fb200 console "eq 1 40 3"           # bass EQ: eq [on|off] | hpf <hz> | lpf <hz> | <band 1-5> <hz> <dB> [q]
 fb200 console prof                  # CPU cycles per chain stage
+fb200 console "usb in"              # reamping: computer playback into the effects (out: default)
 fb200 update app latest             # open-firmware USB update (or a file)
 fb200 update stock FB200.mr         # write the stock sound data (once)
 fb200 crash --elf fb200-app.elf     # read and symbolize the last crash dump
 fb200 fw inspect|flash ...          # .mr container tools and the vendor updater client
 ```
 
+### IR import
+
+`fb200 ir import` and `fb200 ir process` convert any WAV (8/16/24/32-bit PCM or
+32-bit float, any rate) to 44.1 kHz with a Kaiser windowed-sinc resampler. With no
+options the result is the same as the official editor: channel 0, 1024 samples, cut or
+zero-padded. The pedal plays the first 512 taps and sets the loudness itself. Options,
+applied in this order:
+
+| Option | Effect |
+| --- | --- |
+| `--channel left\|right\|sum` | channel 0 (default), channel 1, or the mean of all channels |
+| `--blend other.wav:0.3` | mix 30 % of a second IR in, aligned by onset and cross-correlation |
+| `--lowcut HZ`, `--highcut HZ` | 2nd-order Butterworth high / low pass, baked into the IR |
+| `--trim` | cut the silence before the onset (-60 dB rel. peak), keep 8 samples |
+| `--minphase` | cepstral minimum phase; needs numpy: `pip install 'fb200-tools[ir]'` |
+| `--taps N` | length 1..4096 (the pedal slot holds 1024, and plays 512); a cut tail gets a half-Hann fade over the last N/8 taps |
+| `--normalize` | peak to 1.0 |
+
+`ir process -o out.wav` writes the result as mono 32-bit float at 44.1 kHz, for any IR
+loader. From Python: `fb200.wav.process_ir(path_or_bytes, taps=512, trim=True, ...)`
+returns the float taps.
+
 Install for development: `.venv/bin/pip install -e ".[dev,hid]"`, then run the host
 tests with `.venv/bin/pytest` (under a minute). The slow stock-DSP parity tests
 (`-m stock`: unicorn emulation of the stock firmware, need `.[stock]` and your
 `fb200-stock.mr` in `FB200_STOCK_MR`) run nightly: `tools/nightly_stock.sh`.
+
+## MCP server
+
+`fb200 mcp` lets an AI agent (Claude Code, Claude Desktop) drive the pedal with the open
+firmware over USB. It is an [MCP](https://modelcontextprotocol.io) server on stdio.
+
+```bash
+pip install 'fb200-tools[mcp]'          # add numpy sounddevice for audio_test
+claude mcp add fb200 -- fb200 mcp
+```
+
+| Tool | What it does |
+| --- | --- |
+| `pedal_status`, `pedal_info` | firmware, engine stats, current preset, USB audio state; versions |
+| `console` | run one console command (the tool description lists the command set) |
+| `preset`, `save_preset` | show or select preset 0..39; store the edit buffer |
+| `get_effects` | all effect blocks of the edit buffer |
+| `set_amp`, `set_cab`, `set_comp`, `set_gate`, `set_mod`, `set_reverb` | change fields of one block (app protocol, HID); returns the block read back |
+| `set_delay`, `set_output`, `drums`, `tuner` | bass delay, output gain and mute, drum machine, tuner |
+| `cpu_profile`, `crash_dump` | CPU cycles per chain stage (`prof`); the last crash dump |
+| `ir_list`, `ir_import` | user IR slots; import a WAV into a slot |
+| `audio_test` | play a test signal, capture the USB audio, return RMS, peak, THD (sine) or an octave-band response; can save a WAV |
+
+`audio_test` uses the firmware test generator (`tin`, into the chain input) by default,
+so the capture holds all effects. With `source="usb"` the host plays the signal (a
+sweep, noise or a DI track as a WAV) through the effects: the tool sets `usb in` for the
+test and restores the routing after, and returns the round-trip `delay_ms`.
+
+The tools do not flash firmware (use `fb200 update`). One lock serializes all access to
+the pedal. Edits change the live preset until `save_preset`.
 
 ## Documentation
 

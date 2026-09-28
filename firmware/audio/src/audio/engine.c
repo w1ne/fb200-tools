@@ -16,6 +16,7 @@
 #ifndef ENGINE_HOST_TEST
 #include "audio/sai.h"
 #include "audio/usb_audio.h"
+#include "audio/drift.h"
 #include "audio/bt_audio.h"
 #include "audio/codec.h"
 #include "dsp/dsp.h"
@@ -31,6 +32,7 @@
 #include "dsp/mod.h"
 #include "dsp/reverb.h"
 #include "dsp/delay.h"
+#include "dsp/eq.h"
 #include "preset/preset.h"
 #include "fsl_sai.h"
 #include "tusb.h"
@@ -117,14 +119,23 @@ static reverb_t s_rev;
 static delay_t s_dly;
 static int16_t s_dly_line[DELAY_LEN] __attribute__((section(".ocram")));
 static bool s_dly_en;
+/* Our bass EQ (docs/PARITY.md M4), after the cab. Not in the preset: off
+ * after boot, set from the console. Off (or flat) = bypassed, bit-exact.
+ * OCRAM (cached): in .bss its 508 B push the 2 kB-aligned USB buffer
+ * (_dcd_data) up by 2 kB and DTCM overflows. The EQ touches ~70 words of it
+ * per block. */
+static eq_t s_eq __attribute__((section(".ocram")));
 static bool s_amp_en, s_cab_en, s_gate_en, s_comp_en, s_mod_en, s_rev_en;
 static int s_amp_model = -1, s_cab_type = -1;
 static float s_master = 1.0f, s_master_target = 1.0f;
-static float s_ir[CAB_TAPS];
+/* user IR staging, read only when a slot loads: OCRAM, so DTCM keeps the
+ * cab's convolver spectra (dsp/cab.h) */
+static float s_ir[CAB_TAPS] __attribute__((section(".ocram")));
 static bool s_testgen_in;               /* testgen feeds the chain input */
+static int s_usb_route;                 /* ENGINE_USB_OUT / _IN / _MIX */
 static uint32_t s_cyc_max, s_cyc_sum, s_cyc_n;   /* DWT cycles per block */
 /* `prof`: DWT cycles per chain stage, summed over blocks (engine_profile) */
-enum { P_IN, P_TUNER, P_GATE, P_COMP, P_AMP, P_CAB, P_MOD, P_DELAY, P_REVERB, P_MIX,
+enum { P_IN, P_TUNER, P_GATE, P_COMP, P_AMP, P_CAB, P_EQ, P_MOD, P_DELAY, P_REVERB, P_MIX,
        P_DRUMS, P_USB_IN, P_OUT, P_COUNT };
 static uint32_t s_prof[P_COUNT], s_prof_n, s_prof_t;
 #define PROF(stage) do { uint32_t now_ = DWT->CYCCNT; s_prof[stage] += now_ - s_prof_t; \
@@ -159,6 +170,7 @@ void engine_init(void)
     mod_init(&s_mod, (float)AUDIO_FS);
     reverb_init(&s_rev, (float)AUDIO_FS);
     delay_init(&s_dly, (float)AUDIO_FS, s_dly_line);
+    eq_init(&s_eq, (float)AUDIO_FS);
     static drums_data_t rhythms;
     if (g_stock) drums_data_from_stock(&rhythms, g_stock);
     drums_init(&s_drums, (const void *)DRUMS_BANK_ADDR, g_stock ? &rhythms : NULL);  /* NULL: silent */
@@ -179,6 +191,7 @@ void engine_dsp_reset(void)
     mod_init(&s_mod, (float)AUDIO_FS);
     reverb_init(&s_rev, (float)AUDIO_FS);
     delay_init(&s_dly, (float)AUDIO_FS, s_dly_line);
+    eq_reset(&s_eq);            /* the settings stay (not in the preset) */
     s_amp_model = s_cab_type = -1;
     s_reapply = true;
 }
@@ -261,6 +274,7 @@ void engine_apply_settings(const settings_t *s)
 
 bool engine_tuner_poll(tuner_result_t *out) { return tuner_poll(&s_tuner, out) != 0; }
 drums_t *engine_drums(void) { return &s_drums; }
+struct eq_s *engine_eq(void) { return &s_eq; }
 
 void engine_get_stats(engine_stats_t *out)
 {
@@ -279,6 +293,8 @@ float engine_get_gain_db(void)
 }
 
 void engine_testgen_input(bool on) { s_testgen_in = on; }
+void engine_set_usb_route(int route) { s_usb_route = route; }
+int engine_get_usb_route(void) { return s_usb_route; }
 
 void engine_cycles(uint32_t *avg, uint32_t *max, uint32_t *budget)
 {
@@ -291,7 +307,7 @@ void engine_cycles(uint32_t *avg, uint32_t *max, uint32_t *budget)
 void engine_profile(void)
 {
     static const char *const names[P_COUNT] = {
-        "in", "tuner", "gate", "comp", "amp", "cab", "mod", "delay", "reverb", "mix",
+        "in", "tuner", "gate", "comp", "amp", "cab", "eq", "mod", "delay", "reverb", "mix",
         "drums", "usb-in", "out",
     };
     uint32_t n = s_prof_n ? s_prof_n : 1u;
@@ -397,6 +413,21 @@ void engine_task(void)
      * needed for bit parity, tests/test_stock_dsp_parity.py). */
     uint32_t t0 = DWT->CYCCNT;
     s_prof_t = t0;
+    /* Host playback, drift-compensated, only while the host streams. Pulled
+     * here, in the same block as the capture push: `usb in|mix` adds no
+     * block latency (docs/AUDIO_PATH.md). */
+    if (usb_audio_playing()) {
+        (void)usb_audio_trim(MAX_RING_FILL, &s_stats.fifo_drops);
+        (void)usb_audio_pull16(play, n, last, &s_stats.fifo_inserts);
+    } else {
+        memset(play, 0, n * 2 * sizeof play[0]);
+        last[0] = last[1] = 0;
+    }
+    if (s_usb_route != ENGINE_USB_OUT) {   /* reamping: playback into the chain */
+        drift_play_to_input(s_block.data[0], s_block.data[1], play, n,
+                            s_usb_route == ENGINE_USB_IN);
+        memset(play, 0, n * 2 * sizeof play[0]);   /* not also dry into the DAC */
+    }
     float x[ENGINE_FRAMES];
     if (s_testgen_in && s_testgen.mode != TESTGEN_OFF) {   /* test signal into the chain */
         memset(&s_block, 0, sizeof s_block);
@@ -409,7 +440,8 @@ void engine_task(void)
     PROF(P_TUNER);
     for (size_t i = 0; i < n; i++) x[i] *= dsp_knob_next(&s_in_gain);
     /* stock chain (ITCM 0x7b60): gate -> comp -> amp -> cab -> mod -> reverb;
-     * our delay goes between mod and reverb (off: the stock chain exactly) */
+     * our EQ goes between cab and mod, our delay between mod and reverb
+     * (off: the stock chain exactly) */
     if (s_gate_en) gate_process(&s_gate, x, (unsigned)n);
     PROF(P_GATE);
     if (s_comp_en) comp_process(&s_comp, x, (unsigned)n);
@@ -418,6 +450,8 @@ void engine_task(void)
     PROF(P_AMP);
     if (s_cab_en && !s_cab_bypass) cab_process(&s_cab, x, (unsigned)n);
     PROF(P_CAB);
+    eq_process(&s_eq, x, (unsigned)n);   /* returns at once when off or flat */
+    PROF(P_EQ);
     if (s_mod_en) mod_process(&s_mod, x, (unsigned)n);
     PROF(P_MOD);
     if (s_dly_en) delay_process(&s_dly, x, (unsigned)n);
@@ -472,16 +506,6 @@ void engine_task(void)
         usb_audio_push(fb, n);
     }
     PROF(P_USB_IN);
-
-
-    /* Host playback, drift-compensated, only while the host streams. */
-    if (usb_audio_playing()) {
-        (void)usb_audio_trim(MAX_RING_FILL, &s_stats.fifo_drops);
-        (void)usb_audio_pull16(play, n, last, &s_stats.fifo_inserts);
-    } else {
-        memset(play, 0, n * 2 * sizeof play[0]);
-        last[0] = last[1] = 0;
-    }
 
     for (size_t i = 0; i < n; i++) {
         float l = s_block.data[0][i] + (float)play[i * 2 + 0] * (1.0f / 32768.0f);

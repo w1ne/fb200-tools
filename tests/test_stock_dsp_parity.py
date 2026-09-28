@@ -56,7 +56,7 @@ def stock(tmp_path_factory):
     subprocess.run([PY, str(tools / "stock_render.py"), str(MR), str(work),
                     "--presets", ",".join(map(str, PRESETS)), "--ir-gains", "8"], check=True)
     exe = work / "stock_parity_host_test"
-    mods = [FW / "src" / "dsp" / f for f in ("amp.c", "tone.c", "cab.c")] + STOCK_SRC
+    mods = [FW / "src" / "dsp" / f for f in ("amp.c", "tone.c", "cab.c", "conv.c")] + STOCK_SRC
     # -ffp-contract=off: the stock uses separate multiply and add (vmla), no FMA
     subprocess.run(
         ["cc", "-O2", "-Wall", "-Wextra", "-ffp-contract=off",

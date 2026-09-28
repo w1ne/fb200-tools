@@ -21,6 +21,13 @@ void engine_set_gain_db(float db);
 float engine_get_gain_db(void);
 void engine_set_testgen(int mode, float amp, float freq); /* 0 off 1 sine 2 white 3 impulse */
 void engine_testgen_input(bool on);   /* testgen into the chain input instead of the output */
+/* Host USB playback routing (console `usb out|in|mix`). OUT (default, the
+ * stock): mixed into the DAC after the capture tap. IN (reamping): replaces
+ * the instrument at the chain input, so it reaches the effects, the DAC and
+ * the capture. MIX: summed with the instrument at the chain input. */
+enum { ENGINE_USB_OUT = 0, ENGINE_USB_IN = 1, ENGINE_USB_MIX = 2 };
+void engine_set_usb_route(int route);
+int engine_get_usb_route(void);
 void engine_profile(void);   /* `prof`: cycles per chain stage */
 void engine_cycles(uint32_t *avg, uint32_t *max, uint32_t *budget);   /* since last call */
 void engine_set_mute(bool mute);
@@ -37,6 +44,9 @@ extern volatile float g_meter_peak[2];
 void engine_set_tuner(bool on);
 bool engine_tuner_poll(tuner_result_t *out);   /* main loop */
 drums_t *engine_drums(void);
+/* Our EQ (dsp/eq.h), for the console `eq` (main loop, as engine_task). */
+struct eq_s;
+struct eq_s *engine_eq(void);
 /* Apply a preset (stock layout) and the master volume 0..100 to the chain. */
 #include "preset/preset.h"
 void engine_apply_preset(const preset_t *p, unsigned master);

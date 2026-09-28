@@ -1,18 +1,22 @@
 #ifndef FB200_DSP_CAB_H
 #define FB200_DSP_CAB_H
-/* Stock FB200 cab: 512-tap FIR (CMSIS-DSP arm_fir_f32, direct form, no
- * latency), output * gain * 1.15. Cabs 1..10 are the stock IRs; user IRs
+/* Stock FB200 cab: 512-tap FIR, output * gain * 1.15. Runs on the
+ * partitioned FFT convolver (conv.c: no latency, about a quarter of the
+ * direct FIR's CPU); the stock runs it direct form. Cabs 1..10 are the stock IRs; user IRs
  * (stock slots 11..19) get their gain from cab_user_ir_gain(). Starts flat
  * (pass-through); without stock data cab_set_model() fails and it stays flat. */
 #include "arm_math.h"
+#include "conv.h"
 #include "dsp.h"
 
 #define CAB_TAPS 512
+/* conv capacity: the spectra (2 x 256 B per partition) sit in DTCM.
+ * Longer IRs (M5) raise this. */
+#define CAB_PARTS CONV_PARTS(CAB_TAPS)
 
 typedef struct {
-    arm_fir_instance_f32 fir;
-    float coeffs[CAB_TAPS];                  /* time reversed (CMSIS order) */
-    float state[CAB_TAPS + DSP_BLOCK - 1];
+    conv_t conv;
+    float h[CAB_PARTS][CONV_N], x[CAB_PARTS][CONV_N];   /* conv storage */
     float scale;                             /* gain * 1.15 */
     int active;
 } cab_t;
@@ -25,5 +29,6 @@ void cab_set_ir(cab_t *c, const float *ir, float gain);
  * odd samples), 512-point CFFT, gain = 100 / sum_{k=1..85} sqrt|X[k-1]| *
  * (30/k + 1); 1 when the sum is 0. */
 float cab_user_ir_gain(const float *ir);
-void cab_process(cab_t *c, float *x, unsigned n);  /* in place, n <= DSP_BLOCK */
+/* In place, n <= DSP_BLOCK. n < DSP_BLOCK is exact but costs a full block. */
+void cab_process(cab_t *c, float *x, unsigned n);
 #endif

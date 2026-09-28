@@ -8,8 +8,6 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 FW = ROOT / "firmware" / "hello"
-VECTORS = FW / "build" / "fb200-hello.vectors.bin"
-BLOB = FW / "build" / "fb200-hello.blob.bin"
 
 pytestmark = pytest.mark.skipif(
     any(shutil.which(tool) is None for tool in ("arm-none-eabi-gcc", "make", "curl", "git", "python3")),
@@ -18,12 +16,12 @@ pytestmark = pytest.mark.skipif(
 
 
 def build() -> tuple[bytes, bytes]:
-    fwbuild.build(FW)
-    return VECTORS.read_bytes(), BLOB.read_bytes()
+    out = fwbuild.build(FW)
+    return (out / "fb200-hello.vectors.bin").read_bytes(), (out / "fb200-hello.blob.bin").read_bytes()
 
 
 def symbols() -> dict[str, int]:
-    text = (FW / "build" / "layout.txt").read_text()
+    text = (fwbuild.build(FW) / "layout.txt").read_text()
     return {
         name: int(addr, 16)
         for addr, name in re.findall(r"^([0-9a-f]{8}) \S+ (\S+)$", text, re.MULTILINE)
@@ -59,14 +57,15 @@ def test_layout_symbols():
     assert syms["app_main"] > 0x4D6
     assert syms["app_main"] < 0x20000
     assert syms["__bss_end__"] <= 0x20000
+    elf = fwbuild.build(FW) / "fb200-hello.elf"
     out = subprocess.run(
-        ["arm-none-eabi-nm", str(FW / "build" / "fb200-hello.elf")],
+        ["arm-none-eabi-nm", str(elf)],
         check=True, capture_output=True, text=True,
     ).stdout
     # TinyUSB 0.21.0 made tusb_init() a macro around tusb_rhport_init().
     assert "tusb_rhport_init" in out
     undef = subprocess.run(
-        ["arm-none-eabi-nm", "-u", str(FW / "build" / "fb200-hello.elf")],
+        ["arm-none-eabi-nm", "-u", str(elf)],
         check=True, capture_output=True, text=True,
     ).stdout.strip()
     assert undef == ""

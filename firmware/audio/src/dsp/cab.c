@@ -6,14 +6,13 @@
 void cab_init(cab_t *c)
 {
     memset(c, 0, sizeof *c);
-    c->coeffs[CAB_TAPS - 1] = 1.0f;          /* unit impulse */
+    (void)conv_init(&c->conv, c->h, c->x, CAB_PARTS);   /* unit impulse */
     c->scale = 1.0f;
-    arm_fir_init_f32(&c->fir, CAB_TAPS, c->coeffs, c->state, DSP_BLOCK);
 }
 
 void cab_set_ir(cab_t *c, const float *ir, float gain)
 {
-    for (unsigned i = 0; i < CAB_TAPS; i++) c->coeffs[i] = ir[CAB_TAPS - 1 - i];
+    (void)conv_set_ir(&c->conv, ir, CAB_TAPS);   /* keeps the input history */
     c->scale = (float)((double)gain * 1.15);  /* stock: 1.15 applied in double */
     c->active = 1;
 }
@@ -61,7 +60,6 @@ void cab_process(cab_t *c, float *x, unsigned n)
 {
     if (!c->active || n == 0) return;
     if (n > DSP_BLOCK) n = DSP_BLOCK;
-    float y[DSP_BLOCK];
-    arm_fir_f32(&c->fir, x, y, n);
-    arm_scale_f32(y, c->scale, x, n);
+    conv_process(&c->conv, x, x, n);
+    arm_scale_f32(x, c->scale, x, n);
 }
