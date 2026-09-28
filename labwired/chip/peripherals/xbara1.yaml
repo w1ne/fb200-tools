@@ -1,0 +1,1221 @@
+peripheral: XBARA1
+version: 0.1.0
+registers:
+- id: SEL0
+  address_offset: 0
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL0
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT0 (refer to Functional Description section for input/output assignment)
+  - name: SEL1
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT1 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL1
+  address_offset: 2
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL2
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT2 (refer to Functional Description section for input/output assignment)
+  - name: SEL3
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT3 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL2
+  address_offset: 4
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL4
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT4 (refer to Functional Description section for input/output assignment)
+  - name: SEL5
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT5 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL3
+  address_offset: 6
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL6
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT6 (refer to Functional Description section for input/output assignment)
+  - name: SEL7
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT7 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL4
+  address_offset: 8
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL8
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT8 (refer to Functional Description section for input/output assignment)
+  - name: SEL9
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT9 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL5
+  address_offset: 10
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL10
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT10 (refer to Functional Description section for input/output assignment)
+  - name: SEL11
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT11 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL6
+  address_offset: 12
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL12
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT12 (refer to Functional Description section for input/output assignment)
+  - name: SEL13
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT13 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL7
+  address_offset: 14
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL14
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT14 (refer to Functional Description section for input/output assignment)
+  - name: SEL15
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT15 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL8
+  address_offset: 16
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL16
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT16 (refer to Functional Description section for input/output assignment)
+  - name: SEL17
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT17 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL9
+  address_offset: 18
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL18
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT18 (refer to Functional Description section for input/output assignment)
+  - name: SEL19
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT19 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL10
+  address_offset: 20
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL20
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT20 (refer to Functional Description section for input/output assignment)
+  - name: SEL21
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT21 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL11
+  address_offset: 22
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL22
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT22 (refer to Functional Description section for input/output assignment)
+  - name: SEL23
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT23 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL12
+  address_offset: 24
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL24
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT24 (refer to Functional Description section for input/output assignment)
+  - name: SEL25
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT25 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL13
+  address_offset: 26
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL26
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT26 (refer to Functional Description section for input/output assignment)
+  - name: SEL27
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT27 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL14
+  address_offset: 28
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL28
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT28 (refer to Functional Description section for input/output assignment)
+  - name: SEL29
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT29 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL15
+  address_offset: 30
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL30
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT30 (refer to Functional Description section for input/output assignment)
+  - name: SEL31
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT31 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL16
+  address_offset: 32
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL32
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT32 (refer to Functional Description section for input/output assignment)
+  - name: SEL33
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT33 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL17
+  address_offset: 34
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL34
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT34 (refer to Functional Description section for input/output assignment)
+  - name: SEL35
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT35 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL18
+  address_offset: 36
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL36
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT36 (refer to Functional Description section for input/output assignment)
+  - name: SEL37
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT37 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL19
+  address_offset: 38
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL38
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT38 (refer to Functional Description section for input/output assignment)
+  - name: SEL39
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT39 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL20
+  address_offset: 40
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL40
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT40 (refer to Functional Description section for input/output assignment)
+  - name: SEL41
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT41 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL21
+  address_offset: 42
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL42
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT42 (refer to Functional Description section for input/output assignment)
+  - name: SEL43
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT43 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL22
+  address_offset: 44
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL44
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT44 (refer to Functional Description section for input/output assignment)
+  - name: SEL45
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT45 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL23
+  address_offset: 46
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL46
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT46 (refer to Functional Description section for input/output assignment)
+  - name: SEL47
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT47 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL24
+  address_offset: 48
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL48
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT48 (refer to Functional Description section for input/output assignment)
+  - name: SEL49
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT49 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL25
+  address_offset: 50
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL50
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT50 (refer to Functional Description section for input/output assignment)
+  - name: SEL51
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT51 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL26
+  address_offset: 52
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL52
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT52 (refer to Functional Description section for input/output assignment)
+  - name: SEL53
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT53 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL27
+  address_offset: 54
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL54
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT54 (refer to Functional Description section for input/output assignment)
+  - name: SEL55
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT55 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL28
+  address_offset: 56
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL56
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT56 (refer to Functional Description section for input/output assignment)
+  - name: SEL57
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT57 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL29
+  address_offset: 58
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL58
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT58 (refer to Functional Description section for input/output assignment)
+  - name: SEL59
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT59 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL30
+  address_offset: 60
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL60
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT60 (refer to Functional Description section for input/output assignment)
+  - name: SEL61
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT61 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL31
+  address_offset: 62
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL62
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT62 (refer to Functional Description section for input/output assignment)
+  - name: SEL63
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT63 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL32
+  address_offset: 64
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL64
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT64 (refer to Functional Description section for input/output assignment)
+  - name: SEL65
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT65 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL33
+  address_offset: 66
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL66
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT66 (refer to Functional Description section for input/output assignment)
+  - name: SEL67
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT67 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL34
+  address_offset: 68
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL68
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT68 (refer to Functional Description section for input/output assignment)
+  - name: SEL69
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT69 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL35
+  address_offset: 70
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL70
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT70 (refer to Functional Description section for input/output assignment)
+  - name: SEL71
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT71 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL36
+  address_offset: 72
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL72
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT72 (refer to Functional Description section for input/output assignment)
+  - name: SEL73
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT73 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL37
+  address_offset: 74
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL74
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT74 (refer to Functional Description section for input/output assignment)
+  - name: SEL75
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT75 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL38
+  address_offset: 76
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL76
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT76 (refer to Functional Description section for input/output assignment)
+  - name: SEL77
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT77 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL39
+  address_offset: 78
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL78
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT78 (refer to Functional Description section for input/output assignment)
+  - name: SEL79
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT79 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL40
+  address_offset: 80
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL80
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT80 (refer to Functional Description section for input/output assignment)
+  - name: SEL81
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT81 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL41
+  address_offset: 82
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL82
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT82 (refer to Functional Description section for input/output assignment)
+  - name: SEL83
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT83 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL42
+  address_offset: 84
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL84
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT84 (refer to Functional Description section for input/output assignment)
+  - name: SEL85
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT85 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL43
+  address_offset: 86
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL86
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT86 (refer to Functional Description section for input/output assignment)
+  - name: SEL87
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT87 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL44
+  address_offset: 88
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL88
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT88 (refer to Functional Description section for input/output assignment)
+  - name: SEL89
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT89 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL45
+  address_offset: 90
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL90
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT90 (refer to Functional Description section for input/output assignment)
+  - name: SEL91
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT91 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL46
+  address_offset: 92
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL92
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT92 (refer to Functional Description section for input/output assignment)
+  - name: SEL93
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT93 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL47
+  address_offset: 94
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL94
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT94 (refer to Functional Description section for input/output assignment)
+  - name: SEL95
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT95 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL48
+  address_offset: 96
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL96
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT96 (refer to Functional Description section for input/output assignment)
+  - name: SEL97
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT97 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL49
+  address_offset: 98
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL98
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT98 (refer to Functional Description section for input/output assignment)
+  - name: SEL99
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT99 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL50
+  address_offset: 100
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL100
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT100 (refer to Functional Description section for input/output assignment)
+  - name: SEL101
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT101 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL51
+  address_offset: 102
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL102
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT102 (refer to Functional Description section for input/output assignment)
+  - name: SEL103
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT103 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL52
+  address_offset: 104
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL104
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT104 (refer to Functional Description section for input/output assignment)
+  - name: SEL105
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT105 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL53
+  address_offset: 106
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL106
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT106 (refer to Functional Description section for input/output assignment)
+  - name: SEL107
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT107 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL54
+  address_offset: 108
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL108
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT108 (refer to Functional Description section for input/output assignment)
+  - name: SEL109
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT109 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL55
+  address_offset: 110
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL110
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT110 (refer to Functional Description section for input/output assignment)
+  - name: SEL111
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT111 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL56
+  address_offset: 112
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL112
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT112 (refer to Functional Description section for input/output assignment)
+  - name: SEL113
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT113 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL57
+  address_offset: 114
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL114
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT114 (refer to Functional Description section for input/output assignment)
+  - name: SEL115
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT115 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL58
+  address_offset: 116
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL116
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT116 (refer to Functional Description section for input/output assignment)
+  - name: SEL117
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT117 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL59
+  address_offset: 118
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL118
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT118 (refer to Functional Description section for input/output assignment)
+  - name: SEL119
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT119 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL60
+  address_offset: 120
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL120
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT120 (refer to Functional Description section for input/output assignment)
+  - name: SEL121
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT121 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL61
+  address_offset: 122
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL122
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT122 (refer to Functional Description section for input/output assignment)
+  - name: SEL123
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT123 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL62
+  address_offset: 124
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL124
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT124 (refer to Functional Description section for input/output assignment)
+  - name: SEL125
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT125 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL63
+  address_offset: 126
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL126
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT126 (refer to Functional Description section for input/output assignment)
+  - name: SEL127
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT127 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL64
+  address_offset: 128
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL128
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT128 (refer to Functional Description section for input/output assignment)
+  - name: SEL129
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT129 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: SEL65
+  address_offset: 130
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SEL130
+    bit_range:
+    - 6
+    - 0
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT130 (refer to Functional Description section for input/output assignment)
+  - name: SEL131
+    bit_range:
+    - 14
+    - 8
+    description: Input (XBARA_INn) to be muxed to XBARA_OUT131 (refer to Functional Description section for input/output assignment)
+  side_effects: null
+- id: CTRL0
+  address_offset: 132
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: DEN0
+    bit_range:
+    - 0
+    - 0
+    description: DMA Enable for XBAR_OUT0
+  - name: IEN0
+    bit_range:
+    - 1
+    - 1
+    description: Interrupt Enable for XBAR_OUT0
+  - name: EDGE0
+    bit_range:
+    - 3
+    - 2
+    description: Active edge for edge detection on XBAR_OUT0
+  - name: STS0
+    bit_range:
+    - 4
+    - 4
+    description: Edge detection status for XBAR_OUT0
+  - name: DEN1
+    bit_range:
+    - 8
+    - 8
+    description: DMA Enable for XBAR_OUT1
+  - name: IEN1
+    bit_range:
+    - 9
+    - 9
+    description: Interrupt Enable for XBAR_OUT1
+  - name: EDGE1
+    bit_range:
+    - 11
+    - 10
+    description: Active edge for edge detection on XBAR_OUT1
+  - name: STS1
+    bit_range:
+    - 12
+    - 12
+    description: Edge detection status for XBAR_OUT1
+  side_effects: null
+- id: CTRL1
+  address_offset: 134
+  size: 16
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: DEN2
+    bit_range:
+    - 0
+    - 0
+    description: DMA Enable for XBAR_OUT2
+  - name: IEN2
+    bit_range:
+    - 1
+    - 1
+    description: Interrupt Enable for XBAR_OUT2
+  - name: EDGE2
+    bit_range:
+    - 3
+    - 2
+    description: Active edge for edge detection on XBAR_OUT2
+  - name: STS2
+    bit_range:
+    - 4
+    - 4
+    description: Edge detection status for XBAR_OUT2
+  - name: DEN3
+    bit_range:
+    - 8
+    - 8
+    description: DMA Enable for XBAR_OUT3
+  - name: IEN3
+    bit_range:
+    - 9
+    - 9
+    description: Interrupt Enable for XBAR_OUT3
+  - name: EDGE3
+    bit_range:
+    - 11
+    - 10
+    description: Active edge for edge detection on XBAR_OUT3
+  - name: STS3
+    bit_range:
+    - 12
+    - 12
+    description: Edge detection status for XBAR_OUT3
+  side_effects: null
+interrupts: null
+timing: null

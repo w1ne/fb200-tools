@@ -1,0 +1,1184 @@
+peripheral: SNVS
+version: 0.1.0
+registers:
+- id: HPLR
+  address_offset: 0
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: ZMK_WSL
+    bit_range:
+    - 0
+    - 0
+    description: Zeroizable Master Key Write Soft Lock When set, prevents any writes (software and hardware) to the ZMK registers and the ZMK_HWP, ZMK_VAL, and ZMK_ECC_EN fields of the LPMKCR
+  - name: ZMK_RSL
+    bit_range:
+    - 1
+    - 1
+    description: Zeroizable Master Key Read Soft Lock When set, prevents any software reads to the ZMK Registers and ZMK_ECC_VALUE field of the LPMKCR
+  - name: SRTC_SL
+    bit_range:
+    - 2
+    - 2
+    description: Secure Real Time Counter Soft Lock When set, prevents any writes to the SRTC Registers, SRTC_ENV, and SRTC_INV_EN bits
+  - name: LPCALB_SL
+    bit_range:
+    - 3
+    - 3
+    description: LP Calibration Soft Lock When set, prevents any writes to the LP Calibration Value (LPCALB_VAL) and LP Calibration Enable (LPCALB_EN)
+  - name: MC_SL
+    bit_range:
+    - 4
+    - 4
+    description: Monotonic Counter Soft Lock When set, prevents any writes (increments) to the MC Registers and MC_ENV bit
+  - name: GPR_SL
+    bit_range:
+    - 5
+    - 5
+    description: General Purpose Register Soft Lock When set, prevents any writes to the GPR
+  - name: LPSVCR_SL
+    bit_range:
+    - 6
+    - 6
+    description: LP Security Violation Control Register Soft Lock When set, prevents any writes to the LPSVCR
+  - name: LPTDCR_SL
+    bit_range:
+    - 8
+    - 8
+    description: LP Tamper Detectors Configuration Register Soft Lock When set, prevents any writes to the LPTDCR
+  - name: MKS_SL
+    bit_range:
+    - 9
+    - 9
+    description: Master Key Select Soft Lock When set, prevents any writes to the MASTER_KEY_SEL field of the LPMKCR
+  - name: HPSVCR_L
+    bit_range:
+    - 16
+    - 16
+    description: HP Security Violation Control Register Lock When set, prevents any writes to the HPSVCR
+  - name: HPSICR_L
+    bit_range:
+    - 17
+    - 17
+    description: HP Security Interrupt Control Register Lock When set, prevents any writes to the HPSICR
+  - name: HAC_L
+    bit_range:
+    - 18
+    - 18
+    description: High Assurance Counter Lock When set, prevents any writes to HPHACIVR, HPHACR, and HAC_EN bit of HPCOMR
+  side_effects: null
+- id: HPCOMR
+  address_offset: 4
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SSM_ST
+    bit_range:
+    - 0
+    - 0
+    description: SSM State Transition Transition state of the system security monitor
+  - name: SSM_ST_DIS
+    bit_range:
+    - 1
+    - 1
+    description: SSM Secure to Trusted State Transition Disable When set, disables the SSM transition from secure to trusted state
+  - name: SSM_SFNS_DIS
+    bit_range:
+    - 2
+    - 2
+    description: SSM Soft Fail to Non-Secure State Transition Disable When set, it disables the SSM transition from soft fail to non-secure state
+  - name: LP_SWR
+    bit_range:
+    - 4
+    - 4
+    description: 'LP Software Reset When set to 1, most registers in the SNVS_LP section are reset, but the following registers are not reset by an LP software reset: Secure Real Time Counter Time Alarm Register This bit cannot be set when the LP_SWR_DIS bit is set'
+  - name: LP_SWR_DIS
+    bit_range:
+    - 5
+    - 5
+    description: LP Software Reset Disable When set, disables the LP software reset
+  - name: SW_SV
+    bit_range:
+    - 8
+    - 8
+    description: Software Security Violation When set, the system security monitor treats this bit as a non-fatal security violation
+  - name: SW_FSV
+    bit_range:
+    - 9
+    - 9
+    description: Software Fatal Security Violation When set, the system security monitor treats this bit as a fatal security violation
+  - name: SW_LPSV
+    bit_range:
+    - 10
+    - 10
+    description: LP Software Security Violation When set, SNVS_LP treats this bit as a security violation
+  - name: PROG_ZMK
+    bit_range:
+    - 12
+    - 12
+    description: Program Zeroizable Master Key This bit activates ZMK hardware programming mechanism
+  - name: MKS_EN
+    bit_range:
+    - 13
+    - 13
+    description: Master Key Select Enable When not set, the one time programmable (OTP) master key is selected by default
+  - name: HAC_EN
+    bit_range:
+    - 16
+    - 16
+    description: High Assurance Counter Enable This bit controls the SSM transition from the soft fail to the hard fail state
+  - name: HAC_LOAD
+    bit_range:
+    - 17
+    - 17
+    description: High Assurance Counter Load When set, it loads the High Assurance Counter Register with the value of the High Assurance Counter Load Register
+  - name: HAC_CLEAR
+    bit_range:
+    - 18
+    - 18
+    description: High Assurance Counter Clear When set, it clears the High Assurance Counter Register
+  - name: HAC_STOP
+    bit_range:
+    - 19
+    - 19
+    description: High Assurance Counter Stop This bit can be set only when SSM is in soft fail state
+  - name: NPSWA_EN
+    bit_range:
+    - 31
+    - 31
+    description: Non-Privileged Software Access Enable When set, allows non-privileged software to access all SNVS registers, including those that are privileged software read/write access only
+  side_effects: null
+- id: HPCR
+  address_offset: 8
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: RTC_EN
+    bit_range:
+    - 0
+    - 0
+    description: HP Real Time Counter Enable
+  - name: HPTA_EN
+    bit_range:
+    - 1
+    - 1
+    description: HP Time Alarm Enable When set, the time alarm interrupt is generated if the value in the HP Time Alarm Registers is equal to the value of the HP Real Time Counter
+  - name: DIS_PI
+    bit_range:
+    - 2
+    - 2
+    description: Disable periodic interrupt in the functional interrupt
+  - name: PI_EN
+    bit_range:
+    - 3
+    - 3
+    description: HP Periodic Interrupt Enable The periodic interrupt can be generated only if the HP Real Time Counter is enabled
+  - name: PI_FREQ
+    bit_range:
+    - 7
+    - 4
+    description: Periodic Interrupt Frequency Defines frequency of the periodic interrupt
+  - name: HPCALB_EN
+    bit_range:
+    - 8
+    - 8
+    description: HP Real Time Counter Calibration Enabled Indicates that the time calibration mechanism is enabled.
+  - name: HPCALB_VAL
+    bit_range:
+    - 14
+    - 10
+    description: HP Calibration Value Defines signed calibration value for the HP Real Time Counter
+  - name: HP_TS
+    bit_range:
+    - 16
+    - 16
+    description: HP Time Synchronize
+  - name: BTN_CONFIG
+    bit_range:
+    - 26
+    - 24
+    description: Button Configuration
+  - name: BTN_MASK
+    bit_range:
+    - 27
+    - 27
+    description: Button interrupt mask
+  side_effects: null
+- id: HPSICR
+  address_offset: 12
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SV0_EN
+    bit_range:
+    - 0
+    - 0
+    description: Security Violation 0 Interrupt Enable Setting this bit to 1 enables generation of the security interrupt to the host processor upon detection of the Security Violation 0 security violation
+  - name: SV1_EN
+    bit_range:
+    - 1
+    - 1
+    description: Security Violation 1 Interrupt Enable Setting this bit to 1 enables generation of the security interrupt to the host processor upon detection of the Security Violation 1 security violation
+  - name: SV2_EN
+    bit_range:
+    - 2
+    - 2
+    description: Security Violation 2 Interrupt Enable Setting this bit to 1 enables generation of the security interrupt to the host processor upon detection of the Security Violation 2 security violation
+  - name: SV3_EN
+    bit_range:
+    - 3
+    - 3
+    description: Security Violation 3 Interrupt Enable Setting this bit to 1 enables generation of the security interrupt to the host processor upon detection of the Security Violation 3 security violation
+  - name: SV4_EN
+    bit_range:
+    - 4
+    - 4
+    description: Security Violation 4 Interrupt Enable Setting this bit to 1 enables generation of the security interrupt to the host processor upon detection of the Security Violation 4 security violation
+  - name: SV5_EN
+    bit_range:
+    - 5
+    - 5
+    description: Security Violation 5 Interrupt Enable Setting this bit to 1 enables generation of the security interrupt to the host processor upon detection of the Security Violation 5 security violation
+  - name: LPSVI_EN
+    bit_range:
+    - 31
+    - 31
+    description: LP Security Violation Interrupt Enable This bit enables generating of the security interrupt to the host processor upon security violation signal from the LP section
+  side_effects: null
+- id: HPSVCR
+  address_offset: 16
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SV0_CFG
+    bit_range:
+    - 0
+    - 0
+    description: Security Violation 0 Security Violation Configuration This field configures the Security Violation 0 Security Violation Input
+  - name: SV1_CFG
+    bit_range:
+    - 1
+    - 1
+    description: Security Violation 1 Security Violation Configuration This field configures the Security Violation 1 Security Violation Input
+  - name: SV2_CFG
+    bit_range:
+    - 2
+    - 2
+    description: Security Violation 2 Security Violation Configuration This field configures the Security Violation 2 Security Violation Input
+  - name: SV3_CFG
+    bit_range:
+    - 3
+    - 3
+    description: Security Violation 3 Security Violation Configuration This field configures the Security Violation 3 Security Violation Input
+  - name: SV4_CFG
+    bit_range:
+    - 4
+    - 4
+    description: Security Violation 4 Security Violation Configuration This field configures the Security Violation 4 Security Violation Input
+  - name: SV5_CFG
+    bit_range:
+    - 6
+    - 5
+    description: Security Violation 5 Security Violation Configuration This field configures the Security Violation 5 Security Violation Input
+  - name: LPSV_CFG
+    bit_range:
+    - 31
+    - 30
+    description: LP Security Violation Configuration This field configures the LP security violation source.
+  side_effects: null
+- id: HPSR
+  address_offset: 20
+  size: 32
+  access: READ_WRITE
+  reset_value: 2147495936
+  fields:
+  - name: HPTA
+    bit_range:
+    - 0
+    - 0
+    description: HP Time Alarm Indicates that the HP Time Alarm has occurred since this bit was last cleared.
+  - name: PI
+    bit_range:
+    - 1
+    - 1
+    description: Periodic Interrupt Indicates that periodic interrupt has occurred since this bit was last cleared.
+  - name: LPDIS
+    bit_range:
+    - 4
+    - 4
+    description: Low Power Disable If 1, the low power section has been disabled by means of an input signal to SNVS
+  - name: BTN
+    bit_range:
+    - 6
+    - 6
+    description: Button Value of the BTN input
+  - name: BI
+    bit_range:
+    - 7
+    - 7
+    description: Button Interrupt Signal ipi_snvs_btn_int_b was asserted.
+  - name: SSM_STATE
+    bit_range:
+    - 11
+    - 8
+    description: System Security Monitor State This field contains the encoded state of the SSM's state machine
+  - name: SECURITY_CONFIG
+    bit_range:
+    - 15
+    - 12
+    description: Security Configuration This field reflects the settings of the sys_secure_boot input and the three security configuration inputs to SNVS
+  - name: OTPMK_SYNDROME
+    bit_range:
+    - 24
+    - 16
+    description: One Time Programmable Master Key Syndrome In the case of a single-bit error, the eight lower bits of this value indicate the bit number of error location
+  - name: OTPMK_ZERO
+    bit_range:
+    - 27
+    - 27
+    description: One Time Programmable Master Key is Equal to Zero
+  - name: ZMK_ZERO
+    bit_range:
+    - 31
+    - 31
+    description: Zeroizable Master Key is Equal to Zero
+  side_effects: null
+- id: HPSVSR
+  address_offset: 24
+  size: 32
+  access: READ_WRITE
+  reset_value: 2147483648
+  fields:
+  - name: SV0
+    bit_range:
+    - 0
+    - 0
+    description: Security Violation 0 security violation was detected.
+  - name: SV1
+    bit_range:
+    - 1
+    - 1
+    description: Security Violation 1 security violation was detected.
+  - name: SV2
+    bit_range:
+    - 2
+    - 2
+    description: Security Violation 2 security violation was detected.
+  - name: SV3
+    bit_range:
+    - 3
+    - 3
+    description: Security Violation 3 security violation was detected.
+  - name: SV4
+    bit_range:
+    - 4
+    - 4
+    description: Security Violation 4 security violation was detected.
+  - name: SV5
+    bit_range:
+    - 5
+    - 5
+    description: Security Violation 5 security violation was detected.
+  - name: SW_SV
+    bit_range:
+    - 13
+    - 13
+    description: Software Security Violation This bit is a read-only copy of the SW_SV bit in the HP Command Register
+  - name: SW_FSV
+    bit_range:
+    - 14
+    - 14
+    description: Software Fatal Security Violation This bit is a read-only copy of the SW_FSV bit in the HP Command Register
+  - name: SW_LPSV
+    bit_range:
+    - 15
+    - 15
+    description: LP Software Security Violation This bit is a read-only copy of the SW_LPSV bit in the HP Command Register
+  - name: ZMK_SYNDROME
+    bit_range:
+    - 24
+    - 16
+    description: Zeroizable Master Key Syndrome The ZMK syndrome indicates the single-bit error location and parity for the ZMK register
+  - name: ZMK_ECC_FAIL
+    bit_range:
+    - 27
+    - 27
+    description: Zeroizable Master Key Error Correcting Code Check Failure When set, this bit triggers a bad key violation to the SSM and a security violation to the SNVS_LP section, which clears security sensitive data
+  - name: LP_SEC_VIO
+    bit_range:
+    - 31
+    - 31
+    description: LP Security Violation A security volation was detected in the SNVS low power section.
+  side_effects: null
+- id: HPHACIVR
+  address_offset: 28
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: HAC_COUNTER_IV
+    bit_range:
+    - 31
+    - 0
+    description: High Assurance Counter Initial Value This register is used to set the starting count value to the high assurance counter
+  side_effects: null
+- id: HPHACR
+  address_offset: 32
+  size: 32
+  access: READ_ONLY
+  reset_value: 0
+  fields:
+  - name: HAC_COUNTER
+    bit_range:
+    - 31
+    - 0
+    description: High Assurance Counter When the HAC_EN bit is set and the SSM is in the soft fail state, this counter starts to count down with the system clock
+  side_effects: null
+- id: HPRTCMR
+  address_offset: 36
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: RTC
+    bit_range:
+    - 14
+    - 0
+    description: HP Real Time Counter The most-significant 15 bits of the RTC
+  side_effects: null
+- id: HPRTCLR
+  address_offset: 40
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: RTC
+    bit_range:
+    - 31
+    - 0
+    description: HP Real Time Counter least-significant 32 bits
+  side_effects: null
+- id: HPTAMR
+  address_offset: 44
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: HPTA_MS
+    bit_range:
+    - 14
+    - 0
+    description: HP Time Alarm, most-significant 15 bits
+  side_effects: null
+- id: HPTALR
+  address_offset: 48
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: HPTA_LS
+    bit_range:
+    - 31
+    - 0
+    description: HP Time Alarm, 32 least-significant bits
+  side_effects: null
+- id: LPLR
+  address_offset: 52
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: ZMK_WHL
+    bit_range:
+    - 0
+    - 0
+    description: Zeroizable Master Key Write Hard Lock When set, prevents any writes (software and hardware) to the ZMK registers and ZMK_HWP, ZMK_VAL, and ZMK_ECC_EN fields of the LPMKCR
+  - name: ZMK_RHL
+    bit_range:
+    - 1
+    - 1
+    description: Zeroizable Master Key Read Hard Lock When set, prevents any software reads to the ZMK registers and ZMK_ECC_VALUE field of the LPMKCR
+  - name: SRTC_HL
+    bit_range:
+    - 2
+    - 2
+    description: Secure Real Time Counter Hard Lock When set, prevents any writes to the SRTC registers, SRTC_ENV, and SRTC_INV_EN bits
+  - name: LPCALB_HL
+    bit_range:
+    - 3
+    - 3
+    description: LP Calibration Hard Lock When set, prevents any writes to the LP Calibration Value (LPCALB_VAL) and LP Calibration Enable (LPCALB_EN)
+  - name: MC_HL
+    bit_range:
+    - 4
+    - 4
+    description: Monotonic Counter Hard Lock When set, prevents any writes (increments) to the MC Registers and MC_ENV bit
+  - name: GPR_HL
+    bit_range:
+    - 5
+    - 5
+    description: General Purpose Register Hard Lock When set, prevents any writes to the GPR
+  - name: LPSVCR_HL
+    bit_range:
+    - 6
+    - 6
+    description: LP Security Violation Control Register Hard Lock When set, prevents any writes to the LPSVCR
+  - name: LPTDCR_HL
+    bit_range:
+    - 8
+    - 8
+    description: LP Tamper Detectors Configuration Register Hard Lock When set, prevents any writes to the LPTDCR
+  - name: MKS_HL
+    bit_range:
+    - 9
+    - 9
+    description: Master Key Select Hard Lock When set, prevents any writes to the MASTER_KEY_SEL field of the LP Master Key Control Register
+  side_effects: null
+- id: LPCR
+  address_offset: 56
+  size: 32
+  access: READ_WRITE
+  reset_value: 32
+  fields:
+  - name: SRTC_ENV
+    bit_range:
+    - 0
+    - 0
+    description: Secure Real Time Counter Enabled and Valid When set, the SRTC becomes operational
+  - name: LPTA_EN
+    bit_range:
+    - 1
+    - 1
+    description: LP Time Alarm Enable When set, the SNVS functional interrupt is asserted if the LP Time Alarm Register is equal to the 32 MSBs of the secure real time counter
+  - name: MC_ENV
+    bit_range:
+    - 2
+    - 2
+    description: Monotonic Counter Enabled and Valid When set, the MC can be incremented (by write transaction to the LPSMCMR or LPSMCLR)
+  - name: LPWUI_EN
+    bit_range:
+    - 3
+    - 3
+    description: LP Wake-Up Interrupt Enable This interrupt line should be connected to the external pin and is intended to inform the external chip about an SNVS_LP event (tamper event, MC rollover, SRTC rollover, or time alarm )
+  - name: SRTC_INV_EN
+    bit_range:
+    - 4
+    - 4
+    description: If this bit is 1, in the case of a security violation the SRTC stops counting and the SRTC is invalidated (SRTC_ENV bit is cleared)
+  - name: DP_EN
+    bit_range:
+    - 5
+    - 5
+    description: Dumb PMIC Enabled When set, software can control the system power
+  - name: TOP
+    bit_range:
+    - 6
+    - 6
+    description: Turn off System Power Asserting this bit causes a signal to be sent to the Power Management IC to turn off the system power
+  - name: PWR_GLITCH_EN
+    bit_range:
+    - 7
+    - 7
+    description: Power Glitch Enable By default the detection of a power glitch does not cause the pmic_en_b signal to be asserted
+  - name: LPCALB_EN
+    bit_range:
+    - 8
+    - 8
+    description: LP Calibration Enable When set, enables the SRTC calibration mechanism
+  - name: LPCALB_VAL
+    bit_range:
+    - 14
+    - 10
+    description: LP Calibration Value Defines signed calibration value for SRTC
+  - name: BTN_PRESS_TIME
+    bit_range:
+    - 17
+    - 16
+    description: This field configures the button press time out values for the PMIC Logic
+  - name: DEBOUNCE
+    bit_range:
+    - 19
+    - 18
+    description: This field configures the amount of debounce time for the BTN input signal
+  - name: ON_TIME
+    bit_range:
+    - 21
+    - 20
+    description: The ON_TIME field is used to configure the period of time after BTN is asserted before pmic_en_b is asserted to turn on the SoC power
+  - name: PK_EN
+    bit_range:
+    - 22
+    - 22
+    description: PMIC On Request Enable The value written to PK_EN will be asserted on output signal snvs_lp_pk_en
+  - name: PK_OVERRIDE
+    bit_range:
+    - 23
+    - 23
+    description: PMIC On Request Override The value written to PK_OVERRIDE will be asserted on output signal snvs_lp_pk_override
+  - name: GPR_Z_DIS
+    bit_range:
+    - 24
+    - 24
+    description: General Purpose Registers Zeroization Disable
+  side_effects: null
+- id: LPMKCR
+  address_offset: 60
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: MASTER_KEY_SEL
+    bit_range:
+    - 1
+    - 0
+    description: Master Key Select These bits select the SNVS Master Key output when Master Key Select bits are enabled by MKS_EN bit in the HPCOMR
+  - name: ZMK_HWP
+    bit_range:
+    - 2
+    - 2
+    description: Zeroizable Master Key hardware Programming mode When set, only the hardware key programming mechanism can set the ZMK and software cannot read it
+  - name: ZMK_VAL
+    bit_range:
+    - 3
+    - 3
+    description: Zeroizable Master Key Valid When set, the ZMK value can be selected by the master key control block for use by cryptographic modules
+  - name: ZMK_ECC_EN
+    bit_range:
+    - 4
+    - 4
+    description: Zeroizable Master Key Error Correcting Code Check Enable Writing one to this field automatically calculates and sets the ZMK ECC value in the ZMK_ECC_VALUE field of this register
+  - name: ZMK_ECC_VALUE
+    bit_range:
+    - 15
+    - 7
+    description: Zeroizable Master Key Error Correcting Code Value This field is automatically calculated and set when one is written into ZMK_ECC_EN bit of this register
+  side_effects: null
+- id: LPSVCR
+  address_offset: 64
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SV0_EN
+    bit_range:
+    - 0
+    - 0
+    description: Security Violation 0 Enable This bit enables Security Violation 0 Input
+  - name: SV1_EN
+    bit_range:
+    - 1
+    - 1
+    description: Security Violation 1 Enable This bit enables Security Violation 1 Input
+  - name: SV2_EN
+    bit_range:
+    - 2
+    - 2
+    description: Security Violation 2 Enable This bit enables Security Violation 2 Input
+  - name: SV3_EN
+    bit_range:
+    - 3
+    - 3
+    description: Security Violation 3 Enable This bit enables Security Violation 3 Input
+  - name: SV4_EN
+    bit_range:
+    - 4
+    - 4
+    description: Security Violation 4 Enable This bit enables Security Violation 4 Input
+  - name: SV5_EN
+    bit_range:
+    - 5
+    - 5
+    description: Security Violation 5 Enable This bit enables Security Violation 5 Input
+  side_effects: null
+- id: LPTDCR
+  address_offset: 72
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SRTCR_EN
+    bit_range:
+    - 1
+    - 1
+    description: SRTC Rollover Enable When set, an SRTC rollover event generates an LP security violation.
+  - name: MCR_EN
+    bit_range:
+    - 2
+    - 2
+    description: MC Rollover Enable When set, an MC Rollover event generates an LP security violation.
+  - name: ET1_EN
+    bit_range:
+    - 9
+    - 9
+    description: External Tampering 1 Enable When set, external tampering 1 detection generates an LP security violation
+  - name: ET1P
+    bit_range:
+    - 11
+    - 11
+    description: External Tampering 1 Polarity This bit is used to determine the polarity of external tamper 1.
+  - name: PFD_OBSERV
+    bit_range:
+    - 14
+    - 14
+    description: System Power Fail Detector (PFD) Observability Flop The asynchronous reset input of this flop is connected directly to the inverted output of the PFD analog circuitry (external to the SNVS block)
+  - name: POR_OBSERV
+    bit_range:
+    - 15
+    - 15
+    description: Power On Reset (POR) Observability Flop The asynchronous reset input of this flop is connected directly to the output of the POR analog circuitry (external to the SNVS
+  - name: OSCB
+    bit_range:
+    - 28
+    - 28
+    description: Oscillator Bypass When OSCB=1 the osc_bypass signal is asserted
+  side_effects: null
+- id: LPSR
+  address_offset: 76
+  size: 32
+  access: READ_WRITE
+  reset_value: 8
+  fields:
+  - name: LPTA
+    bit_range:
+    - 0
+    - 0
+    description: LP Time Alarm
+  - name: SRTCR
+    bit_range:
+    - 1
+    - 1
+    description: Secure Real Time Counter Rollover
+  - name: MCR
+    bit_range:
+    - 2
+    - 2
+    description: Monotonic Counter Rollover
+  - name: PGD
+    bit_range:
+    - 3
+    - 3
+    description: Power Supply Glitch Detected 0 No power supply glitch. 1 Power supply glitch is detected.
+  - name: ET1D
+    bit_range:
+    - 9
+    - 9
+    description: External Tampering 1 Detected
+  - name: ESVD
+    bit_range:
+    - 16
+    - 16
+    description: External Security Violation Detected Indicates that a security violation is detected on one of the HP security violation ports
+  - name: EO
+    bit_range:
+    - 17
+    - 17
+    description: Emergency Off This bit is set when a power off is requested.
+  - name: SPO
+    bit_range:
+    - 18
+    - 18
+    description: Set Power Off The SPO bit is set when the power button is pressed longer than the configured debounce time
+  - name: SED
+    bit_range:
+    - 20
+    - 20
+    description: Scan Exit Detected
+  - name: LPNS
+    bit_range:
+    - 30
+    - 30
+    description: LP Section is Non-Secured Indicates that LP section was provisioned/programmed in the non-secure state
+  - name: LPS
+    bit_range:
+    - 31
+    - 31
+    description: LP Section is Secured Indicates that the LP section is provisioned/programmed in the secure or trusted state
+  side_effects: null
+- id: LPSRTCMR
+  address_offset: 80
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SRTC
+    bit_range:
+    - 14
+    - 0
+    description: LP Secure Real Time Counter The most-significant 15 bits of the SRTC
+  side_effects: null
+- id: LPSRTCLR
+  address_offset: 84
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SRTC
+    bit_range:
+    - 31
+    - 0
+    description: LP Secure Real Time Counter least-significant 32 bits This register can be programmed only when SRTC is not active and not locked, meaning the SRTC_ENV, SRTC_SL, and SRTC_HL bits are not set
+  side_effects: null
+- id: LPTAR
+  address_offset: 88
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: LPTA
+    bit_range:
+    - 31
+    - 0
+    description: LP Time Alarm This register can be programmed only when the LP time alarm is disabled (LPTA_EN bit is not set)
+  side_effects: null
+- id: LPSMCMR
+  address_offset: 92
+  size: 32
+  access: READ_ONLY
+  reset_value: 0
+  fields:
+  - name: MON_COUNTER
+    bit_range:
+    - 15
+    - 0
+    description: 'Monotonic Counter most-significant 16 Bits The MC is incremented by one when: A write transaction to the LPSMCMR or LPSMCLR register is detected'
+  - name: MC_ERA_BITS
+    bit_range:
+    - 31
+    - 16
+    description: Monotonic Counter Era Bits These bits are inputs to the module and typically connect to fuses
+  side_effects: null
+- id: LPSMCLR
+  address_offset: 96
+  size: 32
+  access: READ_ONLY
+  reset_value: 0
+  fields:
+  - name: MON_COUNTER
+    bit_range:
+    - 31
+    - 0
+    description: 'Monotonic Counter bits The MC is incremented by one when: A write transaction to the LPSMCMR or LPSMCLR Register is detected'
+  side_effects: null
+- id: LPPGDR
+  address_offset: 100
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: PGD
+    bit_range:
+    - 31
+    - 0
+    description: Power Glitch Detector Value
+  side_effects: null
+- id: LPGPR0_legacy_alias
+  address_offset: 104
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: GPR
+    bit_range:
+    - 31
+    - 0
+    description: General Purpose Register When GPR_SL or GPR_HL bit is set, the register cannot be programmed.
+  side_effects: null
+- id: LPZMKR0
+  address_offset: 108
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: ZMK
+    bit_range:
+    - 31
+    - 0
+    description: Zeroizable Master Key Each of these registers contains 32 bits of the 256-bit ZMK value
+  side_effects: null
+- id: LPZMKR1
+  address_offset: 112
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: ZMK
+    bit_range:
+    - 31
+    - 0
+    description: Zeroizable Master Key Each of these registers contains 32 bits of the 256-bit ZMK value
+  side_effects: null
+- id: LPZMKR2
+  address_offset: 116
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: ZMK
+    bit_range:
+    - 31
+    - 0
+    description: Zeroizable Master Key Each of these registers contains 32 bits of the 256-bit ZMK value
+  side_effects: null
+- id: LPZMKR3
+  address_offset: 120
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: ZMK
+    bit_range:
+    - 31
+    - 0
+    description: Zeroizable Master Key Each of these registers contains 32 bits of the 256-bit ZMK value
+  side_effects: null
+- id: LPZMKR4
+  address_offset: 124
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: ZMK
+    bit_range:
+    - 31
+    - 0
+    description: Zeroizable Master Key Each of these registers contains 32 bits of the 256-bit ZMK value
+  side_effects: null
+- id: LPZMKR5
+  address_offset: 128
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: ZMK
+    bit_range:
+    - 31
+    - 0
+    description: Zeroizable Master Key Each of these registers contains 32 bits of the 256-bit ZMK value
+  side_effects: null
+- id: LPZMKR6
+  address_offset: 132
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: ZMK
+    bit_range:
+    - 31
+    - 0
+    description: Zeroizable Master Key Each of these registers contains 32 bits of the 256-bit ZMK value
+  side_effects: null
+- id: LPZMKR7
+  address_offset: 136
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: ZMK
+    bit_range:
+    - 31
+    - 0
+    description: Zeroizable Master Key Each of these registers contains 32 bits of the 256-bit ZMK value
+  side_effects: null
+- id: LPGPR_alias0
+  address_offset: 144
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: GPR
+    bit_range:
+    - 31
+    - 0
+    description: General Purpose Register When GPR_SL or GPR_HL bit is set, the register cannot be programmed.
+  side_effects: null
+- id: LPGPR_alias1
+  address_offset: 148
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: GPR
+    bit_range:
+    - 31
+    - 0
+    description: General Purpose Register When GPR_SL or GPR_HL bit is set, the register cannot be programmed.
+  side_effects: null
+- id: LPGPR_alias2
+  address_offset: 152
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: GPR
+    bit_range:
+    - 31
+    - 0
+    description: General Purpose Register When GPR_SL or GPR_HL bit is set, the register cannot be programmed.
+  side_effects: null
+- id: LPGPR_alias3
+  address_offset: 156
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: GPR
+    bit_range:
+    - 31
+    - 0
+    description: General Purpose Register When GPR_SL or GPR_HL bit is set, the register cannot be programmed.
+  side_effects: null
+- id: LPGPR0
+  address_offset: 256
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: GPR
+    bit_range:
+    - 31
+    - 0
+    description: General Purpose Register When GPR_SL or GPR_HL bit is set, the register cannot be programmed.
+  side_effects: null
+- id: LPGPR1
+  address_offset: 260
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: GPR
+    bit_range:
+    - 31
+    - 0
+    description: General Purpose Register When GPR_SL or GPR_HL bit is set, the register cannot be programmed.
+  side_effects: null
+- id: LPGPR2
+  address_offset: 264
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: GPR
+    bit_range:
+    - 31
+    - 0
+    description: General Purpose Register When GPR_SL or GPR_HL bit is set, the register cannot be programmed.
+  side_effects: null
+- id: LPGPR3
+  address_offset: 268
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: GPR
+    bit_range:
+    - 31
+    - 0
+    description: General Purpose Register When GPR_SL or GPR_HL bit is set, the register cannot be programmed.
+  side_effects: null
+- id: LPGPR4
+  address_offset: 272
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: GPR
+    bit_range:
+    - 31
+    - 0
+    description: General Purpose Register When GPR_SL or GPR_HL bit is set, the register cannot be programmed.
+  side_effects: null
+- id: LPGPR5
+  address_offset: 276
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: GPR
+    bit_range:
+    - 31
+    - 0
+    description: General Purpose Register When GPR_SL or GPR_HL bit is set, the register cannot be programmed.
+  side_effects: null
+- id: LPGPR6
+  address_offset: 280
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: GPR
+    bit_range:
+    - 31
+    - 0
+    description: General Purpose Register When GPR_SL or GPR_HL bit is set, the register cannot be programmed.
+  side_effects: null
+- id: LPGPR7
+  address_offset: 284
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: GPR
+    bit_range:
+    - 31
+    - 0
+    description: General Purpose Register When GPR_SL or GPR_HL bit is set, the register cannot be programmed.
+  side_effects: null
+- id: HPVIDR1
+  address_offset: 3064
+  size: 32
+  access: READ_ONLY
+  reset_value: 4063492
+  fields:
+  - name: MINOR_REV
+    bit_range:
+    - 7
+    - 0
+    description: SNVS block minor version number
+  - name: MAJOR_REV
+    bit_range:
+    - 15
+    - 8
+    description: SNVS block major version number
+  - name: IP_ID
+    bit_range:
+    - 31
+    - 16
+    description: SNVS block ID
+  side_effects: null
+- id: HPVIDR2
+  address_offset: 3068
+  size: 32
+  access: READ_ONLY
+  reset_value: 100663296
+  fields:
+  - name: CONFIG_OPT
+    bit_range:
+    - 7
+    - 0
+    description: SNVS Configuration Options
+  - name: ECO_REV
+    bit_range:
+    - 15
+    - 8
+    description: SNVS ECO Revision
+  - name: INTG_OPT
+    bit_range:
+    - 23
+    - 16
+    description: SNVS Integration Options
+  - name: IP_ERA
+    bit_range:
+    - 31
+    - 24
+    description: IP Era 00h - Era 1 or 2 03h - Era 3 04h - Era 4 05h - Era 5
+  side_effects: null
+interrupts:
+  SNVS_HP_WRAPPER_TZ: 47
+  SNVS_HP_WRAPPER: 46
+  SNVS_LP_WRAPPER: 48
+timing: null

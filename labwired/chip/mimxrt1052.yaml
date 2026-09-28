@@ -1,0 +1,503 @@
+# fb200-tools: LabWired twin of the FLAMMA FB200
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+#
+# NXP i.MX RT1052 (MIMXRT1052DVL6B), Cortex-M7 r0p1 + FPv5-D16 double FPU.
+# Every base address and IRQ below is read from the NXP SVD (MIMXRT1052,
+# version 1.0, device MIMXRT1052DVL6B). The SVD is not in this repository;
+# see docs/LABWIRED.md "SVD provenance" for its source URL and sha256.
+# The register-file descriptors in peripherals/ were ingested from it.
+#
+# The peripheral `type:`s (imxrt_ccm, imxrt_flexspi, imxrt_lpuart, ...) are
+# generic LabWired parts; this file only places them on the RT1052 map.
+#
+# Memory map (IMXRT1050RM, "Memory Maps"): 512 KB of FlexRAM split by
+# IOMUXC_GPR17 into ITCM (0x0000_0000), DTCM (0x2000_0000) and OCRAM
+# (0x2020_0000) in 32 KB banks; FlexSPI XIP at 0x6000_0000. The simulator maps
+# each of the three windows at the full 512 KB, so every legal bank split fits
+# (a split that gives a window less than 512 KB is not enforced).
+#
+# Boot: the chip ROM (not modelled) hands over to the image's vector table at
+# FlexSPI 0x6000_0000 + reset_vector_offset.
+
+name: "mimxrt1052"
+arch: "arm"
+core: "cortex-m7"
+cpu_hz: 600_000_000
+flash:
+  base: 0x60000000
+  size: "16384KB"
+reset_vector_offset: 0x10000
+# ITCM is real memory at 0x0: no STM32-style flash boot alias there.
+flash_boot_alias: false
+ram:
+  base: 0x20000000
+  size: "512KB"
+memory_regions:
+  - name: "itcm"
+    base: 0x00000000
+    size: "512KB"
+  - name: "ocram"
+    base: 0x20200000
+    size: "512KB"
+# Pad -> GPIO map (IMXRT1050RM, IOMUXC chapter, ALT5 = GPIOx_IOyy on every pad
+# below). The i.MX RT pad names (GPIO_EMC_16, GPIO_B1_08) do not encode the
+# port, so the label parse cannot be used. Cross-checked against the FB200
+# pads in docs/UI_AND_STORAGE.md: SD_B0_00 = GPIO3_IO12,
+# B1_08 = GPIO2_IO24, B1_01..03 = GPIO2_IO17..19, EMC_31 = GPIO4_IO31,
+# EMC_32 = GPIO3_IO18, EMC_35 = GPIO3_IO21, AD_B0_02 = GPIO1_IO02.
+pins:
+  GPIO_AD_B0_00: { gpio: gpio1, bit: 0 }
+  GPIO_AD_B0_01: { gpio: gpio1, bit: 1 }
+  GPIO_AD_B0_02: { gpio: gpio1, bit: 2 }
+  GPIO_AD_B0_03: { gpio: gpio1, bit: 3 }
+  GPIO_AD_B0_04: { gpio: gpio1, bit: 4 }
+  GPIO_AD_B0_05: { gpio: gpio1, bit: 5 }
+  GPIO_AD_B0_06: { gpio: gpio1, bit: 6 }
+  GPIO_AD_B0_07: { gpio: gpio1, bit: 7 }
+  GPIO_AD_B0_08: { gpio: gpio1, bit: 8 }
+  GPIO_AD_B0_09: { gpio: gpio1, bit: 9 }
+  GPIO_AD_B0_10: { gpio: gpio1, bit: 10 }
+  GPIO_AD_B0_11: { gpio: gpio1, bit: 11 }
+  GPIO_AD_B0_12: { gpio: gpio1, bit: 12 }
+  GPIO_AD_B0_13: { gpio: gpio1, bit: 13 }
+  GPIO_AD_B0_14: { gpio: gpio1, bit: 14 }
+  GPIO_AD_B0_15: { gpio: gpio1, bit: 15 }
+  GPIO_AD_B1_00: { gpio: gpio1, bit: 16 }
+  GPIO_AD_B1_01: { gpio: gpio1, bit: 17 }
+  GPIO_AD_B1_02: { gpio: gpio1, bit: 18 }
+  GPIO_AD_B1_03: { gpio: gpio1, bit: 19 }
+  GPIO_AD_B1_04: { gpio: gpio1, bit: 20 }
+  GPIO_AD_B1_05: { gpio: gpio1, bit: 21 }
+  GPIO_AD_B1_06: { gpio: gpio1, bit: 22 }
+  GPIO_AD_B1_07: { gpio: gpio1, bit: 23 }
+  GPIO_AD_B1_08: { gpio: gpio1, bit: 24 }
+  GPIO_AD_B1_09: { gpio: gpio1, bit: 25 }
+  GPIO_AD_B1_10: { gpio: gpio1, bit: 26 }
+  GPIO_AD_B1_11: { gpio: gpio1, bit: 27 }
+  GPIO_AD_B1_12: { gpio: gpio1, bit: 28 }
+  GPIO_AD_B1_13: { gpio: gpio1, bit: 29 }
+  GPIO_AD_B1_14: { gpio: gpio1, bit: 30 }
+  GPIO_AD_B1_15: { gpio: gpio1, bit: 31 }
+  GPIO_B0_00: { gpio: gpio2, bit: 0 }
+  GPIO_B0_01: { gpio: gpio2, bit: 1 }
+  GPIO_B0_02: { gpio: gpio2, bit: 2 }
+  GPIO_B0_03: { gpio: gpio2, bit: 3 }
+  GPIO_B0_04: { gpio: gpio2, bit: 4 }
+  GPIO_B0_05: { gpio: gpio2, bit: 5 }
+  GPIO_B0_06: { gpio: gpio2, bit: 6 }
+  GPIO_B0_07: { gpio: gpio2, bit: 7 }
+  GPIO_B0_08: { gpio: gpio2, bit: 8 }
+  GPIO_B0_09: { gpio: gpio2, bit: 9 }
+  GPIO_B0_10: { gpio: gpio2, bit: 10 }
+  GPIO_B0_11: { gpio: gpio2, bit: 11 }
+  GPIO_B0_12: { gpio: gpio2, bit: 12 }
+  GPIO_B0_13: { gpio: gpio2, bit: 13 }
+  GPIO_B0_14: { gpio: gpio2, bit: 14 }
+  GPIO_B0_15: { gpio: gpio2, bit: 15 }
+  GPIO_B1_00: { gpio: gpio2, bit: 16 }
+  GPIO_B1_01: { gpio: gpio2, bit: 17 }
+  GPIO_B1_02: { gpio: gpio2, bit: 18 }
+  GPIO_B1_03: { gpio: gpio2, bit: 19 }
+  GPIO_B1_04: { gpio: gpio2, bit: 20 }
+  GPIO_B1_05: { gpio: gpio2, bit: 21 }
+  GPIO_B1_06: { gpio: gpio2, bit: 22 }
+  GPIO_B1_07: { gpio: gpio2, bit: 23 }
+  GPIO_B1_08: { gpio: gpio2, bit: 24 }
+  GPIO_B1_09: { gpio: gpio2, bit: 25 }
+  GPIO_B1_10: { gpio: gpio2, bit: 26 }
+  GPIO_B1_11: { gpio: gpio2, bit: 27 }
+  GPIO_B1_12: { gpio: gpio2, bit: 28 }
+  GPIO_B1_13: { gpio: gpio2, bit: 29 }
+  GPIO_B1_14: { gpio: gpio2, bit: 30 }
+  GPIO_B1_15: { gpio: gpio2, bit: 31 }
+  GPIO_SD_B1_00: { gpio: gpio3, bit: 0 }
+  GPIO_SD_B1_01: { gpio: gpio3, bit: 1 }
+  GPIO_SD_B1_02: { gpio: gpio3, bit: 2 }
+  GPIO_SD_B1_03: { gpio: gpio3, bit: 3 }
+  GPIO_SD_B1_04: { gpio: gpio3, bit: 4 }
+  GPIO_SD_B1_05: { gpio: gpio3, bit: 5 }
+  GPIO_SD_B1_06: { gpio: gpio3, bit: 6 }
+  GPIO_SD_B1_07: { gpio: gpio3, bit: 7 }
+  GPIO_SD_B1_08: { gpio: gpio3, bit: 8 }
+  GPIO_SD_B1_09: { gpio: gpio3, bit: 9 }
+  GPIO_SD_B1_10: { gpio: gpio3, bit: 10 }
+  GPIO_SD_B1_11: { gpio: gpio3, bit: 11 }
+  GPIO_SD_B0_00: { gpio: gpio3, bit: 12 }
+  GPIO_SD_B0_01: { gpio: gpio3, bit: 13 }
+  GPIO_SD_B0_02: { gpio: gpio3, bit: 14 }
+  GPIO_SD_B0_03: { gpio: gpio3, bit: 15 }
+  GPIO_SD_B0_04: { gpio: gpio3, bit: 16 }
+  GPIO_SD_B0_05: { gpio: gpio3, bit: 17 }
+  GPIO_EMC_32: { gpio: gpio3, bit: 18 }
+  GPIO_EMC_33: { gpio: gpio3, bit: 19 }
+  GPIO_EMC_34: { gpio: gpio3, bit: 20 }
+  GPIO_EMC_35: { gpio: gpio3, bit: 21 }
+  GPIO_EMC_36: { gpio: gpio3, bit: 22 }
+  GPIO_EMC_37: { gpio: gpio3, bit: 23 }
+  GPIO_EMC_38: { gpio: gpio3, bit: 24 }
+  GPIO_EMC_39: { gpio: gpio3, bit: 25 }
+  GPIO_EMC_40: { gpio: gpio3, bit: 26 }
+  GPIO_EMC_41: { gpio: gpio3, bit: 27 }
+  GPIO_EMC_00: { gpio: gpio4, bit: 0 }
+  GPIO_EMC_01: { gpio: gpio4, bit: 1 }
+  GPIO_EMC_02: { gpio: gpio4, bit: 2 }
+  GPIO_EMC_03: { gpio: gpio4, bit: 3 }
+  GPIO_EMC_04: { gpio: gpio4, bit: 4 }
+  GPIO_EMC_05: { gpio: gpio4, bit: 5 }
+  GPIO_EMC_06: { gpio: gpio4, bit: 6 }
+  GPIO_EMC_07: { gpio: gpio4, bit: 7 }
+  GPIO_EMC_08: { gpio: gpio4, bit: 8 }
+  GPIO_EMC_09: { gpio: gpio4, bit: 9 }
+  GPIO_EMC_10: { gpio: gpio4, bit: 10 }
+  GPIO_EMC_11: { gpio: gpio4, bit: 11 }
+  GPIO_EMC_12: { gpio: gpio4, bit: 12 }
+  GPIO_EMC_13: { gpio: gpio4, bit: 13 }
+  GPIO_EMC_14: { gpio: gpio4, bit: 14 }
+  GPIO_EMC_15: { gpio: gpio4, bit: 15 }
+  GPIO_EMC_16: { gpio: gpio4, bit: 16 }
+  GPIO_EMC_17: { gpio: gpio4, bit: 17 }
+  GPIO_EMC_18: { gpio: gpio4, bit: 18 }
+  GPIO_EMC_19: { gpio: gpio4, bit: 19 }
+  GPIO_EMC_20: { gpio: gpio4, bit: 20 }
+  GPIO_EMC_21: { gpio: gpio4, bit: 21 }
+  GPIO_EMC_22: { gpio: gpio4, bit: 22 }
+  GPIO_EMC_23: { gpio: gpio4, bit: 23 }
+  GPIO_EMC_24: { gpio: gpio4, bit: 24 }
+  GPIO_EMC_25: { gpio: gpio4, bit: 25 }
+  GPIO_EMC_26: { gpio: gpio4, bit: 26 }
+  GPIO_EMC_27: { gpio: gpio4, bit: 27 }
+  GPIO_EMC_28: { gpio: gpio4, bit: 28 }
+  GPIO_EMC_29: { gpio: gpio4, bit: 29 }
+  GPIO_EMC_30: { gpio: gpio4, bit: 30 }
+  GPIO_EMC_31: { gpio: gpio4, bit: 31 }
+  WAKEUP: { gpio: gpio5, bit: 0 }
+  PMIC_ON_REQ: { gpio: gpio5, bit: 1 }
+  PMIC_STBY_REQ: { gpio: gpio5, bit: 2 }
+# No `analog_pins:` yet: that path assumes an `adc`-type STM32 ADC and
+# P<port><bit> labels. The FB200 knob inputs are ADC1 IN3/IN4 on pads
+# GPIO_AD_B0_14/15 (docs/UI_AND_STORAGE.md); boards set them
+# through the imxrt_adc `input_mv` config.
+peripherals:
+  # ---- Clocks and power (behavioural: firmware polls their status bits) ----
+  # DC-DC converter: REG0.STS_DC_OK drops on a target change and recovers.
+  - id: "dcdc"
+    type: "imxrt_dcdc"
+    base_address: 0x40080000
+    size: "4KB"
+    irq: 69
+  # CCM_ANALOG + PMU + USB_ANALOG + XTALOSC24M + TEMPMON (one window in the
+  # SVD): PLL LOCK, LDO OK, XTAL OK FSMs, SET/CLR/TOG aliases.
+  - id: "anadig"
+    type: "imxrt_anadig"
+    base_address: 0x400D8000
+    size: "4KB"
+    irq: 61
+  # CCM: divider/mux handshake (CDHIPR) and oscillator ready.
+  - id: "ccm"
+    type: "imxrt_ccm"
+    base_address: 0x400FC000
+    size: "4KB"
+    irq: 95
+  # ---- FlexSPI + serial NOR on port A1 (the XIP flash at 0x60000000) ----
+  # The NOR part is not identified from the FB200 image; the JEDEC ID is a
+  # Winbond W25Q128JV (16 MB, matching the flash window) - an assumption.
+  - id: "flexspi"
+    type: "imxrt_flexspi"
+    base_address: 0x402A8000
+    size: "16KB"
+    irq: 108
+    config:
+      jedec_id: 0xEF4018
+      xip_base: 0x60000000
+      xip_size: 0x1000000
+  # ---- USB OTG controllers (device mode) + UTMI PHYs ----
+  # USB1 carries a simulated host that enumerates the device.
+  - id: "usb1"
+    type: "imxrt_usb"
+    base_address: 0x402E0000
+    size: "512B"
+    irq: 113
+  - id: "usb2"
+    type: "imxrt_usb"
+    base_address: 0x402E0200
+    size: "512B"
+    irq: 112
+    config:
+      host: false
+  - id: "usbphy1"
+    type: "imxrt_usbphy"
+    base_address: 0x400D9000
+    size: "4KB"
+    irq: 65
+  - id: "usbphy2"
+    type: "imxrt_usbphy"
+    base_address: 0x400DA000
+    size: "4KB"
+    irq: 66
+  # ---- eDMA (32 channels, TCDs at +0x1000) + DMAMUX request routing ----
+  # Channel n and n+16 share NVIC line n (0..15); 16 is the error line.
+  - id: "edma"
+    type: "imxrt_edma"
+    base_address: 0x400E8000
+    size: "8KB"
+    irq: 0
+  - id: "dmamux"
+    type: "declarative"
+    base_address: 0x400EC000
+    size: "4KB"
+    config:
+      path: "peripherals/dmamux.yaml"
+  # ---- Timers ----
+  - id: "gpt1"
+    type: "imxrt_gpt"
+    base_address: 0x401EC000
+    size: "16KB"
+    irq: 100
+  - id: "gpt2"
+    type: "imxrt_gpt"
+    base_address: 0x401F0000
+    size: "16KB"
+    irq: 101
+  # ---- FlexIO (functional clock: CCM reset value 30 MHz) ----
+  - id: "flexio1"
+    type: "imxrt_flexio"
+    base_address: 0x401AC000
+    size: "16KB"
+    irq: 90
+  - id: "flexio2"
+    type: "imxrt_flexio"
+    base_address: 0x401B0000
+    size: "16KB"
+    irq: 91
+  # ---- SAI (master clock 256 x 44.1 kHz; SAI3 TX has its own line 59) ----
+  - id: "sai1"
+    type: "imxrt_sai"
+    base_address: 0x40384000
+    size: "16KB"
+    irq: 56
+  - id: "sai2"
+    type: "imxrt_sai"
+    base_address: 0x40388000
+    size: "16KB"
+    irq: 57
+  - id: "sai3"
+    type: "imxrt_sai"
+    base_address: 0x4038C000
+    size: "16KB"
+    irq: 58
+    config:
+      tx_irq: 59
+  # ---- Register files (SVD reset values, no status polls) ----
+  - id: "iomuxc"
+    type: "declarative"
+    base_address: 0x401F8000
+    size: "16KB"
+    config:
+      path: "peripherals/iomuxc.yaml"
+  # FlexRAM bank split (GPR16/17), TCM sizing (GPR14)
+  - id: "iomuxc_gpr"
+    type: "declarative"
+    base_address: 0x400AC000
+    size: "4KB"
+    config:
+      path: "peripherals/iomuxc_gpr.yaml"
+  - id: "iomuxc_snvs"
+    type: "declarative"
+    base_address: 0x400A8000
+    size: "4KB"
+    config:
+      path: "peripherals/iomuxc_snvs.yaml"
+  - id: "iomuxc_snvs_gpr"
+    type: "declarative"
+    base_address: 0x400A4000
+    size: "4KB"
+    config:
+      path: "peripherals/iomuxc_snvs_gpr.yaml"
+  - id: "flexram"
+    type: "declarative"
+    base_address: 0x400B0000
+    size: "4KB"
+    irq: 38
+    config:
+      path: "peripherals/flexram.yaml"
+  - id: "wdog1"
+    type: "declarative"
+    base_address: 0x400B8000
+    size: "4KB"
+    irq: 92
+    config:
+      path: "peripherals/wdog1.yaml"
+  - id: "wdog2"
+    type: "declarative"
+    base_address: 0x400D0000
+    size: "4KB"
+    irq: 45
+    config:
+      path: "peripherals/wdog2.yaml"
+  - id: "rtwdog"
+    type: "declarative"
+    base_address: 0x400BC000
+    size: "4KB"
+    irq: 93
+    config:
+      path: "peripherals/rtwdog.yaml"
+  - id: "snvs"
+    type: "declarative"
+    base_address: 0x400D4000
+    size: "16KB"
+    irq: 46
+    config:
+      path: "peripherals/snvs.yaml"
+  - id: "src"
+    type: "declarative"
+    base_address: 0x400F8000
+    size: "4KB"
+    irq: 98
+    config:
+      path: "peripherals/src.yaml"
+  - id: "gpc"
+    type: "declarative"
+    base_address: 0x400F4000
+    size: "4KB"
+    irq: 97
+    config:
+      path: "peripherals/gpc.yaml"
+  - id: "ocotp"
+    type: "declarative"
+    base_address: 0x401F4000
+    size: "4KB"
+    config:
+      path: "peripherals/ocotp.yaml"
+  - id: "romc"
+    type: "declarative"
+    base_address: 0x40180000
+    size: "4KB"
+    config:
+      path: "peripherals/romc.yaml"
+  - id: "xbara1"
+    type: "declarative"
+    base_address: 0x403BC000
+    size: "4KB"
+    config:
+      path: "peripherals/xbara1.yaml"
+  - id: "aipstz1"
+    type: "declarative"
+    base_address: 0x4007C000
+    size: "4KB"
+    config:
+      path: "peripherals/aipstz1.yaml"
+  # ---- Analog ----
+  - id: "adc1"
+    type: "imxrt_adc"
+    base_address: 0x400C4000
+    size: "4KB"
+    irq: 67
+  - id: "adc2"
+    type: "imxrt_adc"
+    base_address: 0x400C8000
+    size: "4KB"
+    irq: 68
+  # ---- GPIO1..5 ----
+  - id: "gpio1"
+    type: "gpio"
+    base_address: 0x401B8000
+    size: "16KB"
+    irq: 80
+    config:
+      profile: "imxrt"
+  - id: "gpio2"
+    type: "gpio"
+    base_address: 0x401BC000
+    size: "16KB"
+    irq: 82
+    config:
+      profile: "imxrt"
+  - id: "gpio3"
+    type: "gpio"
+    base_address: 0x401C0000
+    size: "16KB"
+    irq: 84
+    config:
+      profile: "imxrt"
+  - id: "gpio4"
+    type: "gpio"
+    base_address: 0x401C4000
+    size: "16KB"
+    irq: 86
+    config:
+      profile: "imxrt"
+  - id: "gpio5"
+    type: "gpio"
+    base_address: 0x400C0000
+    size: "16KB"
+    irq: 88
+    config:
+      profile: "imxrt"
+  # ---- LPUART1..8 (functional clock 80 MHz = PLL3/6, SDK default) ----
+  - id: "lpuart1"
+    type: "imxrt_lpuart"
+    base_address: 0x40184000
+    size: "16KB"
+    irq: 20
+  - id: "lpuart2"
+    type: "imxrt_lpuart"
+    base_address: 0x40188000
+    size: "16KB"
+    irq: 21
+  - id: "lpuart3"
+    type: "imxrt_lpuart"
+    base_address: 0x4018c000
+    size: "16KB"
+    irq: 22
+  - id: "lpuart4"
+    type: "imxrt_lpuart"
+    base_address: 0x40190000
+    size: "16KB"
+    irq: 23
+  - id: "lpuart5"
+    type: "imxrt_lpuart"
+    base_address: 0x40194000
+    size: "16KB"
+    irq: 24
+  - id: "lpuart6"
+    type: "imxrt_lpuart"
+    base_address: 0x40198000
+    size: "16KB"
+    irq: 25
+  - id: "lpuart7"
+    type: "imxrt_lpuart"
+    base_address: 0x4019c000
+    size: "16KB"
+    irq: 26
+  - id: "lpuart8"
+    type: "imxrt_lpuart"
+    base_address: 0x401a0000
+    size: "16KB"
+    irq: 27
+  # ---- LPI2C1..4 masters (functional clock 60 MHz = PLL3/8) ----
+  - id: "lpi2c1"
+    type: "imxrt_lpi2c"
+    base_address: 0x403f0000
+    size: "16KB"
+    irq: 28
+  - id: "lpi2c2"
+    type: "imxrt_lpi2c"
+    base_address: 0x403f4000
+    size: "16KB"
+    irq: 29
+  - id: "lpi2c3"
+    type: "imxrt_lpi2c"
+    base_address: 0x403f8000
+    size: "16KB"
+    irq: 30
+  - id: "lpi2c4"
+    type: "imxrt_lpi2c"
+    base_address: 0x403fc000
+    size: "16KB"
+    irq: 31
+  - id: "systick"
+    type: "systick"
+    base_address: 0xE000E010

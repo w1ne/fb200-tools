@@ -1,0 +1,134 @@
+peripheral: RTWDOG
+version: 0.1.0
+registers:
+- id: CS
+  address_offset: 0
+  size: 32
+  access: READ_WRITE
+  reset_value: 10624
+  fields:
+  - name: STOP
+    bit_range:
+    - 0
+    - 0
+    description: Stop Enable
+  - name: WAIT
+    bit_range:
+    - 1
+    - 1
+    description: Wait Enable
+  - name: DBG
+    bit_range:
+    - 2
+    - 2
+    description: Debug Enable
+  - name: TST
+    bit_range:
+    - 4
+    - 3
+    description: Watchdog Test
+  - name: UPDATE
+    bit_range:
+    - 5
+    - 5
+    description: Allow updates
+  - name: INT
+    bit_range:
+    - 6
+    - 6
+    description: Watchdog Interrupt
+  - name: EN
+    bit_range:
+    - 7
+    - 7
+    description: Watchdog Enable
+  - name: CLK
+    bit_range:
+    - 9
+    - 8
+    description: Watchdog Clock
+  - name: RCS
+    bit_range:
+    - 10
+    - 10
+    description: Reconfiguration Success
+  - name: ULK
+    bit_range:
+    - 11
+    - 11
+    description: Unlock status
+  - name: PRES
+    bit_range:
+    - 12
+    - 12
+    description: Watchdog prescaler
+  - name: CMD32EN
+    bit_range:
+    - 13
+    - 13
+    description: Enables or disables WDOG support for 32-bit (otherwise 16-bit or 8-bit) refresh/unlock command write words
+  - name: FLG
+    bit_range:
+    - 14
+    - 14
+    description: Watchdog Interrupt Flag
+  - name: WIN
+    bit_range:
+    - 15
+    - 15
+    description: Watchdog Window
+  side_effects: null
+- id: CNT
+  address_offset: 4
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: CNTLOW
+    bit_range:
+    - 7
+    - 0
+    description: Low byte of the Watchdog Counter
+  - name: CNTHIGH
+    bit_range:
+    - 15
+    - 8
+    description: High byte of the Watchdog Counter
+  side_effects: null
+- id: TOVAL
+  address_offset: 8
+  size: 32
+  access: READ_WRITE
+  reset_value: 1024
+  fields:
+  - name: TOVALLOW
+    bit_range:
+    - 7
+    - 0
+    description: Low byte of the timeout value
+  - name: TOVALHIGH
+    bit_range:
+    - 15
+    - 8
+    description: High byte of the timeout value
+  side_effects: null
+- id: WIN
+  address_offset: 12
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: WINLOW
+    bit_range:
+    - 7
+    - 0
+    description: Low byte of Watchdog Window
+  - name: WINHIGH
+    bit_range:
+    - 15
+    - 8
+    description: High byte of Watchdog Window
+  side_effects: null
+interrupts:
+  RTWDOG: 93
+timing: null

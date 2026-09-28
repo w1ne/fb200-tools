@@ -1,0 +1,869 @@
+peripheral: DMAMUX
+version: 0.1.0
+registers:
+- id: CHCFG0
+  address_offset: 0
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG1
+  address_offset: 4
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG2
+  address_offset: 8
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG3
+  address_offset: 12
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG4
+  address_offset: 16
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG5
+  address_offset: 20
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG6
+  address_offset: 24
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG7
+  address_offset: 28
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG8
+  address_offset: 32
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG9
+  address_offset: 36
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG10
+  address_offset: 40
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG11
+  address_offset: 44
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG12
+  address_offset: 48
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG13
+  address_offset: 52
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG14
+  address_offset: 56
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG15
+  address_offset: 60
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG16
+  address_offset: 64
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG17
+  address_offset: 68
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG18
+  address_offset: 72
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG19
+  address_offset: 76
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG20
+  address_offset: 80
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG21
+  address_offset: 84
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG22
+  address_offset: 88
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG23
+  address_offset: 92
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG24
+  address_offset: 96
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG25
+  address_offset: 100
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG26
+  address_offset: 104
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG27
+  address_offset: 108
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG28
+  address_offset: 112
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG29
+  address_offset: 116
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG30
+  address_offset: 120
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+- id: CHCFG31
+  address_offset: 124
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: SOURCE
+    bit_range:
+    - 6
+    - 0
+    description: DMA Channel Source (Slot Number)
+  - name: A_ON
+    bit_range:
+    - 29
+    - 29
+    description: DMA Channel Always Enable
+  - name: TRIG
+    bit_range:
+    - 30
+    - 30
+    description: DMA Channel Trigger Enable
+  - name: ENBL
+    bit_range:
+    - 31
+    - 31
+    description: DMA Mux Channel Enable
+  side_effects: null
+interrupts: null
+timing: null

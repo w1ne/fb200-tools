@@ -156,6 +156,7 @@ tests with `.venv/bin/pytest` (under a minute). The slow stock-DSP parity tests
 | [`docs/PROTOCOL.md`](docs/PROTOCOL.md) | USB/BLE app protocol, full command set |
 | [`docs/FIRMWARE_FORMAT.md`](docs/FIRMWARE_FORMAT.md), [`docs/FIRMWARE_BRINGUP.md`](docs/FIRMWARE_BRINGUP.md) | the `.mr` container and vendor boot contract |
 | [`docs/HARDWARE.md`](docs/HARDWARE.md), [`docs/pcb/`](docs/pcb/) | hardware notes and PCB photos |
+| [`docs/LABWIRED.md`](docs/LABWIRED.md) | LabWired twin of the board: chip/board YAML, smoke and stock-boot gates |
 
 ## Credits
 

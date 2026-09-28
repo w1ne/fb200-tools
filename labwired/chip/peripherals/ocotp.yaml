@@ -1,0 +1,908 @@
+peripheral: OCOTP
+version: 0.1.0
+registers:
+- id: HW_OCOTP_CTRL
+  address_offset: 0
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: ADDR
+    bit_range:
+    - 5
+    - 0
+    description: OTP write and read access address register
+  - name: BUSY
+    bit_range:
+    - 8
+    - 8
+    description: OTP controller status bit
+  - name: ERROR
+    bit_range:
+    - 9
+    - 9
+    description: Set by the controller when an access to a locked region(OTP or shadow register) is requested
+  - name: RELOAD_SHADOWS
+    bit_range:
+    - 10
+    - 10
+    description: Set to force re-loading the shadow registers (HW/SW capability and LOCK)
+  - name: WR_UNLOCK
+    bit_range:
+    - 31
+    - 16
+    description: Write 0x3E77 to enable OTP write accesses
+  side_effects: null
+- id: HW_OCOTP_CTRL_SET
+  address_offset: 4
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: ADDR
+    bit_range:
+    - 5
+    - 0
+    description: OTP write and read access address register
+  - name: BUSY
+    bit_range:
+    - 8
+    - 8
+    description: OTP controller status bit
+  - name: ERROR
+    bit_range:
+    - 9
+    - 9
+    description: Set by the controller when an access to a locked region(OTP or shadow register) is requested
+  - name: RELOAD_SHADOWS
+    bit_range:
+    - 10
+    - 10
+    description: Set to force re-loading the shadow registers (HW/SW capability and LOCK)
+  - name: WR_UNLOCK
+    bit_range:
+    - 31
+    - 16
+    description: Write 0x3E77 to enable OTP write accesses
+  side_effects: null
+- id: HW_OCOTP_CTRL_CLR
+  address_offset: 8
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: ADDR
+    bit_range:
+    - 5
+    - 0
+    description: OTP write and read access address register
+  - name: BUSY
+    bit_range:
+    - 8
+    - 8
+    description: OTP controller status bit
+  - name: ERROR
+    bit_range:
+    - 9
+    - 9
+    description: Set by the controller when an access to a locked region(OTP or shadow register) is requested
+  - name: RELOAD_SHADOWS
+    bit_range:
+    - 10
+    - 10
+    description: Set to force re-loading the shadow registers (HW/SW capability and LOCK)
+  - name: WR_UNLOCK
+    bit_range:
+    - 31
+    - 16
+    description: Write 0x3E77 to enable OTP write accesses
+  side_effects: null
+- id: HW_OCOTP_CTRL_TOG
+  address_offset: 12
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: ADDR
+    bit_range:
+    - 5
+    - 0
+    description: OTP write and read access address register
+  - name: BUSY
+    bit_range:
+    - 8
+    - 8
+    description: OTP controller status bit
+  - name: ERROR
+    bit_range:
+    - 9
+    - 9
+    description: Set by the controller when an access to a locked region(OTP or shadow register) is requested
+  - name: RELOAD_SHADOWS
+    bit_range:
+    - 10
+    - 10
+    description: Set to force re-loading the shadow registers (HW/SW capability and LOCK)
+  - name: WR_UNLOCK
+    bit_range:
+    - 31
+    - 16
+    description: Write 0x3E77 to enable OTP write accesses
+  side_effects: null
+- id: HW_OCOTP_TIMING
+  address_offset: 16
+  size: 32
+  access: READ_WRITE
+  reset_value: 101554005
+  fields:
+  - name: STROBE_PROG
+    bit_range:
+    - 11
+    - 0
+    description: This count value specifies the strobe period in one time write OTP
+  - name: RELAX
+    bit_range:
+    - 15
+    - 12
+    description: This count value specifies the time to add to all default timing parameters other than the Tpgm and Trd
+  - name: STROBE_READ
+    bit_range:
+    - 21
+    - 16
+    description: This count value specifies the strobe period in one time read OTP
+  - name: WAIT
+    bit_range:
+    - 27
+    - 22
+    description: This count value specifies time interval between auto read and write access in one time program
+  side_effects: null
+- id: HW_OCOTP_DATA
+  address_offset: 32
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: DATA
+    bit_range:
+    - 31
+    - 0
+    description: Used to initiate a write to OTP
+  side_effects: null
+- id: HW_OCOTP_READ_CTRL
+  address_offset: 48
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: READ_FUSE
+    bit_range:
+    - 0
+    - 0
+    description: Used to initiate a read to OTP
+  side_effects: null
+- id: HW_OCOTP_READ_FUSE_DATA
+  address_offset: 64
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: DATA
+    bit_range:
+    - 31
+    - 0
+    description: The data read from OTP
+  side_effects: null
+- id: HW_OCOTP_SW_STICKY
+  address_offset: 80
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BLOCK_DTCP_KEY
+    bit_range:
+    - 0
+    - 0
+    description: Shadow register read and OTP read lock for DTCP_KEY region
+  - name: SRK_REVOKE_LOCK
+    bit_range:
+    - 1
+    - 1
+    description: Shadow register write and OTP write lock for SRK_REVOKE region
+  - name: FIELD_RETURN_LOCK
+    bit_range:
+    - 2
+    - 2
+    description: Shadow register write and OTP write lock for FIELD_RETURN region
+  - name: BLOCK_ROM_PART
+    bit_range:
+    - 3
+    - 3
+    description: Set by ARM during Boot after DTCP is initialized and before test mode entry, if ROM_PART_LOCK=1
+  - name: JTAG_BLOCK_RELEASE
+    bit_range:
+    - 4
+    - 4
+    description: Set by ARM during Boot after DTCP is initialized and before test mode entry
+  side_effects: null
+- id: HW_OCOTP_SCS
+  address_offset: 96
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: HAB_JDE
+    bit_range:
+    - 0
+    - 0
+    description: HAB JTAG Debug Enable
+  - name: SPARE
+    bit_range:
+    - 30
+    - 1
+    description: Unallocated read/write bits for implementation specific software use.
+  - name: LOCK
+    bit_range:
+    - 31
+    - 31
+    description: When set, all of the bits in this register are locked and can not be changed through SW programming
+  side_effects: null
+- id: HW_OCOTP_SCS_SET
+  address_offset: 100
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: HAB_JDE
+    bit_range:
+    - 0
+    - 0
+    description: HAB JTAG Debug Enable
+  - name: SPARE
+    bit_range:
+    - 30
+    - 1
+    description: Unallocated read/write bits for implementation specific software use.
+  - name: LOCK
+    bit_range:
+    - 31
+    - 31
+    description: When set, all of the bits in this register are locked and can not be changed through SW programming
+  side_effects: null
+- id: HW_OCOTP_SCS_CLR
+  address_offset: 104
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: HAB_JDE
+    bit_range:
+    - 0
+    - 0
+    description: HAB JTAG Debug Enable
+  - name: SPARE
+    bit_range:
+    - 30
+    - 1
+    description: Unallocated read/write bits for implementation specific software use.
+  - name: LOCK
+    bit_range:
+    - 31
+    - 31
+    description: When set, all of the bits in this register are locked and can not be changed through SW programming
+  side_effects: null
+- id: HW_OCOTP_SCS_TOG
+  address_offset: 108
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: HAB_JDE
+    bit_range:
+    - 0
+    - 0
+    description: HAB JTAG Debug Enable
+  - name: SPARE
+    bit_range:
+    - 30
+    - 1
+    description: Unallocated read/write bits for implementation specific software use.
+  - name: LOCK
+    bit_range:
+    - 31
+    - 31
+    description: When set, all of the bits in this register are locked and can not be changed through SW programming
+  side_effects: null
+- id: HW_OCOTP_VERSION
+  address_offset: 144
+  size: 32
+  access: READ_ONLY
+  reset_value: 100663296
+  fields:
+  - name: STEP
+    bit_range:
+    - 15
+    - 0
+    description: Fixed read-only value reflecting the stepping of the RTL version.
+  - name: MINOR
+    bit_range:
+    - 23
+    - 16
+    description: Fixed read-only value reflecting the MINOR field of the RTL version.
+  - name: MAJOR
+    bit_range:
+    - 31
+    - 24
+    description: Fixed read-only value reflecting the MAJOR field of the RTL version.
+  side_effects: null
+- id: HW_OCOTP_TIMING2
+  address_offset: 256
+  size: 32
+  access: READ_WRITE
+  reset_value: 29556882
+  fields:
+  - name: RELAX_PROG
+    bit_range:
+    - 11
+    - 0
+    description: This count value specifies the strobe period in one time write OTP
+  - name: RELAX_READ
+    bit_range:
+    - 21
+    - 16
+    description: This count value specifies the strobe period in one time read OTP
+  - name: RELAX1
+    bit_range:
+    - 28
+    - 22
+    description: This count value specifies time interval between auto read and write access in one time program
+  side_effects: null
+- id: HW_OCOTP_LOCK
+  address_offset: 1024
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: TESTER
+    bit_range:
+    - 1
+    - 0
+    description: Status of shadow register and OTP write lock for tester region
+  - name: BOOT_CFG
+    bit_range:
+    - 3
+    - 2
+    description: Status of shadow register and OTP write lock for boot_cfg region
+  - name: MEM_TRIM
+    bit_range:
+    - 5
+    - 4
+    description: Status of shadow register and OTP write lock for mem_trim region
+  - name: SJC_RESP
+    bit_range:
+    - 6
+    - 6
+    description: Status of shadow register read and write, OTP read and write lock for sjc_resp region
+  - name: MAC_ADDR
+    bit_range:
+    - 9
+    - 8
+    description: Status of shadow register and OTP write lock for mac_addr region
+  - name: GP1
+    bit_range:
+    - 11
+    - 10
+    description: Status of shadow register and OTP write lock for gp1 region
+  - name: GP2
+    bit_range:
+    - 13
+    - 12
+    description: Status of shadow register and OTP write lock for gp2 region
+  - name: OTPMK_MSB
+    bit_range:
+    - 15
+    - 15
+    description: Status of shadow register read and write, OTP read and write lock for otpmk region (MSB)
+  - name: SW_GP1
+    bit_range:
+    - 16
+    - 16
+    description: Status of shadow register and OTP write lock for sw_gp1 region
+  - name: OTPMK_LSB
+    bit_range:
+    - 17
+    - 17
+    description: Status of shadow register read and write, OTP read and write lock for otpmk region (LSB)
+  - name: ANALOG
+    bit_range:
+    - 19
+    - 18
+    description: Status of shadow register and OTP write lock for analog region
+  - name: OTPMK_CRC
+    bit_range:
+    - 20
+    - 20
+    description: Status of shadow register and OTP write lock for otpmk_crc region
+  - name: SW_GP2_LOCK
+    bit_range:
+    - 21
+    - 21
+    description: Status of shadow register and OTP write lock for sw_gp2 region
+  - name: MISC_CONF
+    bit_range:
+    - 22
+    - 22
+    description: Status of shadow register and OTP write lock for misc_conf region
+  - name: SW_GP2_RLOCK
+    bit_range:
+    - 23
+    - 23
+    description: Status of shadow register and OTP read lock for sw_gp2 region
+  - name: GP3
+    bit_range:
+    - 27
+    - 26
+    description: Status of shadow register and OTP write lock for gp3 region
+  - name: FIELD_RETURN
+    bit_range:
+    - 31
+    - 28
+    description: Reserved
+  side_effects: null
+- id: HW_OCOTP_CFG0
+  address_offset: 1040
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: This register contains 32 bits of the Unique ID and SJC_CHALLENGE field
+  side_effects: null
+- id: HW_OCOTP_CFG1
+  address_offset: 1056
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: This register contains 32 bits of the Unique ID and SJC_CHALLENGE field
+  side_effects: null
+- id: HW_OCOTP_CFG2
+  address_offset: 1072
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP Bank 0, word 3 (ADDR = 0x03)
+  side_effects: null
+- id: HW_OCOTP_CFG3
+  address_offset: 1088
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP Bank 0, word 4 (ADDR = 0x04)
+  side_effects: null
+- id: HW_OCOTP_CFG4
+  address_offset: 1104
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP Bank 0, word 5 (ADDR = 0x05)
+  side_effects: null
+- id: HW_OCOTP_CFG5
+  address_offset: 1120
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP Bank 0, word 6 (ADDR = 0x06)
+  side_effects: null
+- id: HW_OCOTP_CFG6
+  address_offset: 1136
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP Bank 0, word 7 (ADDR = 0x07)
+  side_effects: null
+- id: HW_OCOTP_MEM0
+  address_offset: 1152
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP bank 1, word 0 (ADDR = 0x08)
+  side_effects: null
+- id: HW_OCOTP_MEM1
+  address_offset: 1168
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP bank 1, word 1 (ADDR = 0x09)
+  side_effects: null
+- id: HW_OCOTP_MEM2
+  address_offset: 1184
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP bank 1, word 2 (ADDR = 0x0A)
+  side_effects: null
+- id: HW_OCOTP_MEM3
+  address_offset: 1200
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP bank 1, word 3 (ADDR = 0x0B)
+  side_effects: null
+- id: HW_OCOTP_MEM4
+  address_offset: 1216
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP bank 1, word 4 (ADDR = 0x0C)
+  side_effects: null
+- id: HW_OCOTP_ANA0
+  address_offset: 1232
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP bank 1, word 5 (ADDR = 0x0D)
+  side_effects: null
+- id: HW_OCOTP_ANA1
+  address_offset: 1248
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP bank 1, word 6 (ADDR = 0x0E)
+  side_effects: null
+- id: HW_OCOTP_ANA2
+  address_offset: 1264
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP bank 1, word 7 (ADDR = 0x0F)
+  side_effects: null
+- id: HW_OCOTP_SRK0
+  address_offset: 1408
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Shadow register for the hash of the Super Root Key word0 (Copy of OTP Bank 3, word 0 (ADDR = 0x1C))
+  side_effects: null
+- id: HW_OCOTP_SRK1
+  address_offset: 1424
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Shadow register for the hash of the Super Root Key word1 (Copy of OTP Bank 3, word 1 (ADDR = 0x1D))
+  side_effects: null
+- id: HW_OCOTP_SRK2
+  address_offset: 1440
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Shadow register for the hash of the Super Root Key word2 (Copy of OTP Bank 3, word 2 (ADDR = 0x1E))
+  side_effects: null
+- id: HW_OCOTP_SRK3
+  address_offset: 1456
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Shadow register for the hash of the Super Root Key word3 (Copy of OTP Bank 3, word 3 (ADDR = 0x1F))
+  side_effects: null
+- id: HW_OCOTP_SRK4
+  address_offset: 1472
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Shadow register for the hash of the Super Root Key word4 (Copy of OTP Bank 3, word 4 (ADDR = 0x20))
+  side_effects: null
+- id: HW_OCOTP_SRK5
+  address_offset: 1488
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Shadow register for the hash of the Super Root Key word5 (Copy of OTP Bank 3, word 5 (ADDR = 0x21))
+  side_effects: null
+- id: HW_OCOTP_SRK6
+  address_offset: 1504
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Shadow register for the hash of the Super Root Key word6 (Copy of OTP Bank 3, word 6 (ADDR = 0x22))
+  side_effects: null
+- id: HW_OCOTP_SRK7
+  address_offset: 1520
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Shadow register for the hash of the Super Root Key word7 (Copy of OTP Bank 3, word 7 (ADDR = 0x23))
+  side_effects: null
+- id: HW_OCOTP_SJC_RESP0
+  address_offset: 1536
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Shadow register for the SJC_RESP Key word0 (Copy of OTP Bank 4, word 0 (ADDR = 0x20))
+  side_effects: null
+- id: HW_OCOTP_SJC_RESP1
+  address_offset: 1552
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Shadow register for the SJC_RESP Key word1 (Copy of OTP Bank 4, word 1 (ADDR = 0x21))
+  side_effects: null
+- id: HW_OCOTP_MAC0
+  address_offset: 1568
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP Bank 4, word 2 (ADDR = 0x22).
+  side_effects: null
+- id: HW_OCOTP_MAC1
+  address_offset: 1584
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP Bank 4, word 3 (ADDR = 0x23).
+  side_effects: null
+- id: HW_OCOTP_GP3
+  address_offset: 1600
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP Bank 4, word 4 (ADDR = 0x24).
+  side_effects: null
+- id: HW_OCOTP_GP1
+  address_offset: 1632
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP Bank 4, word 6 (ADDR = 0x26).
+  side_effects: null
+- id: HW_OCOTP_GP2
+  address_offset: 1648
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP Bank 4, word 7 (ADDR = 0x27).
+  side_effects: null
+- id: HW_OCOTP_SW_GP1
+  address_offset: 1664
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP Bank 5, word 0 (ADDR = 0x28).
+  side_effects: null
+- id: HW_OCOTP_SW_GP20
+  address_offset: 1680
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP Bank 5, word 1 (ADDR = 0x29).
+  side_effects: null
+- id: HW_OCOTP_SW_GP21
+  address_offset: 1696
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP Bank 5, word 2 (ADDR = 0x2a).
+  side_effects: null
+- id: HW_OCOTP_SW_GP22
+  address_offset: 1712
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP Bank 5, word 3 (ADDR = 0x2b).
+  side_effects: null
+- id: HW_OCOTP_SW_GP23
+  address_offset: 1728
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP Bank 5, word 4 (ADDR = 0x2c).
+  side_effects: null
+- id: HW_OCOTP_MISC_CONF0
+  address_offset: 1744
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP Bank 5, word 5 (ADDR = 0x2d).
+  side_effects: null
+- id: HW_OCOTP_MISC_CONF1
+  address_offset: 1760
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP Bank 5, word 6 (ADDR = 0x2e).
+  side_effects: null
+- id: HW_OCOTP_SRK_REVOKE
+  address_offset: 1776
+  size: 32
+  access: READ_WRITE
+  reset_value: 0
+  fields:
+  - name: BITS
+    bit_range:
+    - 31
+    - 0
+    description: Reflects value of OTP Bank 5, word 7 (ADDR = 0x2f).
+  side_effects: null
+interrupts: null
+timing: null

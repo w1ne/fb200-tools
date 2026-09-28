@@ -1,0 +1,242 @@
+peripheral: AIPSTZ1
+version: 0.1.0
+registers:
+- id: MPR
+  address_offset: 0
+  size: 32
+  access: READ_WRITE
+  reset_value: 1996488704
+  fields:
+  - name: MPROT5
+    bit_range:
+    - 11
+    - 8
+    description: Master 5 Priviledge, Buffer, Read, Write Control.
+  - name: MPROT3
+    bit_range:
+    - 19
+    - 16
+    description: Master 3 Priviledge, Buffer, Read, Write Control.
+  - name: MPROT2
+    bit_range:
+    - 23
+    - 20
+    description: Master 2 Priviledge, Buffer, Read, Write Control
+  - name: MPROT1
+    bit_range:
+    - 27
+    - 24
+    description: Master 1 Priviledge, Buffer, Read, Write Control
+  - name: MPROT0
+    bit_range:
+    - 31
+    - 28
+    description: Master 0 Priviledge, Buffer, Read, Write Control
+  side_effects: null
+- id: OPACR
+  address_offset: 64
+  size: 32
+  access: READ_WRITE
+  reset_value: 1145324612
+  fields:
+  - name: OPAC7
+    bit_range:
+    - 3
+    - 0
+    description: Off-platform Peripheral Access Control 7
+  - name: OPAC6
+    bit_range:
+    - 7
+    - 4
+    description: Off-platform Peripheral Access Control 6
+  - name: OPAC5
+    bit_range:
+    - 11
+    - 8
+    description: Off-platform Peripheral Access Control 5
+  - name: OPAC4
+    bit_range:
+    - 15
+    - 12
+    description: Off-platform Peripheral Access Control 4
+  - name: OPAC3
+    bit_range:
+    - 19
+    - 16
+    description: Off-platform Peripheral Access Control 3
+  - name: OPAC2
+    bit_range:
+    - 23
+    - 20
+    description: Off-platform Peripheral Access Control 2
+  - name: OPAC1
+    bit_range:
+    - 27
+    - 24
+    description: Off-platform Peripheral Access Control 1
+  - name: OPAC0
+    bit_range:
+    - 31
+    - 28
+    description: Off-platform Peripheral Access Control 0
+  side_effects: null
+- id: OPACR1
+  address_offset: 68
+  size: 32
+  access: READ_WRITE
+  reset_value: 1145324612
+  fields:
+  - name: OPAC15
+    bit_range:
+    - 3
+    - 0
+    description: Off-platform Peripheral Access Control 15
+  - name: OPAC14
+    bit_range:
+    - 7
+    - 4
+    description: Off-platform Peripheral Access Control 14
+  - name: OPAC13
+    bit_range:
+    - 11
+    - 8
+    description: Off-platform Peripheral Access Control 13
+  - name: OPAC12
+    bit_range:
+    - 15
+    - 12
+    description: Off-platform Peripheral Access Control 12
+  - name: OPAC11
+    bit_range:
+    - 19
+    - 16
+    description: Off-platform Peripheral Access Control 11
+  - name: OPAC10
+    bit_range:
+    - 23
+    - 20
+    description: Off-platform Peripheral Access Control 10
+  - name: OPAC9
+    bit_range:
+    - 27
+    - 24
+    description: Off-platform Peripheral Access Control 9
+  - name: OPAC8
+    bit_range:
+    - 31
+    - 28
+    description: Off-platform Peripheral Access Control 8
+  side_effects: null
+- id: OPACR2
+  address_offset: 72
+  size: 32
+  access: READ_WRITE
+  reset_value: 1145324612
+  fields:
+  - name: OPAC23
+    bit_range:
+    - 3
+    - 0
+    description: Off-platform Peripheral Access Control 23
+  - name: OPAC22
+    bit_range:
+    - 7
+    - 4
+    description: Off-platform Peripheral Access Control 22
+  - name: OPAC21
+    bit_range:
+    - 11
+    - 8
+    description: Off-platform Peripheral Access Control 21
+  - name: OPAC20
+    bit_range:
+    - 15
+    - 12
+    description: Off-platform Peripheral Access Control 20
+  - name: OPAC19
+    bit_range:
+    - 19
+    - 16
+    description: Off-platform Peripheral Access Control 19
+  - name: OPAC18
+    bit_range:
+    - 23
+    - 20
+    description: Off-platform Peripheral Access Control 18
+  - name: OPAC17
+    bit_range:
+    - 27
+    - 24
+    description: Off-platform Peripheral Access Control 17
+  - name: OPAC16
+    bit_range:
+    - 31
+    - 28
+    description: Off-platform Peripheral Access Control 16
+  side_effects: null
+- id: OPACR3
+  address_offset: 76
+  size: 32
+  access: READ_WRITE
+  reset_value: 1145324612
+  fields:
+  - name: OPAC31
+    bit_range:
+    - 3
+    - 0
+    description: Off-platform Peripheral Access Control 31
+  - name: OPAC30
+    bit_range:
+    - 7
+    - 4
+    description: Off-platform Peripheral Access Control 30
+  - name: OPAC29
+    bit_range:
+    - 11
+    - 8
+    description: Off-platform Peripheral Access Control 29
+  - name: OPAC28
+    bit_range:
+    - 15
+    - 12
+    description: Off-platform Peripheral Access Control 28
+  - name: OPAC27
+    bit_range:
+    - 19
+    - 16
+    description: Off-platform Peripheral Access Control 27
+  - name: OPAC26
+    bit_range:
+    - 23
+    - 20
+    description: Off-platform Peripheral Access Control 26
+  - name: OPAC25
+    bit_range:
+    - 27
+    - 24
+    description: Off-platform Peripheral Access Control 25
+  - name: OPAC24
+    bit_range:
+    - 31
+    - 28
+    description: Off-platform Peripheral Access Control 24
+  side_effects: null
+- id: OPACR4
+  address_offset: 80
+  size: 32
+  access: READ_WRITE
+  reset_value: 1145324612
+  fields:
+  - name: OPAC33
+    bit_range:
+    - 27
+    - 24
+    description: Off-platform Peripheral Access Control 33
+  - name: OPAC32
+    bit_range:
+    - 31
+    - 28
+    description: Off-platform Peripheral Access Control 32
+  side_effects: null
+interrupts: null
+timing: null
