@@ -283,15 +283,14 @@ Budgets on this chip: 600 MHz / 44.1 kHz = 13.6k cycles per sample; RAM
 
 ### M5: long IRs in the cab
 
-Status: step P1b on the host (2026-09-28). **Off on the pedal: pending
-RAM.** The tail needs ~96 kB and its FFT tables 4.9 kB; the pedal's OCRAM
-is 32 kB ([memory map](FIRMWARE_BRINGUP.md#memory-map-audio-app)), not the
-512 kB this step was built for. The firmware is built with
-`ENGINE_IR_TAPS` = 512 (`src/audio/engine.h`): no tail, no 512-point
-tables, `cab_set_ir_len` over 512 taps fails and `cab long` over 512
-answers "not available". The code and its host tests stay; raise
-`ENGINE_IR_TAPS` (up to 4096) once the RAM is found. Stock and user slots
-are 512 taps.
+Status: step P1b on the host (2026-09-28); on the pedal from the RAM
+reclaim (2026-09-29, not yet measured on hardware). The tail (~96 kB) is in
+the low DTCM and its FFT tables (4.9 kB) in OCRAM
+([memory map](FIRMWARE_BRINGUP.md#memory-map-audio-app)). The firmware is
+built with `ENGINE_IR_TAPS` = 4096 (`src/audio/engine.h`); with 512 there is
+no tail, no 512-point tables, `cab_set_ir_len` over 512 taps fails and
+`cab long` over 512 answers "not available". Stock and user slots are 512
+taps.
 
 **Design** (`dsp/conv2.c`, `dsp/cab.c`). The cab is a `conv2_t`: head =
 taps 0..511 on the 32-sample partitioned convolver (`conv.c`, as before),
@@ -326,25 +325,27 @@ slice of the work per block, 512 samples late = no added latency.
 
 **Memory.** DTCM: +64 B (`cab_t` +84 B; TinyUSB's 2 kB-aligned `_dcd_data`
 now comes first in `.bss`, where the section alignment pads anyway, so it
-no longer costs up to 2 kB of padding). With long IRs on it needs: tail
-96 kB (`s_cab_tail`), IR staging 16 kB (`s_ir`, 4096 taps for `cab long`),
-and the 512-point rfft tables (4.9 kB, `linker.ld` `.ocramdata`: copied
-from the slot data at boot, with the DTCM tables). With long IRs off
-(today): IR staging 2 kB, the rest not linked (`cab_init` uses
-`conv2_init_head`). ITCM code: +2.6 kB.
+no longer costs up to 2 kB of padding). Tail 96 kB (`s_cab_tail`) in the
+low DTCM (`linker.ld` `.dtcm_lo`); in OCRAM (32 kB) the IR staging 16 kB
+(`s_ir`, 4096 taps for `cab long`) and the 512-point rfft tables (4.9 kB,
+`.ocramdata`: copied from the slot data at boot, with the DTCM tables).
+See [the memory map](FIRMWARE_BRINGUP.md#memory-map-audio-app). A build with
+`ENGINE_IR_TAPS` = 512 (long IRs off) needs IR staging 2 kB and links
+neither the tail nor the tables (`cab_init` uses `conv2_init_head`). ITCM
+code: +2.6 kB.
 
 **Console:** `cab long <taps>` puts a synthetic IR (noise, -60 dB at 4096
 taps) in the cab until the next cab change; `cab long 0` goes back to the
-preset's cab. With `prof` it measures the real cost on the pedal. Today
-only up to 512 taps (over: "not available").
+preset's cab. With `prof` it measures the real cost on the pedal. Up to
+`ENGINE_IR_TAPS` taps (over: "not available").
 
 ### M4: bass delay
 
-Status: first version on the host (2026-09-28). **Max time 342 ms, pending
-RAM** (designed for 1000 ms). In v0.8.0 the line was in memory the pedal
-does not have (OCRAM above 0x20208000: writes dropped, reads 0), so the
-repeats never played on the pedal, only the dry signal. Now the line is in
-the real 32 kB OCRAM (see RAM below).
+Status: first version on the host (2026-09-28). **Max time 1000 ms.** In
+v0.8.0 the line was in memory the pedal does not have (OCRAM above
+0x20208000: writes dropped, reads 0), so the repeats never played on the
+pedal, only the dry signal. Then the line was in the real 32 kB OCRAM (max
+342 ms); now it is in DTCM (see RAM below).
 
 **The problem.** The stock preset has a delay block (app command `0x85`,
 fields `P+0x8c` en, `0x8e` type 0-6, `0x90` mix, `0x92` feedback, `0x94`
@@ -379,8 +380,8 @@ Our words: `0x96` marker, `0x98` low cut (knob 0-100), `0x9a` tone (knob
 smooths `0x90` as the delay mix, `tests/stock_emu_fx.py`), `0x92` =
 feedback, `0x94` = time in ms. The type field `0x8e` is kept but not used
 (one delay voice). The app clamps time to 40-2500 ms; our DSP clamps to
-20-342 ms (`DELAY_MS_MAX`, RAM, below). The preset format is unchanged: a
-preset keeps its stored time and plays it clamped to 342 ms; the console
+20-1000 ms (`DELAY_MS_MAX`, RAM, below). The preset format is unchanged: a
+preset keeps its stored time and plays it clamped to `DELAY_MS_MAX`; the console
 shows the clamped time, and its next edit of that preset stores it.
 
 **The official app.** `PROTOCOL.md` has the `0x85` block and per-type
@@ -390,22 +391,20 @@ phone app (test session, gap 2).
 
 **DSP** (`dsp/delay.c`): mono, in place, after MOD and before the reverb.
 `line = LP(HP(x + fb * y))`, `out = x + mix * y` (dry stays at unity). Time
-20-342 ms (designed for 20-1000) with a glide (no clicks, a short pitch bend like tape), feedback
+20-1000 ms with a glide (no clicks, a short pitch bend like tape), feedback
 knob x 0.95, mix knob x 1.0, low cut 12 dB/oct at 20-500 Hz (knob 63 =
 150 Hz, 0 = off), tone 6 dB/oct low-pass 1-10 kHz (100 = off). The loop gain
 is at most 0.95 at every frequency (Butterworth high-pass, no peak).
 
 **RAM.** The line is int16 (x 16384, +-2.0 full scale, truncated toward zero
-so the tail dies out to exact zeros): 2 B per sample, 88 kB for 1 s at
-44.1 kHz. DTCM has no room, so the line is in OCRAM (`linker.ld` `.ocram`,
-NOLOAD, cleared by `delay_init`). OCRAM is 32 kB
-([memory map](FIRMWARE_BRINGUP.md#memory-map-audio-app)), shared with the
-user IR staging (2 kB) and the EQ (508 B): the line gets 15086 samples
-(30,172 B) = 342 ms at 44.1 kHz (`DELAY_MS_MAX` in `dsp/delay.h`, the line
-sized for `DELAY_FS_MAX` = 44.1 kHz; the link fails if it does not fit).
-Raise `DELAY_MS_MAX` when more RAM is found. OCRAM is cached (D-cache on,
-default memory map); the delay touches it 3 times per sample. `delay_t`
-(116 B) stays in DTCM. ITCM code: +2.9 kB.
+so the tail dies out to exact zeros): 1 s at 44.1 kHz (`AUDIO_FS`, the only
+rate) = 88,208 B (`DELAY_MS_MAX` in `dsp/delay.h`, the line sized for
+`DELAY_FS_MAX` = 44.1 kHz; the link fails if it does not fit). The line is
+in the DTCM between `.bss` and the stack (`linker.ld` `.dtcm_hi`, NOLOAD,
+cleared at boot and by `delay_init`); see
+[the memory map](FIRMWARE_BRINGUP.md#memory-map-audio-app). (v0.8.0 placed
+it at OCRAM 0x20210000, where the pedal has no RAM; main then had 342 ms in
+the real 32 kB OCRAM.) `delay_t` (116 B) stays in `.bss`. ITCM code: +2.9 kB.
 
 **CPU.** Measured by instruction count (Cortex-M7 build, `-O2`, Unicorn):
 92 instructions per sample with low cut and tone on = 0.7 % of the 600 MHz
@@ -415,7 +414,7 @@ budget at CPI 1, 1.4 % at CPI 2. Check on the pedal with `cpu`.
 `preset_delay_on`; otherwise the chain is the same code as before. A switch
 from off to on clears the line first (no old audio).
 
-**Console** (for tests on the pedal): `delay [on|off] [time 20-342 ms] [fb
+**Console** (for tests on the pedal): `delay [on|off] [time 20-1000 ms] [fb
 0-100] [mix 0-100] [lowcut 0-100] [tone 0-100]` (a longer time clamps). It edits the edit buffer
 (save with `save` or a held footswitch). The first edit of a preset without
 the marker writes the marker and our defaults (300 ms, fb 30, mix 35, low
