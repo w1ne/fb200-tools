@@ -14,10 +14,10 @@ has no FB200 special cases.
 |------|------------|
 | `labwired/chip/mimxrt1052.yaml` | the chip: memory map, pins, peripherals |
 | `labwired/chip/peripherals/*.yaml` | register files ingested from the NXP SVD |
-| `labwired/system.yaml` | the FB200 board: ADC inputs, FlexIO2 clock, footswitches, UART |
+| `labwired/system.yaml` | the FB200 board: ADC inputs, FlexIO2 clock, footswitches, Bluetooth module on LPUART5 |
 | `labwired/smoke.yaml` | gate for the open smoke firmware |
 | `labwired/stock-boot.yaml` | gate for the unmodified vendor firmware, boot to USB (short) |
-| `labwired/stock-first-boot.yaml` | gate for the vendor firmware from a blank flash: factory reset and Bluetooth AT sequence (long: about 30 min of CPU time) |
+| `labwired/stock-first-boot.yaml` | gate for the vendor firmware from a blank flash: factory reset, Bluetooth AT sequence and module replies, a scripted phone (long: about 30 min of CPU time) |
 | `firmware/labwired-smoke/` | the open smoke firmware (bare registers, no SDK) |
 | `tools/labwired_elf.py` | puts raw blobs into one ARM ELF, one PT_LOAD per blob |
 | `tools/labwired_stock.py` | builds `build/labwired/stock.elf` from your `.mr` |
@@ -127,7 +127,8 @@ The stage 5 check counts words and finds both encodings; it does not prove
 that every word is `0xC0` or `0xFC`.
 
 The board parts are not modelled yet: NAU88L21 codec, 74HC4051 knob
-multiplexers, 14-segment display, Bluetooth module.
+multiplexers, 14-segment display. The Bluetooth module is modelled (see the
+first-boot gate).
 
 ### Stock first-boot gate (long)
 

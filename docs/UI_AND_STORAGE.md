@@ -131,6 +131,31 @@ AA 55 app protocol (BLE transparent UART). Boot AT sequence: `AT+TM`, names
 (L). BT audio arrives digitally on SAI3 (MCU = I2S master, RX only, 32-bit
 slots) and is mixed into the output.
 
+Module replies (H, code; M for the meaning of the module strings, from the
+BT201 KT1025A/B manual V2.3):
+
+- The LPUART5 RX interrupt (`0xAF70`) gives every byte to the app-protocol
+  ring and to a small parser (`0x3D3C`) for the module status lines `TS+nn`
+  (classic Bluetooth) and `TL+nn` (BLE). It keeps the second digit as ASCII:
+  `TS` at DTCM `0x2000782D`, `TL` at `0x2000782E`.
+- The display dot (`0x19B70`, GPIO4 pin 23): when BT audio is on (S`+0x17` =
+  1) and the tuner is off, it blinks while `TS` is `'0'` (waiting for pairing)
+  and is on for any other value (connected, music, call). Before the first
+  `TS` line the byte is 0, so the dot is on. Nothing reads `TL`.
+- Boot sequence (`0x1B630`): the name from F:0x83000 is read first. Then
+  `AT+TM` is sent and, for 150 ms, the RX bytes are also copied to DTCM
+  `0x2001DFBC` (flag `0x200077E2`). If the stored name is not `FB200`
+  (a blank flash), the fixed commands follow (`AT+BDFB200 Audio`,
+  `AT+BMFB200FB200`, `AT+CN00`, `AT+B501`, `AT+B401`) and `FB200` is written to
+  F:0x83000. If it is `FB200`, the first 5 captured bytes are compared with
+  it (`strncmp`); on a match the rest of the sequence is skipped, else the
+  names are sent from the template (`AT+BD%-15.15s Audio`, `AT+BM%-20.20s`)
+  and `AT+CN00`, `AT+B501`, `AT+B401` follow. The manual's reply to `AT+TM`
+  is `TM+<BLE name>`, which never matches, so with such a module the stock
+  sends the whole sequence at every boot.
+- The stock does not check `OK` / `ER+n`: the bytes go to the app-protocol
+  ring, which drops them (no `AA 55`).
+
 ## 5. Flash map and storage (H; verified entries read on the pedal)
 
 No wear levelling, CRC or journal; writes are read-modify-write of a 4 KB
