@@ -13,7 +13,6 @@ from collections.abc import Callable
 from typing import Any
 
 from fb200.mcp_server import INSTRUCTIONS
-
 from fb200_app.toolhost import ToolError, ToolHost, needs_confirmation
 
 MODELS = ("claude-sonnet-5", "claude-opus-5-5")

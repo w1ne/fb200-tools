@@ -17,8 +17,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     import uvicorn
-    from fb200.mcp_server import Pedal, PedalTools
 
+    from fb200.mcp_server import Pedal, PedalTools
     from fb200_app.server import create_app
     from fb200_app.toolhost import ToolHost
 

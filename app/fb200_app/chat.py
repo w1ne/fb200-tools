@@ -82,7 +82,7 @@ class ChatRunner:
     def _run(self, text: str) -> None:
         try:
             self.session.run(text, self.emit, self.confirm)
-        except Exception as exc:        # API errors, network: shown in the chat
+        except Exception as exc:  # noqa: BLE001 - API/network errors end the run, shown in chat
             self.emit({"type": "error", "message": f"{type(exc).__name__}: {exc}"})
             self.emit({"type": "done", "text": ""})
 

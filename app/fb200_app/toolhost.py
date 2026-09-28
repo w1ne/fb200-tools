@@ -92,7 +92,7 @@ class ToolHost:
             listed = asyncio.run(self.server.list_tools())
             schema = []
             for t in listed:
-                input_schema = getattr(t, "inputSchema", None) or getattr(t, "input_schema")
+                input_schema = getattr(t, "inputSchema", None) or t.input_schema
                 schema.append({"name": t.name, "description": t.description or "",
                                "input_schema": input_schema})
             self._schema = sorted(schema, key=lambda d: d["name"])   # stable: cacheable
