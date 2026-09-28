@@ -5,7 +5,10 @@
 # VARIANT=recovery builds the resident recovery image (block 0); the default
 # builds the app for the slot. See docs/BOOTLOADER.md §4.
 VARIANT      ?= app
-TARGET       := build/fb200-$(VARIANT)
+# BUILD overrides where output goes (default: build/); tests/fwbuild.py passes
+# a per-process tmp dir so parallel pytest workers never share one build tree.
+BUILD        ?= build
+TARGET       := $(BUILD)/fb200-$(VARIANT)
 TUSB_DIR     := .deps/tinyusb
 MCUX_CORE    := $(TUSB_DIR)/hw/mcu/nxp/mcuxsdk-core
 MCUX_DEVICES := $(TUSB_DIR)/hw/mcu/nxp/mcux-devices-rt
@@ -79,7 +82,7 @@ SRC_C := \
   src/startup.c src/vectors.c src/main.c src/memfuncs.c \
   src/system_clock.c src/usb_descriptors.c src/compat/stubs.c src/led.c src/crc32.c \
   src/dsp/dsp.c src/dsp/math.c src/dsp/gain.c src/dsp/testgen.c \
-  src/dsp/conv.c src/dsp/biquad.c src/dsp/detector.c src/dsp/gate.c src/dsp/comp.c \
+  src/dsp/conv.c src/dsp/conv2.c src/dsp/biquad.c src/dsp/detector.c src/dsp/gate.c src/dsp/comp.c \
   src/dsp/mod.c src/dsp/reverb.c src/dsp/delay.c src/dsp/eq.c \
   src/dsp/drums.c src/dsp/tuner.c \
   src/dsp/amp.c src/dsp/tone.c src/dsp/cab.c src/dsp/stock_data.c \
@@ -174,11 +177,11 @@ $(TARGET)/%.S.o: %.S
 	$(CC) $(CFLAGS) -c $< -o $@
 
 layout: deps $(TARGET).elf
-	$(NM) $(TARGET).elf | grep -E '(_estack|__bss_|__blob_end__|stage2|app_main)' | sort > build/layout.txt
-	cat build/layout.txt
+	$(NM) $(TARGET).elf | grep -E '(_estack|__bss_|__blob_end__|stage2|app_main)' | sort > $(BUILD)/layout.txt
+	cat $(BUILD)/layout.txt
 
 clean:
-	rm -rf build
+	rm -rf $(BUILD)
 
 deps: $(TUSB_DIR)/src/tusb.c $(SDK_STAMP) $(DSP_DIR)/Include/arm_math.h
 
