@@ -153,8 +153,10 @@ What the unmodified firmware does on the twin, at 60.75 M .. 64.66 M cycles
 
 Without the codec the firmware sent three transfers to `0x54` (write, read,
 write), got a NACK on each and went on. With the codec it does the init
-above. Nothing else changes within the 90 M cycles of the gate: SAI1 and
-SAI3 stay disabled (TCSR/RCSR at reset), the GPIO and eDMA state is the same.
+above. Nothing else changes, in the 90 M cycles of the gate and also in a
+700 M-cycle probe run: SAI1 and SAI3 stay disabled (TCSR/RCSR at reset), and
+the GPIO1..3 data, eDMA ERQ and IOMUXC_GPR1 values are the same with and
+without the codec. The stock does not wait on the codec or retry it.
 The codec is configured before audio starts; the SAI data path is not
 modelled.
 
