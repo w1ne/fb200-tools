@@ -127,6 +127,55 @@ def test_bss_uses_the_stock_memset_region():
     assert syms["_estack"] == 0x20058000
 
 
+# The memory that exists on the pedal (i.MX RT1052, measured on hardware:
+# IOMUXC_GPR17 = 0xffaaaaa9, GPR16 = 0x00200007; docs/FIRMWARE_BRINGUP.md,
+# "Memory map"). Above OCRAM_END there is nothing: writes are dropped, reads
+# return 0, no fault. The ELF must not place anything there.
+REAL_MEMORY = {
+    "ITCM": range(0x00000000, 0x00020000),    # 4 banks, 128 kB
+    "DTCM": range(0x20000000, 0x20058000),    # 11 banks, 352 kB
+    "OCRAM": range(0x20200000, 0x20208000),   # 1 bank, 32 kB
+    "flash": range(0x60000000, 0x60800000),   # FlexSPI XIP (load addresses)
+}
+
+
+def sections(elf: Path) -> list[tuple[str, int, int, int, list[str]]]:
+    """(name, size, vma, lma, flags) of every section, from objdump -h."""
+    out = subprocess.run(["arm-none-eabi-objdump", "-h", "-w", str(elf)], check=True,
+                         capture_output=True, text=True).stdout
+    rows = re.findall(r"^\s*\d+ (\S+)\s+([0-9a-f]{8})\s+([0-9a-f]{8})\s+([0-9a-f]{8})\s+"
+                      r"[0-9a-f]{8}\s+\S+\s+(.*)$", out, re.MULTILINE)
+    return [(n, int(s, 16), int(v, 16), int(lma, 16), [f.strip() for f in fl.split(",")])
+            for n, s, v, lma, fl in rows]
+
+
+def outside_real_memory(elf: Path) -> list[str]:
+    """Allocated sections (run address) and loaded sections (load address)
+    that do not lie inside one real memory region."""
+    def inside(start: int, size: int) -> bool:
+        return any(start in r and start + size <= r.stop for r in REAL_MEMORY.values())
+    bad = []
+    for name, size, vma, lma, flags in sections(elf):
+        if "ALLOC" not in flags or size == 0:
+            continue
+        if not inside(vma, size):
+            bad.append(f"{name}: run address {vma:#010x}..{vma + size:#010x}")
+        if "LOAD" in flags and not inside(lma, size):
+            bad.append(f"{name}: load address {lma:#010x}..{lma + size:#010x}")
+    return bad
+
+
+@pytest.mark.parametrize("variant", ["app", "recovery"])
+def test_every_section_is_in_real_memory(variant):
+    """Nothing in memory that the pedal does not have: main before the fix
+    put .ocramtext, .ocramdata and .ocram at 0x20210000.. (an RT1062 layout),
+    and the app crashed at boot."""
+    elf = fwbuild.build(FW, variant) / f"fb200-{variant}.elf"
+    assert sections(elf), "objdump output not parsed"
+    bad = outside_real_memory(elf)
+    assert bad == [], "\n".join(bad)
+
+
 def test_no_undefined_symbols():
     build()
     undef = subprocess.run(
