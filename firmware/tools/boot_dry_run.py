@@ -156,6 +156,13 @@ def main() -> int:
 
         uc.hook_add(UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE, mem_hook,
                     begin=PERIPH_BASE, end=PERIPH_BASE + PERIPH_SIZE - 1)
+
+        def reset_hook(uc_, access, address, size, value, user):
+            if value & 0xFFFF0004 == 0x05FA0004:   # AIRCR: VECTKEY + SYSRESETREQ
+                hits.add("reset")
+                uc_.emu_stop()
+
+        uc.hook_add(UC_HOOK_MEM_WRITE, reset_hook, begin=0xE000ED0C, end=0xE000ED0F)
     uc.reg_write(UC_ARM_REG_SP, 0x20008000)
     error = ""
     try:
@@ -172,6 +179,8 @@ def main() -> int:
         names += ["app OCRAM code", "back in ITCM"]
     for name in names:
         print(f"  reached {name}: {name in hits}")
+    if "reset" in hits:
+        print("  software reset requested")
     crumbs = struct.unpack("<4I", bytes(uc.mem_read(0x400F8028, 16)))   # SRC_GPR3..6
     print("  crumbs: " + " ".join(f"{c:08x}" for c in crumbs))
     copied = True

@@ -134,3 +134,44 @@ def test_no_undefined_symbols():
         check=True, capture_output=True, text=True,
     ).stdout.strip()
     assert undef == ""
+
+
+def dry_run(tmp_path, data: bool) -> str:
+    """Vendor loader -> recovery -> copier -> app stage2 -> app_main -> OCRAM
+    code, emulated (firmware/tools/boot_dry_run.py)."""
+    pytest.importorskip("unicorn")
+    from stock_emu import find_stock_mr
+    stock = find_stock_mr()
+    if stock is None:
+        pytest.skip("fb200-stock.mr not found (set FB200_STOCK_MR)")
+    from fb200 import images
+    rec_dir, app_dir = fwbuild.build(FW, "recovery"), fwbuild.build(FW)
+    part = lambda d, v, k: (d / f"fb200-{v}.{k}.bin").read_bytes()  # noqa: E731
+    rec = images.build_recovery(part(rec_dir, "recovery", "vectors"),
+                                part(rec_dir, "recovery", "blob"),
+                                part(rec_dir, "recovery", "copier"))
+    slot = images.build_slot(part(app_dir, "app", "vectors"), part(app_dir, "app", "blob"),
+                             part(app_dir, "app", "dtcmdata") if data else b"")
+    (tmp_path / "app.slot").write_bytes(slot)
+    (tmp_path / "twostage.mr").write_bytes(images.twostage_mr(stock.read_bytes(), rec, slot))
+    return subprocess.run(
+        [sys.executable, str(ROOT / "firmware" / "tools" / "boot_dry_run.py"),
+         "--elf", str(rec_dir / "fb200-recovery.elf"), "--app-elf", str(app_dir / "fb200-app.elf"),
+         "--app-slot", str(tmp_path / "app.slot"), "--max-instructions", "40000000",
+         str(tmp_path / "twostage.mr")], capture_output=True, text=True).stdout
+
+
+def test_boot_runs_ocram_code(tmp_path):
+    out = dry_run(tmp_path, data=True)
+    assert "app .ocramtext copied: True" in out and "reached back in ITCM: True" in out, out
+    assert "DRY RUN OK" in out, out
+
+
+def test_slot_without_its_data_goes_back_to_recovery(tmp_path):
+    """A v2 slot with no data passes recovery's check (CRC of 0 bytes), but
+    its cold code would be garbage: stage2_main must reset into recovery with
+    a fault crumb (recovery then stays on the console) instead of running it."""
+    out = dry_run(tmp_path, data=False)
+    assert "reached app app_main: False" in out and "software reset requested" in out, out
+    need = len((fwbuild.build(FW) / "fb200-app.dtcmdata.bin").read_bytes())
+    assert f"crumbs: fa000000 00000000 {need:08x} 60041000" in out, out
