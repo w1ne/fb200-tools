@@ -213,7 +213,8 @@ static void print_dec(const char *pre, float x, int decimals, int plus)
 }
 
 /* eq [on|off] | eq hpf <hz> | eq lpf <hz> | eq <band> <hz> <gain dB> [q]: our
- * EQ after the cab (dsp/eq.h). Not in the preset: off after boot. */
+ * EQ after the cab (dsp/eq.h). A change goes into the edit buffer with our
+ * marker (preset.h P_EQ_DATA; `save` stores it), on the preset's grid. */
 static void cmd_eq(int argc, char **argv)
 {
     eq_t *e = engine_eq();
@@ -237,6 +238,12 @@ static void cmd_eq(int argc, char **argv)
         log_printf("usage: eq [on|off] | eq hpf <20-200 Hz|0> | eq lpf <2000-20000 Hz|0> | "
                    "eq <band 1-5> <30-10000 Hz> <gain -15..15 dB> [q 0.3-4]\r\n");
         return;
+    }
+    if (argc > 1) {
+        uint8_t r[2 + EQ_REC] = {(uint8_t)EQ_MARK, (uint8_t)(EQ_MARK >> 8)};
+        eq_save(e, r + 2);
+        eq_load(e, r + 2);              /* show what the preset keeps */
+        ui_edit_write(P_EQ_MARK, r, sizeof r);
     }
     log_printf("eq %s%s: hpf ", e->on ? "on" : "off", e->on && e->bypass ? " (flat)" : "");
     if (e->hpf > 0.0f) log_printf("%d Hz", (int)(e->hpf + 0.5f)); else log_printf("off");

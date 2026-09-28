@@ -32,6 +32,8 @@ enum {
      * (see preset_delay_on) */
     P_DLY_EN = 0x8c, P_DLY_TYPE = 0x8e, P_DLY_MIX = 0x90, P_DLY_FB = 0x92, P_DLY_TIME = 0x94,
     P_DLY_MARK = 0x96, P_DLY_LOWCUT = 0x98, P_DLY_TONE = 0x9a,
+    /* Our bass EQ (see preset_eq_on): marker, then EQ_REC bytes (dsp/eq.h) */
+    P_EQ_MARK = 0xc4, P_EQ_DATA = 0xc6,
 };
 
 /* The stock format has a delay block (fn 0x85: en, type, mix, feedback,
@@ -43,6 +45,15 @@ enum {
  * delay sets it; the app's 0x85 block (0x8c..0x95) leaves it alone, so after
  * that the app switches and edits the delay. docs/PARITY.md M4. */
 #define DLY_MARK 0x4c44u
+
+/* Our bass EQ (dsp/eq.h) lives after the module order (0xbc..0xc3), in the
+ * unused tail 0xc4..0xff of the record: u16 marker 0x5145 ("EQ") at 0xc4,
+ * then the settings at 0xc6..0xdd (eq_save/eq_load, EQ_REC = 24 bytes). The
+ * tail is 0 in every factory preset, no app command (0x80..0x86, 0xA0) writes
+ * it, and the stock DSP ignores it (tests/test_eq_preset.py). No marker (a
+ * stock preset, erased flash, a whole-preset write from the app with 0 there)
+ * = EQ off with the default settings. docs/PARITY.md M4. */
+#define EQ_MARK 0x5145u
 
 /* Global settings offsets. */
 enum { S_PRESET = 0x16, S_BT = 0x17, S_MASTER = 0x18, S_IN_GAIN = 0x1a, S_STOMP = 0x1f,
@@ -66,6 +77,16 @@ static inline void pset(preset_t *p, unsigned off, uint16_t v)
 static inline bool preset_delay_on(const preset_t *p)
 {
     return pget(p, P_DLY_MARK) == DLY_MARK && pget(p, P_DLY_EN) != 0;
+}
+
+/* the settings to load (NULL: no marker, EQ off + defaults) */
+static inline const uint8_t *preset_eq(const preset_t *p)
+{
+    return pget(p, P_EQ_MARK) == EQ_MARK ? &p->b[P_EQ_DATA] : 0;
+}
+static inline bool preset_eq_on(const preset_t *p)
+{
+    return preset_eq(p) && p->b[P_EQ_DATA] != 0;
 }
 
 void preset_read(unsigned index, preset_t *out);         /* from flash */
