@@ -78,16 +78,11 @@ def _cmd_ir_delete(args) -> int:
 
 
 def _cmd_ir_import(args) -> int:
-    from fb200.wav import wav_to_ir
-
-    samples = wav_to_ir(args.wav)
-    name = args.name or Path(args.wav).stem
-
     def progress(done: int, total: int) -> None:
         print(f"\rframe {done}/{total}", end="", file=sys.stderr)
 
     with _with_device() as device:
-        device.ir_import(args.slot, name, samples, progress=progress)
+        name = device.import_wav(args.slot, args.wav, args.name, progress=progress)
     print(f"\nimported '{name}' into slot {args.slot}", file=sys.stderr)
     return 0
 
