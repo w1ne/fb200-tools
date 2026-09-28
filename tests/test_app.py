@@ -374,3 +374,10 @@ def test_ui_smoke(http):
     if node:                                    # the UI script parses
         src = Path(__file__).parents[1] / "app" / "fb200_app" / "static" / "app.js"
         subprocess.run([node, "--check", str(src)], check=True, capture_output=True, timeout=20)
+
+
+def test_rejects_foreign_host_header(http):
+    """DNS rebinding: a request that reaches 127.0.0.1 under another name is refused."""
+    client = http[0]
+    assert client.get("/api/status", headers={"Host": "evil.example"}).status_code == 400
+    assert client.get("/api/status").status_code == 200

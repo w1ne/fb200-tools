@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Mount, Route
@@ -176,7 +178,11 @@ def create_app(host: ToolHost | None = None, config: Config | None = None,
         runner.stop()
         host.close()
 
-    app = Starlette(routes=routes, lifespan=lifespan)
+    # Host check: a DNS-rebinding page (evil.example -> 127.0.0.1) is same-origin
+    # and passes the header guard, but its Host header is not ours
+    local = TrustedHostMiddleware, ["127.0.0.1", "localhost", "testserver"]
+    app = Starlette(routes=routes, lifespan=lifespan,
+                    middleware=[Middleware(local[0], allowed_hosts=local[1])])
     app.state.host, app.state.runner, app.state.config = host, runner, config
     return app
 
