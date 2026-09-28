@@ -23,11 +23,12 @@ has no FB200 special cases.
 
 ## 2. Get the LabWired CLI
 
-The FB200 parts are on core branch `feat/mimxrt1052-fb200` and are not
-released yet. Until the next core release, build the CLI from that branch:
+The i.MX RT parts and the `peripheral_log` and `fidelity_clean` assertions
+are on core `main` (PRs #1254 and #1255) and are not released yet. Until the
+next core release, build the CLI from `main`:
 
 ```bash
-git clone -b feat/mimxrt1052-fb200 https://github.com/w1ne/labwired-core.git
+git clone https://github.com/w1ne/labwired-core.git
 cd labwired-core
 cargo build --release -p labwired-cli
 export PATH="$PWD/target/release:$PATH"   # gives `labwired`
@@ -62,19 +63,19 @@ The script reads the `.mr` with `fb200.firmware.MrFile` and writes
 ## 4. Run the gates
 
 ```bash
-LABWIRED_STRICT_FIDELITY=1 labwired test --script labwired/smoke.yaml
-LABWIRED_STRICT_FIDELITY=1 labwired test --script labwired/stock-boot.yaml
+labwired test --script labwired/smoke.yaml
+labwired test --script labwired/stock-boot.yaml
 ```
 
 Expected result:
 
 ```
 PASS  4/4 checks · smoke · 2000000 steps · 0.27s
-PASS  14/14 checks · stock-boot · 90000000 steps · 14.00s
+PASS  24/24 checks · stock-boot · 90000000 steps · 15.26s
 ```
 
-`LABWIRED_STRICT_FIDELITY=1` makes the run fail at the first unmapped MMIO
-access or undecoded instruction. Without it the core only logs these gaps (in
+The stock gate asserts `fidelity_clean: true`: an unmapped MMIO access or an
+undecoded instruction anywhere in the run fails it (the gaps are also in
 `result.json`, key `fidelity`). Use `--output-dir DIR` to keep the artifacts.
 
 A nightly CI job with the released `labwired-test` action follows after the
@@ -97,40 +98,30 @@ FB200 bootloader (`0x60000000..0x60008000`) are not simulated: the run starts
 at the application's vector table, where the bootloader hands over
 (see [`FIRMWARE_BRINGUP.md`](FIRMWARE_BRINGUP.md)).
 
-Each assertion reads a register that the firmware or the simulated USB host
-changed from its reset value. The expected values are register facts from
-the reference manual, not bytes of the vendor image.
+Each `memory_value` assertion reads a register that the firmware or the
+simulated USB host changed from its reset value. Each `peripheral_log`
+assertion reads a log that a part model records: the FlexSPI IP commands,
+the I2C bus trace, the FlexIO shifter words, the simulated USB host. The
+expected values are register facts from the reference manual and USB
+descriptor values, not bytes of the vendor image.
 
 | Stage | What | Covered |
 |-------|------|---------|
 | 1 | loader copies its code to ITCM and enters ITCM `0x4D6` | indirect only (see below) |
 | 2 | clocks: VDD_SOC raised (DCDC REG3.TRG), DCDC STS_DC_OK, ARM PLL powered and locked at DIV_SELECT 100 | yes |
-| 3 | FlexSPI driver reads the NOR JEDEC ID and configuration sectors | no |
-| 4 | LPI2C1 probes the NAU88L21 and gets a NACK (MSR.NDF) | partly: NACK yes, address `0x54` no |
-| 5 | WS2812 frame on FlexIO2 through eDMA | no |
-| 6 | USB1 enumeration: device mode, running, port enabled at high speed, DEVICEADDR = 5, endpoints 1/4/5 enabled after SET_CONFIGURATION | partly: see below |
+| 3 | FlexSPI driver reads the NOR JEDEC ID (`0x9F`) and quad-reads (`0x6B`) the configuration sector at `0xB0000` | yes (FlexSPI `ip` log) |
+| 4 | LPI2C1 probes the NAU88L21 at `0x54` and gets a NACK | yes (MSR.NDF and the bus trace `addr 0x54 W nack`) |
+| 5 | WS2812 frame on FlexIO2 through eDMA: at least 960 8-bit words on pin 2, encoded `0xC0` / `0xFC` | yes (FlexIO `wire` log) |
+| 6 | USB1 enumeration: device mode, running, port enabled at high speed, DEVICEADDR = 5, endpoints 1/4/5 enabled; VID:PID `34DB:800F`, HID interface 3, product string `FB200` | yes (registers and USB `host` log) |
 | 7 | 14-segment display pins are outputs (GPIO4 16..31, GPIO3 18 and 21) | yes |
-| 8 | no unmapped MMIO, no undecoded instruction | yes, with `LABWIRED_STRICT_FIDELITY=1`; the stop reason `max_cycles` proves no memory violation or decode error |
+| 8 | no unmapped MMIO, no undecoded instruction; no memory violation or decode error | yes (`fidelity_clean: true`, stop reason `max_cycles`) |
 
-Not covered, and why:
+Not covered: **stage 1.** To check the ITCM copy, the gate must compare ITCM
+words with bytes of the vendor image. Those bytes cannot go in this
+repository. All later stages run from ITCM, so a failed copy fails them too.
 
-- **Stage 1.** To check the ITCM copy, the gate must compare ITCM words with
-  bytes of the vendor image. Those bytes cannot go in this repository. All
-  later stages run from ITCM, so a failed copy fails them too.
-- **Stage 3.** The FlexSPI IP command log is model state, not a register.
-  FlexSPI IPCR0 reads 0 at the end of the run, so the registers do not
-  show which commands ran.
-- **Stage 4, address.** The address byte is on the bus trace only.
-- **Stage 5.** The FlexIO2 output words are model state, not registers.
-- **Stage 6, descriptors.** VID:PID `34DB:800F`, the vendor HID interface 3
-  and the product string `FB200` are in the USB host log, not in registers.
-  DEVICEADDR = 5 proves SET_ADDRESS, and the endpoint enables prove
-  SET_CONFIGURATION.
-
-The test-script schema has no assertion on peripheral model logs (USB host
-log, FlexSPI IP log, FlexIO wire log, bus trace) and no assertion on the
-fidelity report. These stages come back when core gets such generic
-assertions.
+The stage 5 check counts words and finds both encodings; it does not prove
+that every word is `0xC0` or `0xFC`.
 
 The board parts are not modelled yet: NAU88L21 codec, 74HC4051 knob
 multiplexers, 14-segment display, Bluetooth module.

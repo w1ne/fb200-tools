@@ -8,9 +8,9 @@
 #
 # Every assertion reads a register that the firmware or the simulated USB
 # host changed from its reset value. The expected values are silicon register
-# facts (IMXRT1050RM), not bytes of the vendor image. Run it with
-# LABWIRED_STRICT_FIDELITY=1: then an unmapped MMIO access or an undecoded
-# instruction stops the run with an error (stage 8).
+# facts (IMXRT1050RM), not bytes of the vendor image. The peripheral_log
+# checks read the logs the part models record (FlexSPI commands, the I2C bus
+# trace, FlexIO shifter words, the simulated USB host).
 schema_version: "1.0"
 inputs:
   firmware: "../build/labwired/stock.elf"
@@ -44,6 +44,13 @@ assertions:
       mask: 0x8000307F
       expected_value: 0x80002064
 
+  # --- Stage 3: FlexSPI NOR ---
+  # The vendor driver reads the JEDEC ID (0x9F) and does a quad read (0x6B)
+  # of the configuration sector at 0xB0000. Lines of the FlexSPI IP-command
+  # log; only the firmware's IP commands write them.
+  - peripheral_log: {peripheral: flexspi, log: ip, contains: "cmd 0x9f "}
+  - peripheral_log: {peripheral: flexspi, log: ip, contains: "cmd 0x6b addr 0x000b0000"}
+
   # --- Stage 4: codec on LPI2C1 ---
   # LPI2C1_MSR.NDF: a NACK was detected. Reset is 0; the model sets it only
   # when an address or data byte is not acknowledged. No codec is attached,
@@ -52,6 +59,15 @@ assertions:
       address: 0x403F0014
       mask: 0x00000400
       expected_value: 0x00000400
+  # The NACK was for the codec address: START + 0x54 write, not acknowledged.
+  - peripheral_log: {peripheral: lpi2c1, log: bus_trace, contains: "addr 0x54 W nack"}
+
+  # --- Stage 5: LED chain on FlexIO2 ---
+  # One WS2812 frame: 40 LEDs x 24 bits, one 8-bit shifter word per bit on
+  # pin 2. Each word is 0xC0 (bit 0) or 0xFC (bit 1).
+  - peripheral_log: {peripheral: flexio2, log: wire, contains: "pin 2 ", min_count: 960}
+  - peripheral_log: {peripheral: flexio2, log: wire, contains: "bits 8 beats 0xc0 "}
+  - peripheral_log: {peripheral: flexio2, log: wire, contains: "bits 8 beats 0xfc "}
 
   # --- Stage 6: USB1 enumeration ---
   # USB1_USBMODE.CM = 2: device mode (reset 0 = idle).
@@ -92,6 +108,11 @@ assertions:
       address: 0x402E01D4
       mask: 0x0000008C
       expected_value: 0x0000008C
+  # The simulated host read the descriptors: VID:PID 34DB:800F, a HID
+  # interface (class 03) as interface 3, and the product string.
+  - peripheral_log: {peripheral: usb1, log: host, contains: "device 34db:800f "}
+  - peripheral_log: {peripheral: usb1, log: host, contains: "interface 3 alt 0 class 03/"}
+  - peripheral_log: {peripheral: usb1, log: host, contains: "\"FB200\""}
 
   # --- Stage 7: display pins ---
   # GPIO4_GDIR bits 16..31: segment lines and digit select 0 are outputs
@@ -106,9 +127,9 @@ assertions:
       mask: 0x00240000
       expected_value: 0x00240000
 
-  # --- Stage 8: the run did not stop early ---
+  # --- Stage 8: no fidelity gap, and the run did not stop early ---
+  # No unmapped MMIO access and no undecoded instruction in the whole run.
+  - fidelity_clean: true
   # A memory violation or a decode error ends the run with that reason, so
-  # reaching the cycle limit proves neither happened. Unmapped MMIO and
-  # undecoded instructions that the core only logs are caught by
-  # LABWIRED_STRICT_FIDELITY=1 (see the header).
+  # reaching the cycle limit proves neither happened.
   - expected_stop_reason: max_cycles
