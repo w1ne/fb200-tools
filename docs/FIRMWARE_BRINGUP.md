@@ -88,32 +88,81 @@ loader copies to ITCM 0x400 are ours.
 
 ### Hot and cold code (audio app)
 
-The ITCM payload has a hard limit: 0x1dbc8 bytes (the vendor loader's entry
-0, `tests/test_audio_image.py`). The audio app does not fit in it any more,
-so it runs code that is not on the audio path from OCRAM:
+The recovery image is loaded by the vendor loader: its ITCM payload has a
+hard limit of 0x1dbc8 bytes (entry 0). The app is loaded by recovery's
+copier, which runs at ITCM 0x1F000: its limit is 0x1F000 - 0x400 bytes
+(`slot_valid`, `APP_ITCM_LIMIT`). The audio app does not fit in ITCM with
+its big buffers, so it runs code that is not on the audio path in place
+from flash (XIP):
 
 - **Hot (ITCM):** everything an ISR, `engine_task` or `usb_audio_task` can
   reach, the TinyUSB audio class driver (`audiod_*`), driver callbacks, and
   on purpose the main loop (`main.c`), boot (`startup.c`), the fault path
   (`vectors.c`, `recovery.c`) and `crc32.c`.
-- **Cold (OCRAM, linker `.ocramtext`):** the files in `COLD_SRC`
-  (`firmware/audio/Makefile`): console, self-update, logging, UI and
-  display, preset storage, protocol, USB descriptors and the CDC/HID class
-  drivers, clock and pin setup, and SDK drivers used only at init or from
-  the main loop.
-- **Rule:** a file goes to `COLD_SRC` only if nothing in it is reachable from
-  a hot root. `firmware/tools/hot_path.py` follows direct calls, tail calls,
-  veneers and callback addresses from the hot roots and fails if any
-  reachable function is in OCRAM; `tests/test_audio_image.py` runs it and
-  has a negative control.
-- **Load:** `.ocramtext` is the first part of the slot data blob (flash
-  0x60041000: `.ocramtext`, `.ocramdata`, `.dtcmdata`; the slot header
-  carries its length and CRC). `stage2_main` refuses a slot whose data is
-  shorter than this build needs (fault crumb, reset into recovery, which
-  stays on the console), copies the three parts, makes OCRAM executable if
-  the MPU is on, and cleans/invalidates the caches and turns the I-cache on.
-- **Recovery** has no OCRAM code: it runs everything from ITCM.
+- **Flash write path (ITCM):** everything that runs while the flash is busy
+  (erase/program) or after an app update has erased the app's own cold code
+  (it lives in the slot): `selfupdate.c` (`fw_begin`, `fw_rx_task`,
+  `flash_store`, `fw_session`), `fsl_flexspi.c`, `tud_task` and the
+  CDC/HID/audio class drivers, the USB descriptors, the CDC log.
+  `fw_begin(FW_APP)` never returns to its (cold) caller: it ends in
+  `fw_session()`, which streams the image and waits for `reset`, keeping the
+  audio running (`engine_task`). HID reports are dropped then
+  (`fw_xip_gone()`, `usb_hid.c`). After every erase/program the FlexSPI AHB
+  buffers, the whole I-cache and the D-cache lines of the XIP code are
+  invalidated (a speculative fetch during the busy time may have cached
+  garbage).
+- **Cold (flash, linker `.xiptext`):** the files in `COLD_SRC`
+  (`firmware/audio/Makefile`): console, UI and display, preset storage
+  (the policy; the write itself is `flash_store`), protocol, clock and pin
+  setup, and SDK drivers used only at init or from the main loop.
+  Measured on the pedal: MPU off (default map: flash Normal, WBWA,
+  executable), I-cache and D-cache on (`CCR` 0x00070200), FlexSPI AHB
+  cacheable and prefetching (`AHBCR` 0x78, RX buffer 3 256 B, prefetch).
+- **Rules:** `firmware/tools/hot_path.py` follows direct calls, tail calls,
+  veneers and callback addresses from both root sets and fails if a hot
+  function is outside ITCM, if a flash-write function is in flash, or if
+  either reads cold const data; `tests/test_audio_image.py` runs it, with
+  negative controls.
+- **Load:** `.xiptext` is the first part of the slot data blob (flash
+  0x60041000: `.xiptext`, `.ocramdata`, `.dtcmdata`; the slot header
+  carries its length and CRC, recovery checks it). `stage2_main` refuses a
+  slot whose data is shorter than this build needs (fault crumb, reset into
+  recovery, which stays on the console), copies the two table sections,
+  zeroes the NOLOAD regions outside the copier's `.bss` memset, and turns
+  the I-cache on.
+- **Recovery** has no XIP code: it runs everything from ITCM.
 
+### Memory map
+
+What the pedal has (read on the pedal 2026-09-28): FlexRAM 512 kB,
+`IOMUXC_GPR17` = 0xFFAAAAA9 (4 banks ITCM, 11 banks DTCM, 1 bank OCRAM),
+`GPR16` = 0x00200007. Nothing answers at OCRAM 0x20208000 and above. The
+boot dry run (`firmware/tools/boot_dry_run.py`) maps exactly this.
+
+| Region | Range | Size | Contents | Free |
+|--------|-------|------|----------|------|
+| ITCM | 0x00000..0x00400 | 1 kB | vectors | - |
+| ITCM | 0x00400..0x13C44 | 78.1 kB | hot code + flash write path (`.blob`) | - |
+| ITCM | 0x13C48..0x1F388 | 45.8 kB | reverb state `s_rev` (`.itcm_bss`) | 3.1 kB |
+| DTCM low | 0x20000000..0x20018A00 | 98.5 kB | long-IR tail, 4096 taps (`.dtcm_lo`) | 2.5 kB |
+| DTCM | 0x20018A00..0x20018B44 | 324 B | crash dump (survives a warm reset) | - |
+| DTCM | 0x20018B44..0x20040608 | 158.7 kB | CMSIS tables, `.bss` | - |
+| DTCM | 0x20040608..0x20055E98 | 86.1 kB | delay line, 1 s at 44.1 kHz (`.dtcm_hi`) | 0.4 kB |
+| DTCM | 0x20056000..0x20058000 | 8 kB | stack (measured high-water < 512 B) | ~7.5 kB |
+| OCRAM | 0x20200000..0x20207708 | 29.8 kB | rfft tables, cab head `s_cab`, IR staging `s_ir`, EQ | 2.2 kB |
+| Flash | 0x60041000..0x6004B6C0 | 41.7 kB | cold code (`.xiptext`) | - |
+| Flash | ..0x60061000 | 128 kB total | + table load images 10.4 kB | 75.9 kB |
+
+Low DTCM (0x20000000..0x20018B44) is ours: in our images the vendor
+loader's table entries 1-3 are `.bss` memsets, so it loads no stock data
+there. The vendor bootloader (F:0x2000) initializes 0x20010000..0x20012F0C
+at every boot (its load table), before recovery runs; its DFU handshake
+slot 2 (0x2001051C) is in its own `.bss`, so no app data can trigger DFU.
+The stack is measured by comparing FlexRAM bank 11 (DTCM 0x20050000.., the
+bootloader's ITCM 0x0..) with the bootloader's ITCM image in flash
+(F:0x3038): only 0x20057E40.. differs.
+
+The numbers change with every build: `make layout` prints the symbols.
 ## 4. Why earlier attempts failed
 
 Before the contract was understood, images were built as plain flash-executable

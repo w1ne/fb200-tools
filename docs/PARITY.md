@@ -319,11 +319,11 @@ slice of the work per block, 512 samples late = no added latency.
 
 **Memory.** DTCM: +64 B (`cab_t` +84 B; TinyUSB's 2 kB-aligned `_dcd_data`
 now comes first in `.bss`, where the section alignment pads anyway, so it
-no longer costs up to 2 kB of padding). OCRAM: tail 96 kB (`s_cab_tail`),
-IR staging 16 kB (`s_ir`, 4096 taps for `cab long`), and the 512-point
-rfft tables (4.9 kB, `linker.ld` `.ocramdata`: copied from the slot data
-at boot, with the DTCM tables; ITCM and DTCM have no room). ITCM code:
-+2.6 kB.
+no longer costs up to 2 kB of padding). Tail 96 kB (`s_cab_tail`) in the
+low DTCM (`linker.ld` `.dtcm_lo`); in OCRAM (32 kB) the IR staging 16 kB
+(`s_ir`, 4096 taps for `cab long`) and the 512-point rfft tables (4.9 kB,
+`.ocramdata`: copied from the slot data at boot, with the DTCM tables).
+See [the memory map](FIRMWARE_BRINGUP.md#memory-map). ITCM code: +2.6 kB.
 
 **Console:** `cab long <taps>` puts a synthetic IR (noise, -60 dB at 4096
 taps) in the cab until the next cab change; `cab long 0` goes back to the
@@ -381,14 +381,12 @@ knob x 0.95, mix knob x 1.0, low cut 12 dB/oct at 20-500 Hz (knob 63 =
 is at most 0.95 at every frequency (Butterworth high-pass, no peak).
 
 **RAM.** The line is int16 (x 16384, +-2.0 full scale, truncated toward zero
-so the tail dies out to exact zeros): 1 s at up to 48 kHz = 96,008 B. DTCM
-has ~5.5 kB free (`.bss` ends at 0x2004CE68, the limit is 0x2004E3E8), so
-the line is in OCRAM2 (`linker.ld` `.ocram`, 0x20210000, NOLOAD, cleared by
-`delay_init`). OCRAM2 (512 kB) is free after boot: the vendor loader only
-unpacks the stock's 0x5AA0-byte OCRAM data to 0x20200000, which our code does
-not read. OCRAM is cached (D-cache on, default memory map); the delay
-touches it 3 times per sample. `delay_t` (116 B) stays in DTCM. ITCM code:
-+2.9 kB.
+so the tail dies out to exact zeros): 1 s at 44.1 kHz (`AUDIO_FS`, the only
+rate) = 88,208 B. The line is in the DTCM between `.bss` and the stack
+(`linker.ld` `.dtcm_hi`, NOLOAD, cleared at boot and by `delay_init`); see
+[the memory map](FIRMWARE_BRINGUP.md#memory-map). (It was first placed at
+OCRAM 0x20210000: the pedal has no RAM there, its OCRAM is 32 kB.)
+`delay_t` (116 B) stays in `.bss`. ITCM code: +2.9 kB.
 
 **CPU.** Measured by instruction count (Cortex-M7 build, `-O2`, Unicorn):
 92 instructions per sample with low cut and tone on = 0.7 % of the 600 MHz

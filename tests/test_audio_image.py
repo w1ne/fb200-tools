@@ -134,6 +134,7 @@ def test_hot_path_check_catches_cold_audio_code(tmp_path):
     out = tmp_path / "build"
     shutil.copytree(fwbuild.build(FW), out)             # relink only: objects are current
     (out / "fb200-app" / "cold.ld").unlink()
+    (out / "fb200-app.elf").unlink()   # make 3.81 (macOS) compares whole seconds: force the relink
     subprocess.run(["make", f"BUILD={out}", "build",
                     "COLD_EXTRA=src/dsp/gain.c src/ui/rgb.c"],
                    cwd=FW, check=True, capture_output=True)
@@ -150,6 +151,7 @@ def test_hot_path_check_catches_cold_flash_writes(tmp_path):
     out = tmp_path / "build"
     shutil.copytree(fwbuild.build(FW), out)
     (out / "fb200-app" / "cold.ld").unlink()
+    (out / "fb200-app.elf").unlink()   # make 3.81 (macOS) compares whole seconds: force the relink
     cdc = ".deps/tinyusb/src/class/cdc/cdc_device.c"
     subprocess.run(["make", f"BUILD={out}", "build",
                     f"COLD_EXTRA=src/debug/selfupdate.c {cdc}"],

@@ -134,8 +134,7 @@ static eq_t s_eq __attribute__((section(".ocram")));
 static bool s_amp_en, s_cab_en, s_gate_en, s_comp_en, s_mod_en, s_rev_en;
 static int s_amp_model = -1, s_cab_type = -1;
 static float s_master = 1.0f, s_master_target = 1.0f;
-/* user IR staging, read only when a slot loads: OCRAM, so DTCM keeps the
- * cab's convolver spectra (dsp/cab.h) */
+/* user IR staging, read only when a slot loads: OCRAM */
 static float s_ir[CAB_MAX_TAPS] __attribute__((section(".ocram")));   /* + `cab long` */
 static bool s_testgen_in;               /* testgen feeds the chain input */
 static int s_usb_route;                 /* ENGINE_USB_OUT / _IN / _MIX */

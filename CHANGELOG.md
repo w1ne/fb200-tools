@@ -61,6 +61,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **RAM map is the pedal's:** ITCM 128 kB, DTCM 352 kB, OCRAM 32 kB (the build had
+  assumed 512 kB of OCRAM). The cold code runs in place from flash (XIP), the long-IR
+  tail (4096 taps) uses the low DTCM that the stock data used to fill, the 1 s delay
+  line the DTCM up to an 8 kB stack. An app update now runs from RAM only after it
+  starts erasing (`fw_session`): send `reset` when it is done, as before. The crash
+  dump moved to 0x20018A00 (an older recovery shows "no crash dump" for a newer app).
+
 - **Cold code runs from OCRAM:** console, UI, preset storage, protocol, USB setup and
   init drivers moved out of ITCM into OCRAM (loaded from the slot data blob at boot).
   The ITCM payload went from 120 kB to 72 kB of its 121.8 kB limit; the audio path

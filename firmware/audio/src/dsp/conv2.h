@@ -27,7 +27,8 @@
  *
  * Storage: conv2_t holds the head (8 kB of spectra, 4 kB each for h and x,
  * as cab_t did before) and the state. The tail arrays (~96 kB) are a separate
- * conv2_tail_t so the caller can put them in OCRAM. */
+ * conv2_tail_t so the caller can place them (the engine's: the low DTCM,
+ * linker.ld .dtcm_lo). */
 #include <stddef.h>
 #include <stdint.h>
 #include "arm_math.h"
