@@ -1,6 +1,7 @@
 /* Host test: the elastic playback ring must duplicate the last frame when it
  * starves (bounded insert count) and discard frames when it stays overfull,
- * keeping the long-term fill within bounds. */
+ * keeping the long-term fill within bounds. Also the USB playback -> chain
+ * input mix (`usb in|mix`). */
 #include <assert.h>
 #include <stdio.h>
 #include "audio/drift.h"
@@ -35,6 +36,27 @@ int main(void)
     /* Ring within bounds: trim is a no-op. */
     d = drift_trim(8, head, &tail, 4, &drops);
     assert(d == 0 && drops == 3);
+
+    /* USB playback into the chain input: mono mean of L/R. Replace drops
+     * the instrument (R cleared, so the engine's L + R is the playback);
+     * mix adds it to the instrument. */
+    {
+        int16_t play[3 * 2] = {16384, 16384, 16384, -16384, -32768, 0};
+        float l[3] = {0.25f, 0.25f, 0.25f}, r[3] = {0.1f, 0.1f, 0.1f};
+        drift_play_to_input(l, r, play, 3, 1);
+        assert(l[0] == 0.5f && l[1] == 0.0f && l[2] == -0.5f);
+        assert(r[0] == 0.0f && r[1] == 0.0f && r[2] == 0.0f);
+        float ml[3] = {0.25f, 0.25f, 0.25f}, mr[3] = {0.1f, 0.1f, 0.1f};
+        drift_play_to_input(ml, mr, play, 3, 0);
+        assert(ml[0] == 0.75f && ml[1] == 0.25f && ml[2] == -0.25f);
+        assert(mr[0] == 0.1f && mr[2] == 0.1f);
+        /* host not playing: the engine passes zeros -> silence / instrument */
+        int16_t zero[3 * 2] = {0};
+        drift_play_to_input(l, r, zero, 3, 1);
+        assert(l[0] == 0.0f && l[2] == 0.0f);
+        drift_play_to_input(ml, mr, zero, 3, 0);
+        assert(ml[0] == 0.75f);
+    }
 
     printf("drift host tests OK\n");
     return 0;

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Reamping over USB:** console `usb in` routes the computer's USB playback into the
+  effects chain input instead of the instrument (`usb mix`: summed with it; `usb out`:
+  to the analog output only, the default and the stock behaviour). Play a DI track or a
+  test sweep and record the processed sound from the USB capture. The MCP `audio_test`
+  with `source="usb"` uses it (and restores the routing) and reports the round-trip
+  `delay_ms`.
 - **Bass EQ** (not in the stock): HPF 20-200 Hz, 5 peaking bands (30-10000 Hz,
   +-15 dB, Q 0.3-4), LPF 2-20 kHz, after the cab. Changes glide in 12 ms, no clicks.
   Off after boot and bit-exact when off or flat; not in the preset yet. Console:

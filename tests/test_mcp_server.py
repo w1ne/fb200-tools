@@ -34,6 +34,7 @@ class FakeConsole:
     def __init__(self) -> None:
         self.sent: list[str] = []
         self.gain = 0
+        self.usb_route = "out"
         self.delay = {"on": "off", "time": 500, "fb": 30, "mix": 25, "lowcut": 0, "tone": 100}
         self.closed = False
 
@@ -80,6 +81,15 @@ class FakeConsole:
             return f"testgen {w[1]} {w[2] if len(w) > 2 else 1000} Hz"
         if w[0] == "save":
             return "saved"
+        if w[0] == "usb":
+            head = ""
+            if len(w) > 1:
+                if w[1] not in ("out", "in", "mix"):
+                    return "usage: usb [out|in|mix]"
+                self.usb_route = w[1]
+                head = f"usb route {w[1]}\n"
+            return (head + f"usb: route={self.usb_route} spk_alt=1 mic_alt=1 play_fill=40 "
+                    "cap_fill=12 ovf=0 unf=0\nusb: host mute=0 volume=0 dB ctrl_stalls=0")
         return "unknown command (try help)"
 
     def close(self) -> None:
@@ -291,6 +301,66 @@ def test_audio_test_chain_sine(rig, tmp_path):
     assert (tmp_path / "cap.wav").read_bytes()[:4] == b"RIFF"
     with pytest.raises(InvalidArgumentError):
         tools.audio_test(signal="sweep")
+
+
+class ReampAudio(FakeAudio):
+    """The pedal as a delay line: play_record returns the played signal late."""
+
+    delay = 123
+
+    def play_record(self, x):
+        import numpy as np
+
+        self.played = x
+        y = np.concatenate([np.zeros(self.delay), x, np.zeros(self.FS // 2 - self.delay)])
+        return np.stack([y, y], axis=1)
+
+
+def test_audio_test_usb_reamps_and_restores_the_route(rig):
+    pytest.importorskip("numpy")
+    tools, con, _ = rig
+    tools._audio = ReampAudio()
+    con.usb_route = "mix"
+    out = tools.audio_test(signal="sweep", source="usb", seconds=1.0)
+    assert con.sent == ["usb", "usb in", "usb mix"]
+    assert con.usb_route == "mix"
+    assert out["delay_ms"] == pytest.approx(1000 * 123 / 44100, abs=0.01)
+    assert all(abs(v) < 1.5 for k, v in out["response_db"].items() if 63 <= int(k) <= 8000)
+    assert "delay_ms" not in tools.audio_test(signal="sine", source="usb", seconds=1.0)
+
+
+def test_audio_test_usb_restores_the_route_on_error(rig):
+    pytest.importorskip("numpy")
+    tools, con, _ = rig
+
+    class Broken(FakeAudio):
+        def play_record(self, x):
+            raise OSError("stream died")
+
+    tools._audio = Broken()
+    with pytest.raises(OSError):
+        tools.audio_test(signal="noise", source="usb", seconds=1.0)
+    assert con.sent == ["usb", "usb in", "usb out"]
+    assert con.usb_route == "out"
+
+
+def test_audio_test_usb_needs_the_route_command(rig):
+    pytest.importorskip("numpy")
+    tools, con, _ = rig
+    tools._audio = FakeAudio()
+    con.run = lambda cmd, max_s=5.0: con.sent.append(cmd) or "usb: spk_alt=0 mic_alt=0"
+    with pytest.raises(CommunicationError, match="usb in"):
+        tools.audio_test(signal="sweep", source="usb", seconds=1.0)
+    assert con.sent == ["usb"]
+
+
+def test_delay_frames():
+    np = pytest.importorskip("numpy")
+    from fb200 import audio
+
+    x = audio.make_signal("noise", 0.5)
+    assert audio.delay_frames(x, np.concatenate([np.zeros(77), x])) == 77
+    assert audio.delay_frames(x, x) == 0
 
 
 def test_audio_analysis_noise_and_sweep():
