@@ -134,6 +134,7 @@ The `fb200` command also works with the stock firmware:
 fb200 info                          # product, firmware, Bluetooth and hardware versions
 fb200 ir list                       # IR slots
 fb200 ir import 3 my-cab.wav        # convert and upload a WAV IR to slot 3
+fb200 ir process my-cab.wav -o out.wav --trim --taps 512   # process to a file, no pedal
 fb200 console [cmd ...]             # open-firmware USB console (interactive without args)
 fb200 console "factory yes"         # factory reset: presets, settings, IR list
 fb200 console "delay on 350"        # bass delay: [on|off] [time] [fb] [mix] [lowcut] [tone]
@@ -143,6 +144,28 @@ fb200 update stock FB200.mr         # write the stock sound data (once)
 fb200 crash --elf fb200-app.elf     # read and symbolize the last crash dump
 fb200 fw inspect|flash ...          # .mr container tools and the vendor updater client
 ```
+
+### IR import
+
+`fb200 ir import` and `fb200 ir process` convert any WAV (8/16/24/32-bit PCM or
+32-bit float, any rate) to 44.1 kHz with a Kaiser windowed-sinc resampler. With no
+options the result is the same as the official editor: channel 0, 1024 samples, cut or
+zero-padded. The pedal plays the first 512 taps and sets the loudness itself. Options,
+applied in this order:
+
+| Option | Effect |
+| --- | --- |
+| `--channel left\|right\|sum` | channel 0 (default), channel 1, or the mean of all channels |
+| `--blend other.wav:0.3` | mix 30 % of a second IR in, aligned by onset and cross-correlation |
+| `--lowcut HZ`, `--highcut HZ` | 2nd-order Butterworth high / low pass, baked into the IR |
+| `--trim` | cut the silence before the onset (-60 dB rel. peak), keep 8 samples |
+| `--minphase` | cepstral minimum phase; needs numpy: `pip install 'fb200-tools[ir]'` |
+| `--taps N` | length 1..4096 (the pedal slot holds 1024, and plays 512); a cut tail gets a half-Hann fade over the last N/8 taps |
+| `--normalize` | peak to 1.0 |
+
+`ir process -o out.wav` writes the result as mono 32-bit float at 44.1 kHz, for any IR
+loader. From Python: `fb200.wav.process_ir(path_or_bytes, taps=512, trim=True, ...)`
+returns the float taps.
 
 Install for development: `.venv/bin/pip install -e ".[dev,hid]"`, then run the host
 tests with `.venv/bin/pytest` (under a minute). The slow stock-DSP parity tests

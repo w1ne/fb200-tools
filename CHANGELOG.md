@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Better IR import** (host): `fb200 ir import` resamples with a Kaiser windowed
+  sinc (aliasing below -60 dB; the linear resampler is gone) and takes
+  `--channel`, `--trim`, `--taps N` (up to 4096, half-Hann fade-out),
+  `--lowcut`/`--highcut` (2nd-order Butterworth), `--blend other.wav:MIX`,
+  `--minphase` (numpy, extra `[ir]`) and `--normalize`. `fb200 ir process -o out.wav`
+  writes the processed IR without a pedal. API: `fb200.wav.process_ir()`. With no
+  options a 44.1 kHz WAV gives the same samples as before.
+
 ### Changed
 
 - **Cab IR on the FFT convolver:** the 512-tap cab runs as a partitioned FFT
