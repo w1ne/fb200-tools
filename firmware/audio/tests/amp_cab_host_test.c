@@ -103,7 +103,7 @@ static void test_cab_swap(void)
  * FIR swap. */
 static void test_cab_long(void)
 {
-    enum { LEN = 9000, REQ_A = 10 * DSP_BLOCK, REQ_B = 120 * DSP_BLOCK };
+    enum { LEN = 282 * DSP_BLOCK, REQ_A = 10 * DSP_BLOCK, REQ_B = 120 * DSP_BLOCK };
     static conv2_tail_t tail;
     static cab_t cab;
     static float ir[2][CAB_MAX_TAPS], x[LEN], y[LEN];
