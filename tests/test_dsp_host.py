@@ -69,6 +69,24 @@ def test_dsp_blocks_suite():
     assert "conv 2048 taps" in result.stdout
 
 
+def test_conv2_suite():
+    """Two-stage convolver (M5, up to 4096 taps) vs a double-precision FIR,
+    bit-identity with conv_t for IRs <= 512 taps, IR swaps, zero latency."""
+    out = FW / "build" / "conv2_host_test"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    mods = [FW / "src" / "dsp" / f for f in ("conv2.c", "conv.c")]
+    subprocess.run(
+        ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-I", str(FW / "src"),
+         str(FW / "tests" / "conv2_host_test.c"), *map(str, mods), *cmsis_dsp_args(),
+         "-lm", "-o", str(out)],
+        check=True,
+    )
+    result = subprocess.run([str(out)], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "conv2 host tests OK" in result.stdout
+    assert "conv2 4096 taps, odd blocks" in result.stdout
+
+
 def test_amp_cab_suite():
     """amp/tone/cab without the stock data (CI): pass-through, cab FIR vs
     brute force, stock user-IR gain formula. Stock parity lives in
