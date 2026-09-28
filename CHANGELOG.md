@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **LabWired stock first-boot gate** (`labwired/stock-first-boot.yaml`, long:
+  about 25 min). The unmodified vendor firmware boots from a blank flash, does
+  its factory reset (sector erase and page program of F:0x82000 and F:0xB0000,
+  magics `FB200` and `B01`) and sends the Bluetooth AT sequence on LPUART5
+  (`AT+TM` .. `AT+B401`) at about 11 s of device time. See `docs/LABWIRED.md`.
+
 ## [0.8.0] - 2026-09-28
 
 Bass delay, footswitch light rings as the stock, and the DSP chain at less than
