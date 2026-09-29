@@ -6,6 +6,7 @@
 #include "audio/usb_audio.h"
 #include "audio/audio_config.h"
 #include "audio/drift.h"
+#include "dsp/outq.h"
 
 #define RING_FRAMES 1024
 #define TMP_FRAMES 64
@@ -248,39 +249,28 @@ size_t usb_audio_pull(float *dst, size_t frames)
     return n;
 }
 
+static outq_t s_cap_q = {0x6C8E9CF5u, 0};
+
+void usb_audio_set_dither(bool on) { s_cap_q.dither = on; }
+
 void usb_audio_push(const float *src, size_t frames)
 {
     if (alt_mic == 0u) {
         return;   /* host not recording: nothing to queue */
     }
     for (size_t i = 0; i < frames; i++) {
-        float l = src[i * 2 + 0];
-        float r = src[i * 2 + 1];
-        if (l > 1.0f) {
-            l = 1.0f;
-        } else if (l < -1.0f) {
-            l = -1.0f;
-        }
-        if (r > 1.0f) {
-            r = 1.0f;
-        } else if (r < -1.0f) {
-            r = -1.0f;
-        }
-        int16_t frame[2] = {(int16_t)(l * 32767.0f), (int16_t)(r * 32767.0f)};
+        /* rounded, clamped to +-1.0 (v0.9.1 truncated toward zero: dsp/outq.h) */
+        int16_t frame[2] = {outq_sample(&s_cap_q, src[i * 2 + 0]),
+                            outq_sample(&s_cap_q, src[i * 2 + 1])};
         cap_push(frame);
     }
 }
 
-size_t usb_audio_pull16(int16_t *dst, size_t frames, int16_t last[2],
-                        uint32_t *inserts)
+size_t usb_audio_pull_rs(drift_rs_t *rs, int16_t *dst, size_t frames, uint32_t max_fill,
+                         uint32_t *inserts, uint32_t *drops)
 {
-    return drift_fill(play_ring, RING_FRAMES, &play_tail, play_head, dst,
-                      frames, last, inserts);
-}
-
-uint32_t usb_audio_trim(uint32_t max_fill, uint32_t *drops)
-{
-    return drift_trim(RING_FRAMES, play_head, &play_tail, max_fill, drops);
+    return drift_rs_pull(rs, play_ring, RING_FRAMES, &play_tail, play_head, dst, frames,
+                         max_fill, inserts, drops);
 }
 
 void usb_audio_stats(uint32_t *play_fill, uint32_t *cap_fill, uint32_t *overflow,

@@ -12,9 +12,15 @@
  * 20 * 25^(k/100) Hz (20..500 Hz; 63 = 150 Hz). tone 100 = off, else a
  * 6 dB/oct low-pass at 1000 * 10^(k/100) Hz (1..10 kHz).
  *
- * The line is int16 (x 16384: +-2.0 full scale, truncated toward zero, so a
- * tail always dies out to exact zeros): 2 B per sample, 88 kB for 1 s at
- * 44.1 kHz. The caller gives the line (the engine's: the DTCM between .bss
+ * The line holds 16-bit floats (delay_enc/delay_dec): sign, 3-bit exponent,
+ * 12-bit mantissa; |v| < 4.0. 13 significant bits (relative step 2^-12,
+ * rounded) from 2^-5 (-30 dBFS) up; below that a linear step of 2^-17
+ * (-102 dBFS), truncated toward zero, so a tail always dies out to exact
+ * zeros. v0.9.1 stored int16 x 16384 (step 2^-14 = -84 dBFS at every
+ * level, truncated): a repeat 40 dB down had the quantisation error of a
+ * 7-bit signal; now below -30 dBFS it is 40 dB lower, above -6 dBFS up to
+ * 12 dB higher (still < -78 dB re the signal). 2 B per sample, 88 kB for
+ * 1 s at 44.1 kHz. The caller gives the line (the engine's: the DTCM between .bss
  * and the stack, linker.ld .dtcm_hi); delay_t itself (~110 B) is in .bss.
  *
  * DELAY_MS_MAX is set by RAM (memory map: docs/FIRMWARE_BRINGUP.md). The
@@ -27,7 +33,6 @@
 #define DELAY_MS_MIN 20
 #define DELAY_MS_MAX 1000         /* RAM-bound, see above (no suffix: printed with STR) */
 #define DELAY_LEN (DELAY_FS_MAX * DELAY_MS_MAX / 1000u + 4u)   /* samples */
-#define DELAY_SCALE 16384.0f
 /* settings for a preset that never had our delay (console `delay on`) */
 #define DELAY_DEF_MS 300u        /* <= DELAY_MS_MAX */
 #define DELAY_DEF_FB 30u
@@ -57,6 +62,9 @@ void delay_set_params(delay_t *dl, unsigned time_ms, unsigned fb, unsigned mix, 
                       unsigned tone);
 /* in place; n <= DSP_BLOCK (the filter states are flushed once per call) */
 void delay_process(delay_t *dl, float *x, unsigned n);
+/* The line's sample format (above), for the tests. */
+uint16_t delay_enc(float v);
+float delay_dec(uint16_t c);
 /* High-pass cut-off (Hz) for a lowcut knob, 0 when off: for the tests. */
 float delay_lowcut_hz(unsigned lowcut);
 #endif
