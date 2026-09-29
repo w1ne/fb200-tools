@@ -25,7 +25,7 @@ Its firmware is closed and frozen. This project aims to:
   See [`docs/PARITY.md`](docs/PARITY.md) and
   [`docs/ROADMAP_RESEARCH.md`](docs/ROADMAP_RESEARCH.md).
 
-## Status (v0.8)
+## Status (v0.9)
 
 Verified on a real pedal:
 
@@ -37,6 +37,7 @@ Verified on a real pedal:
 | **Drums & tuner** | Stock drum machine (40 rhythms, played from the samples already in your pedal's flash) and stock YIN tuner |
 | **USB** | Class-compliant audio interface (record and play back, 44.1 kHz). The stock USB identity and control protocol, so `fb200 info` and IR import work. |
 | **Bluetooth** | Module link. The Bluetooth audio input runs; playback from a phone is not yet checked by ear. The app protocol is implemented and tested on the host, but not yet with the Flamma Manager phone app. |
+| **Our additions** | Bass delay up to 1 s, bass EQ (HPF, 5 bands, LPF; saved in the preset), cab IRs up to 4096 taps (`cab long` for tests), reamping over USB (`usb in`). Measured on the pedal: echo times, EQ response, CPU (engine 14% average with a 4096-tap IR). |
 | **Power** | Battery level, charger sense, status LED |
 | **Updates & recovery** | USB updates with no button combo. A resident recovery keeps the USB console after a crash or hang. Crash dumps survive a reset. |
 
