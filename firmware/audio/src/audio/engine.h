@@ -15,11 +15,18 @@ typedef struct {
 
 void engine_init(void);
 void engine_task(void);
+/* One pass of the main loop's audio work (usb_audio_task + engine_task) for
+ * a flash write that blocks the main loop (debug/flash_rmw.h flash_pump):
+ * the flash is busy, so the drums (samples in flash) advance silently.
+ * Nothing before engine_init. */
+void engine_pump(void);
 void engine_get_stats(engine_stats_t *out);
 
 void engine_set_gain_db(float db);
 float engine_get_gain_db(void);
 void engine_set_testgen(int mode, float amp, float freq); /* 0 off 1 sine 2 white 3 impulse */
+void engine_set_dither(bool on);      /* TPDF dither on the DAC and USB capture (dsp/outq.h), off by default */
+bool engine_get_dither(void);
 void engine_testgen_input(bool on);   /* testgen into the chain input instead of the output */
 /* Host USB playback routing (console `usb out|in|mix`). OUT (default, the
  * stock): mixed into the DAC after the capture tap. IN (reamping): replaces
@@ -43,6 +50,7 @@ extern volatile float g_meter_peak[2];
 #include "dsp/drums.h"
 void engine_set_tuner(bool on);
 bool engine_tuner_poll(tuner_result_t *out);   /* main loop */
+float engine_input_peak(void);   /* chain input peak since the last call (main loop) */
 drums_t *engine_drums(void);
 /* Our EQ (dsp/eq.h), for the console `eq` (main loop, as engine_task). */
 struct eq_s;

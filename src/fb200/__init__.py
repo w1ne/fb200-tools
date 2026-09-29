@@ -1,3 +1,3 @@
 """Open-source tools for the FLAMMA FB200 bass multi-effects pedal."""
 
-__version__ = "0.8.0"
+__version__ = "0.9.1"

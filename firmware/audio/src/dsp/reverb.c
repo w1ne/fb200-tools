@@ -3,6 +3,7 @@
  * The operation order (float vs double, multiply-add grouping) follows the
  * stock code so the host build (-ffp-contract=off) is bit-exact at 44.1 kHz. */
 #include <string.h>
+#include "cold.h"
 #include "reverb.h"
 
 /* LFO wavetables read by the stock helpers 0xb4e4 (table 1, RAM 0x20017048)
@@ -171,7 +172,7 @@ void reverb_init(reverb_t *r, float fs)
     configure(r);
 }
 
-void reverb_set_params(reverb_t *r, unsigned type, unsigned level, unsigned decay,
+COLD void reverb_set_params(reverb_t *r, unsigned type, unsigned level, unsigned decay,
                        unsigned tone, unsigned p_a8)
 {
     (void)p_a8;   /* not read by the stock audio path (see reverb.h) */

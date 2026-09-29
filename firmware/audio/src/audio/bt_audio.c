@@ -1,4 +1,5 @@
 #include <string.h>
+#include "cold.h"
 #include "audio/bt_audio.h"
 #include "audio/audio_config.h"
 #include "fsl_clock.h"
@@ -40,7 +41,7 @@ static void rx_done(I2S_Type *base, sai_edma_handle_t *h, status_t s, void *u)
     (void)SAI_TransferReceiveEDMA(base, &rx, &x);
 }
 
-void bt_audio_init(void)
+COLD void bt_audio_init(void)
 {
     CLOCK_SetMux(kCLOCK_Sai3Mux, 2);        /* PLL4 (set up by sai.c) */
     CLOCK_SetDiv(kCLOCK_Sai3PreDiv, 0);     /* /1 */

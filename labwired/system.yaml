@@ -6,9 +6,10 @@
 #
 # FLAMMA FB200 (Mooer-based bass multi-effects pedal) main board, NXP
 # MIMXRT1052DVL6B (SoC marking; docs/UI_AND_STORAGE.md, HARDWARE.md,
-# AUDIO_PATH.md). Pin and part facts below come from those documents; the
-# parts themselves are phase 2 (NAU88L21 codec, 3-digit 14-segment LED display,
-# 2x 74HC4051 knob multiplexers, BT201-style Bluetooth module, 40 WS2812 LEDs).
+# AUDIO_PATH.md). Pin and part facts below come from those documents. Parts
+# modelled: NAU88L21 codec, 2x 74HC4051 knob multiplexers with 16 knobs. Not
+# yet: 3-digit 14-segment LED display, BT201-style Bluetooth module, 40 WS2812
+# LEDs (their FlexIO2 frame is checked, not the LEDs).
 #
 #   - boot image: vendor self-loading block 0 at FlexSPI 0x60010000; model
 #     library (block 1) at flash offset 0xD0000
@@ -19,16 +20,15 @@
 #   - display: 3-digit 14-segment LEDs multiplexed by GPIO4_IO16..30 (segments,
 #     active high) and GPIO4_IO31 / GPIO3_IO18 / GPIO3_IO21 (digit selects)
 #   - 16 knob LEDs GPIO4_IO0..15 (active low); 40 WS2812 on FlexIO2 D02
-#   - footswitches A..D below; knobs through 74HC4051 (select GPIO2_IO17..19)
-#     into ADC1 IN3/IN4
+#   - footswitches A..D below; 16 knobs through two 74HC4051 (select
+#     GPIO2_IO17..19) into ADC1 IN3/IN4, see external_devices
 #
-# Board-level analog inputs (static until the parts exist):
+# Board-level analog inputs that no part models yet (static levels):
 #   - ADC1 IN7 (AD_B1_02): supply monitor. The stock app treats < 2950/4095 as
 #     a power failure (saves settings and flips the B1_10/B1_15 latch) and
 #     > 3050/4095 as healthy; 2.8 V here.
 #   - ADC1 IN9 (AD_B1_04): battery. The stock app waits at boot until it reads
 #     >= 2870/4095 (or GPIO1_IO19, charger sense, is high); 2.5 V here.
-#   - ADC1 IN3/IN4: knob mux outputs, mid-scale.
 
 name: "fb200"
 chip: "chip/mimxrt1052.yaml"
@@ -39,12 +39,49 @@ external_devices:
     connection: "lpi2c1"
     config:
       i2c_address: 0x54
+  # --- Knobs: 16 potentiometers through two 74HC4051 muxes ---
+  # docs/UI_AND_STORAGE.md section 2: select S0..S2 = GPIO2_IO17..19 (pads
+  # GPIO_B1_01..03), shared by both muxes; mux A Z -> ADC1 IN3 (AD_B0_14,
+  # k0..k7 on Y0..Y7), mux B Z -> ADC1 IN4 (AD_B0_15, k8..k15). The stock
+  # scanner (ITCM 0x1b538) sets S2 S1 S0 = channel and converts at once; it
+  # drives no enable pin, so E is tied to GND (no e_pin). The muxes are
+  # declared before the knobs that name them.
+  - id: "knob_mux_a"
+    type: "74hc4051"
+    connection: "adc1"
+    config: { channel: 3, s0_pin: "GPIO_B1_01", s1_pin: "GPIO_B1_02", s2_pin: "GPIO_B1_03" }
+  - id: "knob_mux_b"
+    type: "74hc4051"
+    connection: "adc1"
+    config: { channel: 4, s0_pin: "GPIO_B1_01", s1_pin: "GPIO_B1_02", s2_pin: "GPIO_B1_03" }
+  # Knob kN = mux channel N mod 8, panel names from the measured table.
+  # Linear pots across 3.3 V; `position` is in % (0 = fully left). The
+  # start positions are distinct (8 + 5 N %) so a gate can tell every knob
+  # apart, and none is 50 % (the old fixed mid-scale level). The pedal's
+  # real positions are whatever the user left them at.
+  - { id: "knob_k0_thresh", type: "potentiometer", connection: "knob_mux_a", config: { channel: 0, position: 8 } }
+  - { id: "knob_k1_comp_level", type: "potentiometer", connection: "knob_mux_a", config: { channel: 1, position: 13 } }
+  - { id: "knob_k2_amp", type: "potentiometer", connection: "knob_mux_a", config: { channel: 2, position: 18 } }
+  - { id: "knob_k3_gate", type: "potentiometer", connection: "knob_mux_a", config: { channel: 3, position: 23 } }
+  - { id: "knob_k4_bass", type: "potentiometer", connection: "knob_mux_a", config: { channel: 4, position: 28 } }
+  - { id: "knob_k5_gain", type: "potentiometer", connection: "knob_mux_a", config: { channel: 5, position: 33 } }
+  - { id: "knob_k6_mid", type: "potentiometer", connection: "knob_mux_a", config: { channel: 6, position: 38 } }
+  - { id: "knob_k7_treble", type: "potentiometer", connection: "knob_mux_a", config: { channel: 7, position: 43 } }
+  - { id: "knob_k8_rate", type: "potentiometer", connection: "knob_mux_b", config: { channel: 0, position: 48 } }
+  - { id: "knob_k9_mod", type: "potentiometer", connection: "knob_mux_b", config: { channel: 1, position: 53 } }
+  - { id: "knob_k10_vol", type: "potentiometer", connection: "knob_mux_b", config: { channel: 2, position: 58 } }
+  - { id: "knob_k11_mix", type: "potentiometer", connection: "knob_mux_b", config: { channel: 3, position: 63 } }
+  - { id: "knob_k12_reverb", type: "potentiometer", connection: "knob_mux_b", config: { channel: 4, position: 68 } }
+  - { id: "knob_k13_cab", type: "potentiometer", connection: "knob_mux_b", config: { channel: 5, position: 73 } }
+  - { id: "knob_k14_rev_level", type: "potentiometer", connection: "knob_mux_b", config: { channel: 6, position: 78 } }
+  - { id: "knob_k15_master", type: "potentiometer", connection: "knob_mux_b", config: { channel: 7, position: 83 } }
 peripherals:
   - id: "adc1"
     type: "imxrt_adc"
     base_address: 0
     config:
-      input_mv: { 3: 1650, 4: 1650, 7: 2800, 9: 2500 }
+      # IN3/IN4 (knobs) are driven by the muxes in external_devices.
+      input_mv: { 7: 2800, 9: 2500 }
   # FlexIO2 functional clock as the stock image programs the CCM
   # (CSCMR2.FLEXIO2_CLK_SEL = PLL3 480 MHz, CS1CDR PRED /5, PODF /2).
   - id: "flexio2"

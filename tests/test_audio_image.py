@@ -132,6 +132,7 @@ def test_hot_and_cold_placement():
                 "Default_Handler", "wdog_feed", "dcd_int_handler", "EDMA_HandleIRQ",
                 "memcpy", "crc32_ieee",
                 "fw_begin", "fw_session", "flash_store", "FLEXSPI_TransferBlocking",
+                "flash_rmw", "flash_wait_idle", "flash_pump", "engine_pump",
                 "log_printf", "tud_descriptor_configuration_cb", "cdcd_xfer_cb"):
         assert syms[hot] in ITCM, hot
     for cold in ("console_task", "ui_task", "display_task", "proto_feed", "preset_write",
@@ -163,6 +164,7 @@ def test_hot_path_check_catches_cold_audio_code(tmp_path):
     bad = "\n".join(hot_path.check(out / "fb200-app.elf"))
     assert "gain_process" in bad and "engine_task" in bad
     assert "done @" in bad                               # rgb.c's eDMA callback
+    assert "flash busy: gain_process @" in bad           # the audio pump runs it too
 
 
 def test_hot_path_check_catches_cold_flash_writes(tmp_path):
@@ -189,6 +191,27 @@ def test_hot_path_check_catches_cold_flash_writes(tmp_path):
         hot_path.GATED.clear()
         hot_path.GATED.update(gates)
     assert "gate no_such_gate() not called" in bad and "flash write: proto_feed @" in bad, bad
+
+
+def test_flash_busy_pump_is_ram_only_and_wired():
+    """The audio pump that runs while the flash is busy (flash_pump): it
+    reaches the engine and the USB audio rings, every flash wait reaches it.
+    Negative controls: a root that loads a flash address (engine_init: the
+    drum bank at 0x600D0000) and a caller that never pumps (fw_info) fail."""
+    import hot_path
+    elf = fwbuild.build(FW) / "fb200-app.elf"
+    img = hot_path.Image(elf, "arm-none-eabi-")
+    names = {img.name(f) for f in hot_path.reachable(img, hot_path.flash_busy_roots(img))}
+    assert {"engine_pump", "engine_task", "usb_audio_task", "wdog_feed"} <= names, names
+    saved = (hot_path.FLASH_BUSY_ENTRY, hot_path.PUMP_CALLERS)
+    try:
+        hot_path.FLASH_BUSY_ENTRY = ("flash_pump", "engine_init")
+        hot_path.PUMP_CALLERS = (*saved[1], "fw_info")
+        bad = "\n".join(hot_path.check(elf))
+    finally:
+        hot_path.FLASH_BUSY_ENTRY, hot_path.PUMP_CALLERS = saved
+    assert "flash busy: engine_init reads flash data at 0x600d0000" in bad, bad
+    assert "flash busy: fw_info does not reach flash_pump" in bad, bad
 
 
 def test_recovery_has_no_xip_code():

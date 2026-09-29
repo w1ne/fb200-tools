@@ -8,7 +8,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **LabWired twin: knobs.** `labwired/system.yaml` models the 16 knobs as
+  potentiometers behind the two 74HC4051 multiplexers (select GPIO2_IO17..19,
+  ADC1 IN3/IN4). New long gate `labwired/stock-knobs.yaml`: the unmodified
+  stock firmware reads every knob into its knob table (DTCM `0x2001DED6` /
+  `0x2001DEE6`) and follows a knob turned mid-run. Needs labwired-core with
+  the `74hc4051` part.
+- **Battery operation** ([docs/POWER.md](docs/POWER.md)): the main loop sleeps
+  (`WFI`) when there is no audio block or USB event (the stock busy-loops at
+  600 MHz); `cpu` shows the loop busy %. Unused PLLs, the second USB PHY and
+  unused clock gates are off. `power led 100|66|33` dims the display, knob LEDs
+  and light rings; `power idle <min>` (off by default) darkens the panel after
+  idle minutes. `power clock 528|396` for measurements (not saved). Battery
+  gauge: filtered, with hysteresis, an mV/% estimate, a "LOb" warning, and a
+  critical state that saves the settings and stops flash writes.
 
+## [0.9.1] - 2026-09-29
+
+### Fixed
+
+- **Audio drops out during flash writes:** a preset save, a settings write, an IR
+  import or delete stopped the audio for tens of ms (the main loop waited for the
+  flash, and the audio engine runs in it). The flash busy-wait now keeps the audio
+  running (`src/debug/flash_rmw.c`); drums keep time but are silent during a write
+  (their samples are in flash). Measured on the pedal: 0 skipped blocks for a save,
+  a settings write and an IR import + delete (were 13 and 38).
+
+## [0.9.0] - 2026-09-29
+
+Bass EQ, 1 s delay that plays on the pedal, IRs up to 4096 taps on an FFT cab,
+reamping over USB, an MCP server and a PoC app so an AI agent can drive the
+pedal. The memory map now matches the chip (OCRAM is 32 kB on the RT1052).
+Verified on a pedal.
+
+### Added
 - **Desktop app PoC (`app/`, `fb200-app`):** a local web UI (Starlette, 127.0.0.1) to
   edit the pedal like the vendor app - presets (list, select, rename, save), the 7
   effect blocks, delay, EQ, user IRs (import with the `process_ir` options, delete),
