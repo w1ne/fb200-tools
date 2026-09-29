@@ -6,6 +6,7 @@
 #include "audio/usb_audio.h"
 #include "audio/audio_config.h"
 #include "audio/drift.h"
+#include "dsp/outq.h"
 
 #define RING_FRAMES 1024
 #define TMP_FRAMES 64
@@ -248,25 +249,19 @@ size_t usb_audio_pull(float *dst, size_t frames)
     return n;
 }
 
+static outq_t s_cap_q = {0x6C8E9CF5u, 0};
+
+void usb_audio_set_dither(bool on) { s_cap_q.dither = on; }
+
 void usb_audio_push(const float *src, size_t frames)
 {
     if (alt_mic == 0u) {
         return;   /* host not recording: nothing to queue */
     }
     for (size_t i = 0; i < frames; i++) {
-        float l = src[i * 2 + 0];
-        float r = src[i * 2 + 1];
-        if (l > 1.0f) {
-            l = 1.0f;
-        } else if (l < -1.0f) {
-            l = -1.0f;
-        }
-        if (r > 1.0f) {
-            r = 1.0f;
-        } else if (r < -1.0f) {
-            r = -1.0f;
-        }
-        int16_t frame[2] = {(int16_t)(l * 32767.0f), (int16_t)(r * 32767.0f)};
+        /* rounded, clamped to +-1.0 (v0.9.1 truncated toward zero: dsp/outq.h) */
+        int16_t frame[2] = {outq_sample(&s_cap_q, src[i * 2 + 0]),
+                            outq_sample(&s_cap_q, src[i * 2 + 1])};
         cap_push(frame);
     }
 }

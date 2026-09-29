@@ -33,6 +33,7 @@
 #include "dsp/reverb.h"
 #include "dsp/delay.h"
 #include "dsp/eq.h"
+#include "dsp/outq.h"
 #include "preset/preset.h"
 #include "fsl_sai.h"
 #include "tusb.h"
@@ -158,12 +159,14 @@ static uint32_t s_prof[P_COUNT], s_prof_n, s_prof_t;
 static uint32_t s_drop_tx_blocks;
 static uint32_t s_meter_last_ms;
 static bool s_ready;          /* engine_init done: engine_pump may run */
+static outq_t s_outq;         /* DAC float -> int16: rounding, optional dither (dsp/outq.h) */
 
 void engine_init(void)
 {
     usb_audio_init();
     sai_audio_init();
     gain_init(&s_gain, 1.0f);
+    outq_init(&s_outq, 0x2545F491u);
     testgen_init(&s_testgen, (float)AUDIO_FS);
     memset(&s_stats, 0, sizeof(s_stats));
     g_meter_peak[0] = g_meter_peak[1] = 0.0f;
@@ -342,6 +345,12 @@ float engine_get_gain_db(void)
 }
 
 void engine_testgen_input(bool on) { s_testgen_in = on; }
+void engine_set_dither(bool on)
+{
+    s_outq.dither = on;
+    usb_audio_set_dither(on);
+}
+bool engine_get_dither(void) { return s_outq.dither != 0; }
 void engine_set_usb_route(int route) { s_usb_route = route; }
 int engine_get_usb_route(void) { return s_usb_route; }
 
@@ -562,8 +571,8 @@ void engine_task(void)
         /* stock output clip */
         if (l > 0.95f) l = 0.95f; else if (l < -0.95f) l = -0.95f;
         if (r > 0.95f) r = 0.95f; else if (r < -0.95f) r = -0.95f;
-        out[i * 2 + 0] = (int16_t)(l * 32767.0f);
-        out[i * 2 + 1] = (int16_t)(r * 32767.0f);
+        out[i * 2 + 0] = outq_sample(&s_outq, l);   /* rounded (v0.9.1: truncated) */
+        out[i * 2 + 1] = outq_sample(&s_outq, r);
     }
     PROF(P_OUT);
     s_prof_n++;

@@ -11,6 +11,7 @@ void usb_audio_task(void); /* pump TinyUSB audio FIFOs; call from the main loop 
 /* Engine side: host playback -> engine, engine -> host capture. */
 size_t usb_audio_pull(float *dst, size_t frames);     /* interleaved stereo */
 void usb_audio_push(const float *src, size_t frames); /* interleaved stereo */
+void usb_audio_set_dither(bool on);   /* TPDF dither on the 16-bit capture (dsp/outq.h) */
 
 /* int16 pull with drift compensation: starved frames repeat `last`. */
 size_t usb_audio_pull16(int16_t *dst, size_t frames, int16_t last[2],

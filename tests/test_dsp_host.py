@@ -182,3 +182,18 @@ def test_memfuncs_suite():
     result = subprocess.run([str(out)], capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "memfuncs host tests OK" in result.stdout
+
+
+def test_outq_suite():
+    """16-bit output stage (dsp/outq.h): rounding beats the v0.9.1 truncation on
+    a low-level sine, dither moves the harmonics into noise, 0 stays 0."""
+    out = _build_dir() / "outq_host_test"
+    subprocess.run(
+        ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-I", str(FW / "src"),
+         str(FW / "tests" / "outq_host_test.c"), "-lm", "-o", str(out)],
+        check=True,
+    )
+    result = subprocess.run([str(out)], capture_output=True, text=True, check=False)
+    print(result.stdout)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "outq host tests OK" in result.stdout
