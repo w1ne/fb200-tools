@@ -157,6 +157,8 @@ static uint32_t s_prof[P_COUNT], s_prof_n, s_prof_t;
                          s_prof_t = now_; } while (0)
 static uint32_t s_drop_tx_blocks;
 static uint32_t s_meter_last_ms;
+static bool s_ready;          /* engine_init done: engine_pump may run */
+static float s_in_peak;       /* chain input |L + R| peak, for the idle timer (ui/power.c) */
 
 void engine_init(void)
 {
@@ -189,6 +191,16 @@ void engine_init(void)
     static drums_data_t rhythms;
     if (g_stock) drums_data_from_stock(&rhythms, g_stock);
     drums_init(&s_drums, (const void *)DRUMS_BANK_ADDR, g_stock ? &rhythms : NULL);  /* NULL: silent */
+    s_ready = true;
+}
+
+void engine_pump(void)
+{
+    if (!s_ready) return;
+    s_drums.no_flash = 1;
+    usb_audio_task();
+    engine_task();
+    s_drums.no_flash = 0;
 }
 
 void engine_set_tuner(bool on) { s_tuner_on = on; }
@@ -308,6 +320,13 @@ void engine_apply_settings(const settings_t *s)
     unsigned cal = s->b[S_TUNER_CAL];
     tuner_set_a4(&s_tuner, 435 + (int)(cal <= 15u ? cal : 5u));
     s_tuner_mute = s->b[S_TUNER_MUTE] != 0;
+}
+
+float engine_input_peak(void)
+{
+    float p = s_in_peak;
+    s_in_peak = 0.0f;
+    return p;
 }
 
 bool engine_tuner_poll(tuner_result_t *out) { return tuner_poll(&s_tuner, out) != 0; }
@@ -472,7 +491,13 @@ void engine_task(void)
         testgen_process(&s_testgen, &s_block, n);
         for (size_t i = 0; i < n; i++) s_block.data[1][i] = 0.0f;   /* mono source on L */
     }
-    for (size_t i = 0; i < n; i++) x[i] = s_block.data[0][i] + s_block.data[1][i];
+    float pk = s_in_peak;
+    for (size_t i = 0; i < n; i++) {
+        x[i] = s_block.data[0][i] + s_block.data[1][i];
+        float a = x[i] < 0.0f ? -x[i] : x[i];
+        if (a > pk) pk = a;
+    }
+    s_in_peak = pk;
     PROF(P_IN);
     tuner_feed(&s_tuner, x, n);
     PROF(P_TUNER);
