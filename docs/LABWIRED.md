@@ -74,7 +74,7 @@ labwired test --script labwired/stock-first-boot.yaml   # long, see 5
 Expected result:
 
 ```
-PASS  5/5 checks · smoke · 40000000 steps · SMOKE_TIME_PLACEHOLDER
+PASS  5/5 checks · smoke · 40000000 steps · 36.87s
 PASS  24/24 checks · stock-boot · 90000000 steps · 15.26s
 PASS  11/11 checks · stock-first-boot · 6800000000 steps · 3669.59s
 ```
