@@ -119,7 +119,7 @@ static void cmd_help(void)
              "  audio : usb [out|in|mix] | sai | codec | creg <reg> [val] | gain [db] | mute [on|off]\r\n"
              "          testgen off|sine|white|impulse [freq] | tin <same> (into the chain, -20 dBFS)\r\n"
              "          usb in = reamping: host playback into the chain (mix: + instrument, out: default)\r\n"
-             "          meters on|off | x | cpu | prof | cab long <0-" XSTR(ENGINE_IR_TAPS) ">\r\n"
+             "          meters on|off | x | cpu | prof | cab long <0-" XSTR(ENGINE_IR_TAPS) "> | dither [on|off]\r\n"
              "  led   : led on|off|scan | ledpin <gpio> <pin>\r\n"
              "  ui    : ui | uimon on|off | disp <text> | kled <0-15> on|off\r\n"
              "  power : power [sleep on|off | clock 600|528|396 | led 100|66|33 | idle <min> | log <s>]\r\n"
@@ -645,6 +645,10 @@ static void dispatch(char *cmd)
                    cpu_sleep_enabled() ? "on" : "off", (unsigned long)wakes, cpu_clock_mhz());
     }
     else if (streq(argv[0], "mute") || streq(argv[0], "m")) cmd_mute(argv[1]);
+    else if (streq(argv[0], "dither")) {   /* TPDF dither on the 16-bit DAC/USB output (dsp/outq.h) */
+        if (argv[1]) engine_set_dither(streq(argv[1], "on"));
+        log_printf("dither %s\r\n", engine_get_dither() ? "on" : "off");
+    }
     else if (streq(argv[0], "meters")) cmd_meters(argv[1]);
     else if (streq(argv[0], "x")) cmd_x();
     else if (streq(argv[0], "led")) cmd_led(argv[1], argv[2]);

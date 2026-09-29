@@ -1,13 +1,15 @@
 /* Audio engine: codec ADC -> DSP chain -> codec DAC, with the USB path as
  * capture (processed signal) and monitor (host playback mixed into the DAC).
  *
- * Drift: the host playback ring is elastic - when it starves the last frame
- * is repeated, when it stays overfull the tail is advanced, so long-term
- * latency stays bounded. Both are counted in engine_stats_t.
+ * Drift: the host playback is resampled to the codec clock (audio/drift.h
+ * drift_rs, a PI loop on the ring fill). Only when that fails (ring dry or
+ * far overfull) a frame repeats or frames drop; both are counted in
+ * engine_stats_t.
  *
  * The DSP chain is currently a gain node plus an optional test generator;
  * the real chain (EQ, amp sim, ...) lands in later milestones. */
 #include <string.h>
+#include "cold.h"
 #include "audio/engine.h"
 #include "debug/cdc_log.h"
 #include "audio/audio_config.h"
@@ -33,6 +35,7 @@
 #include "dsp/reverb.h"
 #include "dsp/delay.h"
 #include "dsp/eq.h"
+#include "dsp/outq.h"
 #include "preset/preset.h"
 #include "fsl_sai.h"
 #include "tusb.h"
@@ -50,44 +53,6 @@
  * runs; draining that backlog filled the TX ring (511 frames = 10.6 ms) and,
  * with equal rates, it stayed full. Above the target, skip a block. */
 #define TX_TARGET_FILL (2u * SAI_BLOCK_FRAMES + ENGINE_FRAMES)
-
-/* ---- pure drift helpers (host-tested) ---- */
-
-size_t engine_drift_fill(const int16_t *ring, uint32_t cap, uint32_t *tail,
-                         uint32_t head, int16_t *out, size_t frames,
-                         int16_t last[2], uint32_t *inserts)
-{
-    size_t n = 0;
-    while (n < frames) {
-        if (*tail == head) {
-            out[n * 2 + 0] = last[0];
-            out[n * 2 + 1] = last[1];
-            (*inserts)++;
-        } else {
-            last[0] = ring[*tail * 2 + 0];
-            last[1] = ring[*tail * 2 + 1];
-            out[n * 2 + 0] = last[0];
-            out[n * 2 + 1] = last[1];
-            *tail = (*tail + 1u) % cap;
-        }
-        n++;
-    }
-    return n;
-}
-
-uint32_t engine_drift_trim(uint32_t cap, uint32_t head, uint32_t *tail,
-                           uint32_t max_fill, uint32_t *drops)
-{
-    uint32_t fill = (head + cap - *tail) % cap;
-    uint32_t dropped = 0;
-    while (fill > max_fill) {
-        *tail = (*tail + 1u) % cap;
-        dropped++;
-        fill--;
-    }
-    *drops += dropped;
-    return dropped;
-}
 
 volatile float g_meter_peak[2];
 
@@ -158,13 +123,17 @@ static uint32_t s_prof[P_COUNT], s_prof_n, s_prof_t;
 static uint32_t s_drop_tx_blocks;
 static uint32_t s_meter_last_ms;
 static bool s_ready;          /* engine_init done: engine_pump may run */
+static drift_rs_t s_rs;       /* host playback resampler (audio/drift.h) */
+static outq_t s_outq;         /* DAC float -> int16: rounding, optional dither (dsp/outq.h) */
 static float s_in_peak;       /* chain input |L + R| peak, for the idle timer (ui/power.c) */
 
-void engine_init(void)
+COLD void engine_init(void)
 {
     usb_audio_init();
     sai_audio_init();
     gain_init(&s_gain, 1.0f);
+    outq_init(&s_outq, 0x2545F491u);
+    drift_rs_init(&s_rs, (float)AUDIO_FS);
     testgen_init(&s_testgen, (float)AUDIO_FS);
     memset(&s_stats, 0, sizeof(s_stats));
     g_meter_peak[0] = g_meter_peak[1] = 0.0f;
@@ -272,7 +241,7 @@ int engine_cab_long(unsigned taps)
     return cab_set_ir_len(&s_cab, s_ir, taps, cab_user_ir_gain(s_ir));
 }
 
-void engine_apply_preset(const preset_t *p, unsigned master)
+COLD void engine_apply_preset(const preset_t *p, unsigned master)
 {
     s_amp_en = pget(p, P_AMP_EN) != 0;
     s_cab_en = pget(p, P_CAB_EN) != 0;
@@ -350,6 +319,12 @@ float engine_get_gain_db(void)
 }
 
 void engine_testgen_input(bool on) { s_testgen_in = on; }
+void engine_set_dither(bool on)
+{
+    s_outq.dither = on;
+    usb_audio_set_dither(on);
+}
+bool engine_get_dither(void) { return s_outq.dither != 0; }
 void engine_set_usb_route(int route) { s_usb_route = route; }
 int engine_get_usb_route(void) { return s_usb_route; }
 
@@ -449,7 +424,6 @@ static void update_meters(const dsp_block_t *b, size_t n)
  * dropped, and the insert counter ran away. Seen on the pedal 2026-09-27.) */
 void engine_task(void)
 {
-    static int16_t last[2];
     int16_t in[ENGINE_FRAMES * 2];
     int16_t play[ENGINE_FRAMES * 2];
     int16_t out[ENGINE_FRAMES * 2];
@@ -470,15 +444,15 @@ void engine_task(void)
      * needed for bit parity, tests/test_stock_dsp_parity.py). */
     uint32_t t0 = DWT->CYCCNT;
     s_prof_t = t0;
-    /* Host playback, drift-compensated, only while the host streams. Pulled
-     * here, in the same block as the capture push: `usb in|mix` adds no
-     * block latency (docs/AUDIO_PATH.md). */
+    /* Host playback, resampled to the codec clock (audio/drift.h), only
+     * while the host streams. Pulled here, in the same block as the capture
+     * push: `usb in|mix` adds no block latency (docs/AUDIO_PATH.md). */
     if (usb_audio_playing()) {
-        (void)usb_audio_trim(MAX_RING_FILL, &s_stats.fifo_drops);
-        (void)usb_audio_pull16(play, n, last, &s_stats.fifo_inserts);
+        (void)usb_audio_pull_rs(&s_rs, play, n, MAX_RING_FILL, &s_stats.fifo_inserts,
+                                &s_stats.fifo_drops);
     } else {
         memset(play, 0, n * 2 * sizeof play[0]);
-        last[0] = last[1] = 0;
+        drift_rs_init(&s_rs, (float)AUDIO_FS);   /* the next stream starts fresh */
     }
     if (s_usb_route != ENGINE_USB_OUT) {   /* reamping: playback into the chain */
         drift_play_to_input(s_block.data[0], s_block.data[1], play, n,
@@ -576,8 +550,8 @@ void engine_task(void)
         /* stock output clip */
         if (l > 0.95f) l = 0.95f; else if (l < -0.95f) l = -0.95f;
         if (r > 0.95f) r = 0.95f; else if (r < -0.95f) r = -0.95f;
-        out[i * 2 + 0] = (int16_t)(l * 32767.0f);
-        out[i * 2 + 1] = (int16_t)(r * 32767.0f);
+        out[i * 2 + 0] = outq_sample(&s_outq, l);   /* rounded (v0.9.1: truncated) */
+        out[i * 2 + 1] = outq_sample(&s_outq, r);
     }
     PROF(P_OUT);
     s_prof_n++;
