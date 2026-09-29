@@ -52,15 +52,40 @@ assertions:
   - peripheral_log: {peripheral: flexspi, log: ip, contains: "cmd 0x6b addr 0x000b0000"}
 
   # --- Stage 4: codec on LPI2C1 ---
-  # LPI2C1_MSR.NDF: a NACK was detected. Reset is 0; the model sets it only
-  # when an address or data byte is not acknowledged. No codec is attached,
-  # so the NAU88L21 probe NACKs. (The address 0x54 is not visible here.)
+  # The NAU88L21 (system.yaml, id "codec") answers at 0x54. The firmware
+  # reads its ID register, then writes its init table: 76 registers, each
+  # read back. Register facts: NAU88L21 datasheet Rev 3.3, section 10.
+  # LPI2C1_MSR: EPF=1 (a packet ended; reset 0, set only by a STOP or a
+  # repeated START on the wire) and NDF=0 (no NACK at the end of the run).
   - memory_value:
       address: 0x403F0014
-      mask: 0x00000400
-      expected_value: 0x00000400
-  # The NACK was for the codec address: START + 0x54 write, not acknowledged.
-  - peripheral_log: {peripheral: lpi2c1, log: bus_trace, contains: "addr 0x54 W nack"}
+      mask: 0x00000500
+      expected_value: 0x00000100
+  # START + 0x54 write and read, both acknowledged (the LPI2C bus trace).
+  - peripheral_log: {peripheral: lpi2c1, log: bus_trace, contains: "addr 0x54 W ack"}
+  - peripheral_log: {peripheral: lpi2c1, log: bus_trace, contains: "addr 0x54 R ack"}
+  # The codec's own logs. R58 I2C_DEVICE_ID read: the probe.
+  - peripheral_log: {peripheral: codec, log: reads, contains: "read 0x0058 = 0x1a20"}
+  # The init table: a write to R00 resets the codec first, then every
+  # register is written and read back (76 writes, 77 reads with the probe).
+  - peripheral_log: {peripheral: codec, log: writes, contains: "write 0x0000 = 0x0000 (reset)"}
+  - peripheral_log: {peripheral: codec, log: writes, contains: "write 0x", min_count: 76}
+  - peripheral_log: {peripheral: codec, log: reads, contains: "read 0x", min_count: 77}
+  # R01 ENA_CTRL = 0x0FFF: DAC L/R, ADC L/R and their clocks on.
+  - peripheral_log: {peripheral: codec, log: writes, contains: "write 0x0001 = 0x0fff"}
+  # R1C I2S_PCM_CTRL1 = 0x000E: I2S, 32-bit words (the SAI1 word size).
+  - peripheral_log: {peripheral: codec, log: writes, contains: "write 0x001c = 0x000e"}
+  # R1D I2S_PCM_CTRL2 = 0x0000: clock slave, ADCOUT driven (reset 0x8010:
+  # ADCOUT high-Z).
+  - peripheral_log: {peripheral: codec, log: writes, contains: "write 0x001d = 0x0000"}
+  # R7F POWER_UP_CONTROL = 0xC03F: PGA and headphone drivers powered.
+  # R80 CHARGE_PUMP = 0x0720: charge pump on (reset 0x0B00).
+  - peripheral_log: {peripheral: codec, log: writes, contains: "write 0x007f = 0xc03f"}
+  - peripheral_log: {peripheral: codec, log: writes, contains: "write 0x0080 = 0x0720"}
+  # The codec state at the end of the run, decoded from R01/R1C/R1D.
+  - peripheral_log: {peripheral: codec, log: state, contains: "dai slave i2s 32-bit"}
+  - peripheral_log: {peripheral: codec, log: state, contains: "adcout driven"}
+  - peripheral_log: {peripheral: codec, log: state, contains: "enable dac_l dac_r adc_l adc_r"}
 
   # --- Stage 5: LED chain on FlexIO2 ---
   # One WS2812 frame: 40 LEDs x 24 bits, one 8-bit shifter word per bit on

@@ -6,9 +6,10 @@
 #
 # FLAMMA FB200 (Mooer-based bass multi-effects pedal) main board, NXP
 # MIMXRT1052DVL6B (SoC marking; docs/UI_AND_STORAGE.md, HARDWARE.md,
-# AUDIO_PATH.md). Pin and part facts below come from those documents; the
-# parts themselves are phase 2 (NAU88L21 codec, 3-digit 14-segment LED display,
-# 2x 74HC4051 knob multiplexers, BT201-style Bluetooth module, 40 WS2812 LEDs).
+# AUDIO_PATH.md). Pin and part facts below come from those documents. Parts
+# modelled: NAU88L21 codec, 2x 74HC4051 knob multiplexers with 16 knobs,
+# BT201-style Bluetooth module. Not yet: 3-digit 14-segment LED display, 40
+# WS2812 LEDs (their FlexIO2 frame is checked, not the LEDs).
 #
 #   - boot image: vendor self-loading block 0 at FlexSPI 0x60010000; model
 #     library (block 1) at flash offset 0xD0000
@@ -39,6 +40,12 @@ external_devices:
   - id: "bt"
     type: "bt201"
     connection: "lpuart5"
+  # NAU88L21 codec: CSB strapped high, so I2C address 0x54 (AUDIO_PATH.md).
+  - id: "codec"
+    type: "nau88l21"
+    connection: "lpi2c1"
+    config:
+      i2c_address: 0x54
   # --- Knobs: 16 potentiometers through two 74HC4051 muxes ---
   # docs/UI_AND_STORAGE.md section 2: select S0..S2 = GPIO2_IO17..19 (pads
   # GPIO_B1_01..03), shared by both muxes; mux A Z -> ADC1 IN3 (AD_B0_14,

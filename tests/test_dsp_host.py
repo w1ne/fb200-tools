@@ -88,6 +88,7 @@ def test_conv2_suite():
     assert result.returncode == 0, result.stdout + result.stderr
     assert "conv2 host tests OK" in result.stdout
     assert "conv2 4096 taps, odd blocks" in result.stdout
+    assert "conv2 4096 taps,  8-sample block then" in result.stdout
 
 
 def test_amp_cab_suite():
@@ -96,8 +97,10 @@ def test_amp_cab_suite():
     test_stock_dsp_parity.py (needs the vendor .mr)."""
     out = _build_dir() / "amp_cab_host_test"
     mods = [FW / "src" / "dsp" / f for f in ("amp.c", "tone.c", "cab.c", "conv2.c", "conv.c")] + STOCK_SRC
+    # -ffp-contract=off as the firmware's amp/tone and FilteringFunctions: the
+    # tone_df1 check is bit for bit against CMSIS df1
     subprocess.run(
-        ["cc", "-O2", "-Wall", "-Wextra", "-I", str(FW / "src"),
+        ["cc", "-O2", "-ffp-contract=off", "-Wall", "-Wextra", "-I", str(FW / "src"),
          str(FW / "tests" / "amp_cab_host_test.c"), *map(str, mods), *cmsis_dsp_args(),
          "-lm", "-o", str(out)],
         check=True,
@@ -107,6 +110,7 @@ def test_amp_cab_suite():
     assert "amp cab host tests OK" in result.stdout
     assert "cab fir: max err" in result.stdout
     assert "cab long IR: swaps at" in result.stdout
+    assert "tone_df1 bit-identical to CMSIS df1" in result.stdout
 
 
 def test_eq_suite():
