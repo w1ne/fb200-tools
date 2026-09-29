@@ -9,6 +9,7 @@ one both ways."""
 from __future__ import annotations
 
 import functools
+import os
 import random
 import shutil
 import struct
@@ -29,9 +30,12 @@ pytestmark = pytest.mark.skipif(shutil.which("cc") is None, reason="host C compi
 
 @functools.cache
 def build() -> Path:
+    """IRSTORE_CFLAGS adds flags, e.g. the sanitizers:
+    IRSTORE_CFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all" (gcc:14 ASan run)."""
     exe = Path(tempfile.mkdtemp(prefix="irstore_host_")) / "irstore_host_test"
     subprocess.run(
         ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-DIRSTORE_HOST_TEST",
+         *os.environ.get("IRSTORE_CFLAGS", "").split(),
          "-I", str(FW / "src"), str(FW / "tests" / "irstore_host_test.c"),
          str(FW / "src" / "irstore" / "irstore.c"), str(FW / "src" / "crc32.c"),
          "-o", str(exe)],
