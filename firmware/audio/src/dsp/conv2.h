@@ -25,15 +25,10 @@
  *   the call that finishes the load (~14 blocks); the tail starts with an
  *   empty history, so taps 512.. fade in over the tail length.
  *
- * Storage: the tail arrays (97 kB) are a separate conv2_tail_t so the
- * caller can place them (the engine's: the low DTCM, linker.ld .dtcm_lo).
- * With a tail, it also holds the head's spectra (8 kB, read in full every
- * block), and conv2_t (the engine's: OCRAM, behind the D-cache) keeps only
- * what is cold or small: the staged head spectra of an IR being loaded and
- * the tail's input frames (written 32 samples a block, read once a frame).
- * Measured on the pedal, the head spectra in OCRAM cost ~12k cycles a block
- * (the D-cache does not keep them between blocks; tools/engine_cycles.py
- * --ocram-miss). Head only: conv2_t holds the head spectra itself. */
+ * Storage: conv2_t holds the head (8 kB of spectra, 4 kB each for h and x,
+ * as cab_t did before) and the state. The tail arrays (~96 kB) are a separate
+ * conv2_tail_t so the caller can place them (the engine's: the low DTCM,
+ * linker.ld .dtcm_lo). */
 #include <stddef.h>
 #include <stdint.h>
 #include "arm_math.h"
@@ -53,8 +48,8 @@ typedef struct {
      * being loaded holds its 256 taps until its FFT runs. */
     float g[2][CONV2_TAIL_PARTS][CONV2_N];
     float x[CONV2_TAIL_PARTS][CONV2_N];       /* input spectra ring, newest at xhead */
-    float hh[CONV2_HEAD_PARTS][CONV_N];       /* head: IR spectra (conv_t h) */
-    float hx[CONV2_HEAD_PARTS][CONV_N];       /* head: input spectra (conv_t x) */
+    float hs[CONV2_HEAD_PARTS][CONV_N];       /* head spectra of the IR being loaded */
+    float in[3][CONV2_B];                     /* input frames: ring of 3 */
     float acc[CONV2_N];                       /* spectrum being accumulated */
     float work[CONV2_N];                      /* FFT scratch (rfft_fast overwrites its input) */
     float y[CONV2_B];                         /* tail output playing in this frame */
@@ -62,15 +57,7 @@ typedef struct {
 
 typedef struct {
     conv_t head;
-    union {
-        struct {                              /* head only: the head's spectra */
-            float hh[CONV2_HEAD_PARTS][CONV_N], hx[CONV2_HEAD_PARTS][CONV_N];
-        } own;
-        struct {                              /* with a tail (its hh, hx: the head's) */
-            float hs[CONV2_HEAD_PARTS][CONV_N];   /* head spectra of the IR being loaded */
-            float in[3][CONV2_B];             /* tail input frames: ring of 3 */
-        } tl;
-    } u;
+    float hh[CONV2_HEAD_PARTS][CONV_N], hx[CONV2_HEAD_PARTS][CONV_N];   /* head storage */
     conv2_tail_t *t;                          /* NULL: head only (<= 512 taps) */
     arm_rfft_fast_instance_f32 fft;           /* 512-point */
     unsigned parts;                           /* active tail partitions, 0 = tail off */
