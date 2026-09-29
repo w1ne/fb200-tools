@@ -246,7 +246,16 @@ In the first-boot run the `text` log has three lines:
   `050`: the two texts share the window, and some segments are lit for less
   than half of it. It is visible for 20 ms only.
 
-A run with a second display instance at `threshold_pct: 95` DIAG_PLACEHOLDER
+A run with a second display instance at `threshold_pct: 95` confirms that
+the dp is driven, not a ghost: in every window the dp is visible together
+with the segments of its digit, at the same duty.
+
+The same run shows a limit of the 20 ms window. The stock firmware lights
+each digit for 3 ms, so a window holds 6.67 digit slots: one digit gets 3
+slots, the other two get 2, and they measure at 67 % of the brightest. At a
+95 % threshold only one digit is visible per window (`" 5. "`, `"  0."`,
+`"0.  "`). Keep `threshold_pct` below 67 for this display; the default, 50,
+gives a stable text.
 
 ## 7. SVD provenance
 
