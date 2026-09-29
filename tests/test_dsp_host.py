@@ -114,8 +114,8 @@ def test_eq_suite():
     no clicks on a change, stable at the extremes."""
     out = _build_dir() / "eq_host_test"
     subprocess.run(
-        # -ffp-contract=off: the pedal's biquad loop (CMSIS FilteringFunctions)
-        # has no FMA; the same numbers on every host (clang on arm64 fuses)
+        # -ffp-contract=off: the same numbers on every host (clang on arm64
+        # fuses); the EQ runs in double, FMA or not is far below its tolerances
         ["cc", "-O2", "-ffp-contract=off", "-Wall", "-Wextra", "-Werror", "-I", str(FW / "src"),
          str(FW / "tests" / "eq_host_test.c"), str(FW / "src" / "dsp" / "eq.c"),
          *cmsis_dsp_args(), "-lm", "-o", str(out)],
