@@ -90,6 +90,9 @@ class Image:
         self.veneer: dict[int, int] = {}
         cur = None
         for line in dis.splitlines():
+            if line.startswith("Disassembly of section"):
+                cur = None   # a new section: code before its first known function is no one's
+                continue
             m = FUNC_RE.match(line)
             if m:
                 addr = int(m.group(1), 16)

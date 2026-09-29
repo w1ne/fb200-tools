@@ -71,7 +71,7 @@ TUSB_DEFS := \
   -DI2C_RETRY_TIMES=100000 \
   -DARM_MATH_LOOPUNROLL
 CFLAGS    := $(CPUFLAGS) -O2 -g3 -ffreestanding -fno-builtin -fno-common \
-             -ffunction-sections -fdata-sections \
+             -ffunction-sections -fdata-sections -fstack-usage \
              -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables \
              -Wall -Wextra -Wno-unused-parameter -std=gnu11 \
              $(if $(filter recovery,$(VARIANT)),-DFB200_RECOVERY) \

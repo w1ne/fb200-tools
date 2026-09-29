@@ -146,7 +146,12 @@ void crashdump_clear(void) { DUMP->magic = 0; }
 
 void recovery_request(void)
 {
+    static volatile int requested;
     CRUMB[0] = CRUMB_REQUEST;
+    /* log_flush_ms runs tud_task, which can bring the request again (app
+     * 0xC1 over HID): no second flush, so the stack nests once at most
+     * (firmware/tools/stack_usage.py REENTRY) */
+    if (requested++) NVIC_SystemReset();
     log_flush_ms(300);
     tud_disconnect();
     for (volatile uint32_t i = 0; i < 4000000u; i++) {
