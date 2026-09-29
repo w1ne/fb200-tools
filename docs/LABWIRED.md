@@ -26,8 +26,8 @@ has no FB200 special cases.
 
 The i.MX RT parts and the `peripheral_log` and `fidelity_clean` assertions
 are on core `main` (PRs #1254 and #1255) and are not released yet. The
-14-segment display model (`segment-display-mux`) needs core PR
-[#1273](https://github.com/w1ne/labwired-core/pull/1273). Until the
+14-segment display model (`segment-display-mux`) is on core `main` too (PR
+[#1273](https://github.com/w1ne/labwired-core/pull/1273)), not released yet. Until the
 next core release, build the CLI from `main`:
 
 ```bash
