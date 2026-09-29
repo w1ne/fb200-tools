@@ -14,7 +14,7 @@ has no FB200 special cases.
 |------|------------|
 | `labwired/chip/mimxrt1052.yaml` | the chip: memory map, pins, peripherals |
 | `labwired/chip/peripherals/*.yaml` | register files ingested from the NXP SVD |
-| `labwired/system.yaml` | the FB200 board: NAU88L21 codec, knob multiplexers and knobs, ADC inputs, FlexIO2 clock, footswitches, UART |
+| `labwired/system.yaml` | the FB200 board: NAU88L21 codec, knob multiplexers and knobs, 14-segment display, ADC inputs, FlexIO2 clock, footswitches, UART |
 | `labwired/smoke.yaml` | gate for the open smoke firmware |
 | `labwired/stock-boot.yaml` | gate for the unmodified vendor firmware, boot to USB (short) |
 | `labwired/stock-knobs.yaml` | gate for the vendor firmware: it reads all 16 knobs through the 74HC4051 muxes, and a turned knob (long: 3.4 G cycles) |
@@ -25,11 +25,12 @@ has no FB200 special cases.
 
 ## 2. Get the LabWired CLI
 
-The i.MX RT parts and the `peripheral_log` and `fidelity_clean` assertions
-are on core `main` (PRs #1254 and #1255) and are not released yet. The
-NAU88L21 codec part and device logs (`peripheral_log` with a device id) need
-core PR #1272 (branch `feat/nau88l21-codec`) until it is merged. Until the next core
-release, build the CLI from `main`:
+The i.MX RT parts, the `peripheral_log` and `fidelity_clean` assertions,
+the NAU88L21 codec part with device logs (PR #1272) and the 14-segment
+display part `segment-display-mux` (PR
+[#1273](https://github.com/w1ne/labwired-core/pull/1273)) are on core
+`main` and are not released yet. Until the next core release, build the CLI
+from `main`:
 
 ```bash
 git clone https://github.com/w1ne/labwired-core.git
@@ -76,10 +77,10 @@ labwired test --script labwired/stock-first-boot.yaml   # long, see 5
 Expected result:
 
 ```
-PASS  4/4 checks · smoke · 2000000 steps · 0.27s
+PASS  5/5 checks · smoke · 40000000 steps · 36.87s
 PASS  37/37 checks · stock-boot · 90000000 steps · 15.26s
 PASS  20/20 checks · stock-knobs · 3400000000 steps · 4754.33s
-PASS  11/11 checks · stock-first-boot · 6800000000 steps · 3669.59s
+PASS  12/12 checks · stock-first-boot · 6800000000 steps · 3772.25s
 ```
 
 The stock gate asserts `fidelity_clean: true`: an unmapped MMIO access or an
@@ -97,6 +98,21 @@ the vendor image.
 The open smoke firmware boots from FlexSPI at `0x60010000`, prints
 `RT1052 SMOKE OK` on LPUART5, makes knob LED 1 (GPIO4_IO00) an output and
 toggles it. The gate reads GPIO4 GDIR and DR, which printed text cannot fake.
+
+Then the firmware multiplexes `LAb` on the 14-segment display, the way the
+open firmware's display driver does (all selects off, segments, next
+select), about 0.1 ms per digit. The gate reads the text from the display
+model's `text` log:
+
+```yaml
+- peripheral_log: {peripheral: display, log: text, contains: "\"LAb\""}
+```
+
+The display runs for 40 M cycles, because the model decides what is visible
+once per 20 ms window (12 M cycles).
+
+Negative control: with `"LAB"` in place of `"LAb"` the gate fails that
+check (`FAIL 4/5`): `B` and `b` are different glyphs.
 
 ### Stock boot gate
 
@@ -131,9 +147,11 @@ repository. All later stages run from ITCM, so a failed copy fails them too.
 The stage 5 check counts words and finds both encodings; it does not prove
 that every word is `0xC0` or `0xFC`.
 
-The board parts not modelled yet: 14-segment display, Bluetooth module. The knobs and their multiplexers are modelled, see the
-stock knob gate below. The stock boot gate does not see them: the firmware
-scans the knobs only in its main loop, after 3.2 G cycles.
+The board parts not modelled yet: Bluetooth module. The knobs and their
+multiplexers are modelled, see the stock knob gate below, and so is the
+14-segment display (section 6). The stock boot gate sees neither: the
+firmware scans the knobs and refreshes the display only in its main loop,
+after 3.2 G cycles; the first-boot gate checks the display.
 
 #### Stage 4: the codec
 
@@ -258,7 +276,9 @@ board fresh from the factory, for 6.8 G cycles (11.3 s of device time at
 600 MHz). It needs about 29 min of CPU time (Apple M4) and 1.1 GB of
 memory at peak (most of it is the text of the FlexSPI `ip` log at the end
 of the run: about 12 M status-poll lines).
-On a busy Mac it took 61 min of wall time. It is not in the default loop.
+On a busy Mac it took 61 min of wall time, and 142 min with the display
+model while two other simulations ran (`wall_time_ms` is 4 h). It is not in
+the default loop.
 
 Timeline, measured on the twin (SysTick is 1 ms = 600 000 cycles):
 
@@ -268,6 +288,7 @@ Timeline, measured on the twin (SysTick is 1 ms = 600 000 cycles):
 | 0.03 .. 1.40 G | 0.05 .. 2.3 s | factory reset: storage format through FlexSPI IP commands (sector erase `0x20`, quad page program `0x32`, status poll `0x05`) |
 | 1.40 .. 3.20 G | 2.3 .. 5.3 s | a fixed `delay_ms(3000)` before the main loop (ITCM `0x17774`; the wait loop is `0x1A01A..0x1A020`, it polls the SysTick ms counter) |
 | 3.20 .. 6.15 G | 5.3 .. 10.3 s | main loop; a software countdown starts the Bluetooth bring-up |
+| 3.23 G | 5.4 s | the display shows `P.0.A.` (then `0.8.3.` at 3.42 G, the knob overlay) |
 | 6.15 .. 6.70 G | 10.3 .. 11.2 s | Bluetooth AT sequence on LPUART5, 150 ms apart |
 
 A run that stops before 6.2 G cycles sees no AT command. (A 3 G probe
@@ -278,6 +299,7 @@ stopped inside the 3 s delay. That is why its `uart.log` was empty.)
 | sector erase and page program of the settings sector F:0x82000 and of F:0xB0000 | `peripheral_log` FlexSPI `ip`: `cmd 0x20 addr 0x00082000`, `cmd 0x32 addr 0x00082000`, same for `0x000b0000` |
 | magic `FB200` at F:0x82000 and `B01` at F:0xB0000 | `memory_value` at `0x60082000`, `0x60082004`, `0x600B0000` (the NOR array, read through the FlexSPI AHB window) |
 | Bluetooth AT sequence `AT+TM`, `AT+BD..`, `AT+BM..`, `AT+CN00`, `AT+B501`, `AT+B401`, in this order | `uart_ordered`, `uart_contains "AT+B401"` |
+| the first display screen of the main loop, `P.0.A.` | `peripheral_log` display `text`: `"P.0.A."` |
 | no fidelity gap, run not stopped early | `fidelity_clean`, stop reason `max_cycles` |
 
 The Bluetooth module is not modelled: nothing answers the AT commands. The
@@ -286,7 +308,10 @@ firmware does not wait for `OK`, so the sequence is complete anyway.
 Negative control: the same run with each new expected value changed (an
 erase and a program of F:0x10000 and F:0xB1000, `FB21`, `1`, `B02`,
 `AT+BD` before `AT+TM`, `AT+B402`) fails all nine of these checks
-(`FAIL 2/11`; only `fidelity_clean` and the stop reason pass).
+(`FAIL 2/11`; only `fidelity_clean` and the stop reason pass). The same
+run with `"P0A"` (the text without the dp) in addition to `"P.0.A."` fails
+only that check (`FAIL 12/13`), and the message shows the three lines of
+the `text` log.
 
 Notes on `result.json` for long runs:
 
@@ -299,7 +324,83 @@ Notes on `result.json` for long runs:
   `stop_reason_details.observed`. A `max_cycles: 3000000000` run reports
   `cycles` of about 3.67 G.
 
-## 6. SVD provenance
+## 6. The 14-segment display
+
+`labwired/system.yaml` places the core part `segment-display-mux` with the
+id `display`:
+
+- segments: GPIO4_IO16..30 (pads `GPIO_EMC_16..30`), active high;
+- digit selects, left to right: GPIO4_IO31, GPIO3_IO18, GPIO3_IO21 (pads
+  `GPIO_EMC_31`, `GPIO_EMC_32`, `GPIO_EMC_35`), active high;
+- segment names per pin and the glyphs: from
+  [`UI_AND_STORAGE.md`](UI_AND_STORAGE.md) section 1 and the font of the open
+  firmware (`firmware/audio/src/ui/display.c`), which copies the stock font
+  (ITCM `0x16574`). Glyphs with the same segments decode to the first one:
+  `O` shows as `0`, `S` as `5`, `B` as `b`, `D` as `d`.
+
+The model lights a segment LED only while its segment line AND its digit
+select are active. It integrates the lit time exactly, per GPIO store, and
+every 20 ms decides what a human sees: an LED is visible when it is lit at
+least 50 % as long as the brightest LED, and at least 1 % of the window. A
+short ghost stays dark; a display that is not refreshed goes blank. An
+unknown pattern shows as `?`, a lit `dp` as `.` after the character.
+
+It records two logs for `peripheral_log`:
+
+| Log | One line per | Example |
+|-----|--------------|---------|
+| `text` | change of the visible text | `"LAb" at cycle 12000001` |
+| `frames` | change of the visible segment masks (bit = IO16..IO30) | `0x4021 0x4751 0x4471 at cycle 12000001` |
+
+A failed `peripheral_log` check prints the last lines of the log.
+
+### What the stock firmware shows
+
+In the first-boot run (codec, knobs and display all attached) the `text` log
+has six lines; a failed check prints the last five:
+
+```
+"P.0.A." at cycle 3240000001
+"?.0.A." at cycle 3408000001
+"0.8.3." at cycle 3420000001
+"0.7.7." at cycle 5820000001
+"0.8.3." at cycle 5844000001
+```
+
+The first line (not shown) is the screen's first window at 3.228 G. Before
+the codec was modelled, `"P.0.A."` came at exactly 3228000001 and nothing
+changed after 3.42 G.
+
+- `P0A` is preset bank 0, slot A (`P<bank><slot>`, UI_AND_STORAGE.md
+  section 1). 180 ms later the firmware shows `083`: the 0-100 overlay of
+  a knob that moved. The knob scan starts with the main loop and the first
+  scan reads MASTER (k15) at its start position, 83 % (see the knob
+  section). Before the knobs were modelled, all knobs read mid-scale and
+  this screen was `050`.
+- `077` for 24 ms at 5.82 G is not explained yet: no knob starts at 77 %
+  (starts are `8 + 5 N`), and the stimulus that turns MASTER is only in the
+  knob gate.
+- The dp is on after every digit. This is what the firmware drives, not a
+  model error: the stock glyph writer (the code switch) never writes the dp
+  line GPIO4_IO23; a separate routine holds it high in this mode (and blinks
+  it, or clears it, in others; the tuner uses it as the sharp sign). The
+  model shows a segment that is lit under every select.
+- `?.0.A.` is one 20 ms window in which the screen changed from `P0A` to
+  `083`: the two texts share the window, and some segments are lit for less
+  than half of it. It is visible for 20 ms only.
+
+A run with a second display instance at `threshold_pct: 95` confirms that
+the dp is driven, not a ghost: in every window the dp is visible together
+with the segments of its digit, at the same duty.
+
+The same run shows a limit of the 20 ms window. The stock firmware lights
+each digit for 3 ms, so a window holds 6.67 digit slots: one digit gets 3
+slots, the other two get 2, and they measure at 67 % of the brightest. At a
+95 % threshold only one digit is visible per window (`" 5. "`, `"  0."`,
+`"0.  "`). Keep `threshold_pct` below 67 for this display; the default, 50,
+gives a stable text.
+
+## 7. SVD provenance
 
 The files in `labwired/chip/peripherals/` and the base addresses and IRQs in
 `labwired/chip/mimxrt1052.yaml` come from the NXP CMSIS SVD for the
