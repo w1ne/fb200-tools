@@ -81,7 +81,7 @@ Expected result:
 PASS  5/5 checks · smoke · 40000000 steps · 36.87s
 PASS  37/37 checks · stock-boot · 90000000 steps · 15.26s
 PASS  20/20 checks · stock-knobs · 3400000000 steps · 4754.33s
-PASS  24/24 checks · stock-first-boot · 6800000000 steps · (pending)
+PASS  24/24 checks · stock-first-boot · 6800000000 steps · 6031.15s
 ```
 
 The stock gate asserts `fidelity_clean: true`: an unmapped MMIO access or an
