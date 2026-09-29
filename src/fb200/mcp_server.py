@@ -234,6 +234,7 @@ class PedalTools:
           eq [on|off] | eq hpf <20-200 Hz|0> | eq lpf <2000-20000 Hz|0> |
           eq <band 1-5> <30-10000 Hz> <gain -15..15 dB> [q 0.3-4] (into the preset) |
           cab long <taps 0-4096> (synthetic IR for measurements, 0 = the preset's cab) |
+          cab [<1-83>] (cab on with this type, into the edit buffer; 20-83 = long IRs) |
           tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>] | stock
         ui: ui | uimon on|off | disp <text> | kled <0-15> on|off | power |
           rgb 0xRRGGBB [led] | factory [yes] (resets ALL presets)

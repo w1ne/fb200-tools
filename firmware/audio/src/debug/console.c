@@ -121,6 +121,7 @@ static void cmd_help(void)
              "          testgen off|sine|white|impulse [freq] | tin <same> (into the chain, -20 dBFS)\r\n"
              "          usb in = reamping: host playback into the chain (mix: + instrument, out: default)\r\n"
              "          meters on|off | x | cpu | prof | cab long <0-" XSTR(ENGINE_IR_TAPS) ">\r\n"
+             "          cab [<1-83>] (on, type: 1-10 stock, 11-19 user IR, 20-83 long IR)\r\n"
              "  led   : led on|off|scan | ledpin <gpio> <pin>\r\n"
              "  ui    : ui | uimon on|off | disp <text> | kled <0-15> on|off | power\r\n"
              "          preset [0-39] | save | factory [yes] | rgb 0xRRGGBB [led] | rgb cfg 0xIIS0S1\r\n"
@@ -753,6 +754,21 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "irput")) cmd_irput(argc, argv);
     else if (streq(argv[0], "irls")) irstore_print_list();
     else if (streq(argv[0], "irdel")) cmd_irdel(argv[1]);
+    else if (streq(argv[0], "cab") && (argc == 1 || !streq(argv[1], "long"))) {
+        /* cab [<1-83>]: the edit buffer's cab on, with this type (save: `save`) */
+        int ok = 1;
+        uint32_t t = argc > 1 ? parse_num(argv[1], &ok) : 0u;
+        if (argc > 1 && ok && t >= 1u && t <= IRSTORE_LAST) {
+            uint8_t b[4] = {1, 0, (uint8_t)t, 0};
+            ui_edit_write(P_CAB_EN, b, sizeof b);
+            proto_notify_module(3);
+        } else if (argc > 1) {
+            log_printf("usage: cab [<1-10 stock | 11-19 user IR | 20-83 long IR>] | cab long <taps>\r\n");
+            return;
+        }
+        const preset_t *p = ui_edit_preset();
+        log_printf("cab en=%u type=%u\r\n", pget(p, P_CAB_EN), pget(p, P_CAB_TYPE));
+    }
     else if (streq(argv[0], "cab") && argc > 2 && streq(argv[1], "long")) {
         int ok;
         uint32_t n = parse_num(argv[2], &ok);

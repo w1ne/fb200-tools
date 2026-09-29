@@ -298,6 +298,8 @@ The transfer is on the USB console (CDC), not HID
 - `irdel <slot>`: `ir <slot> deleted` | `ir <slot>: empty` | `ir <slot>: FAILED (...)`.
 - `jedec`: `jedec <mf> <type> <cap>: manufacturer ..., capacity .. = <n> kB`,
   the FlexSPI window and whether the store fits.
+- `cab [<1-83>]`: cab on with this type in the edit buffer (`save` stores
+  it); `cab en=<0|1> type=<n>`.
 
 Flash layout and table format: [UI_AND_STORAGE.md §5](UI_AND_STORAGE.md#5-flash-map-and-storage-h-verified-entries-read-on-the-pedal).
 

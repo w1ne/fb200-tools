@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `long_ir_import`, `long_ir_delete` (the app asks before an import or delete).
   Gain: the stock user-IR rule, computed at upload. An empty or bad slot bypasses
   the cab. The 9 stock slots and the stock app protocol are unchanged.
+- **Console `cab [<1-83>]`:** select a cab type in the edit buffer (stock, user IR or
+  long IR) without the app.
 - **Console `jedec`:** the flash chip's JEDEC ID, its size and the FlexSPI window.
   The long IR store is off on a chip smaller than 5 MB (checked at run time).
 

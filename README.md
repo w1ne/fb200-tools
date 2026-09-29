@@ -144,6 +144,7 @@ fb200 ir import 3 my-cab.wav        # convert and upload a WAV IR to slot 3
 fb200 ir process my-cab.wav -o out.wav --trim --taps 512   # process to a file, no pedal
 fb200 ir put 20 my-room.wav         # open firmware: a long IR (up to 4096 taps) in slot 20..83
 fb200 ir ls --long                  # the long IR slots; `fb200 ir delete 20` deletes one
+fb200 console "cab 20"              # play long slot 20 (cab type 20; `save` stores the preset)
 fb200 console [cmd ...]             # open-firmware USB console (interactive without args)
 fb200 console "factory yes"         # factory reset: presets, settings, IR list
 fb200 console "delay on 350"        # bass delay: [on|off] [time] [fb] [mix] [lowcut] [tone]
