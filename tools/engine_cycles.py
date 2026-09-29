@@ -116,11 +116,12 @@ class M7Model:
 
     ALU, MUL, LOAD, STORE, FP, FPDIV, BRANCH = range(7)
 
-    def __init__(self, fp_lat: int = 3, mispredict: int = 6):
+    def __init__(self, fp_lat: int = 3, mispredict: int = 6, fma_lat: int = 0):
         from capstone import CS_ARCH_ARM, CS_MODE_MCLASS, CS_MODE_THUMB, Cs
         self.cs = Cs(CS_ARCH_ARM, CS_MODE_THUMB | CS_MODE_MCLASS)
         self.cs.detail = True
         self.fp_lat, self.mispredict = fp_lat, mispredict
+        self.fma_lat = fma_lat or fp_lat
         self.cache: dict[int, tuple] = {}
         self.reset()
 
@@ -166,6 +167,8 @@ class M7Model:
             cls = self.STORE
         elif m in ("vdiv", "vsqrt"):
             cls, lat = self.FPDIV, 28 if f64 else 14
+        elif m in ("vfma", "vfms", "vfnma", "vfnms"):
+            cls, lat = self.FP, self.fma_lat
         elif m in ("vmla", "vmls", "vnmla", "vnmls"):
             cls, lat = self.FP, 2 * self.fp_lat
         elif m in ("vcmp", "vcmpe"):
@@ -357,7 +360,7 @@ def annotate(b: Bench, cross: str, elf: Path, func: str, blocks: int) -> None:
 def do_profile(args, cross: str) -> int:
     import numpy as np
     elf, syms, funcs = build(cross, FW / "src", FW / "build" / "engine_bench" / "new")
-    model = M7Model(fp_lat=args.fp_lat, mispredict=args.mispredict)
+    model = M7Model(fp_lat=args.fp_lat, mispredict=args.mispredict, fma_lat=args.fma_lat)
     b = Bench(elf.with_name("bench.bin"), syms, funcs, load_blob(), model)
     setting = next(s for s in SETTINGS if s[0] == args.model)
     setting = (*setting[:7], args.cab, args.taps)
@@ -451,6 +454,7 @@ def main() -> int:
     ap.add_argument("--taps", type=int, default=0, help="long IR taps (0: the stock 512)")
     ap.add_argument("--blocks", type=int, default=0, help="default 20 (profile), 2000 (compare)")
     ap.add_argument("--fp-lat", type=int, default=3)
+    ap.add_argument("--fma-lat", type=int, default=0, help="VFMA latency (default: --fp-lat)")
     ap.add_argument("--mispredict", type=int, default=6)
     ap.add_argument("--ocram-miss", type=int, default=0)
     ap.add_argument("--compare", metavar="REV")
