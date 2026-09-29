@@ -79,7 +79,7 @@ Expected result:
 PASS  5/5 checks · smoke · 40000000 steps · 36.87s
 PASS  24/24 checks · stock-boot · 90000000 steps · 15.26s
 PASS  20/20 checks · stock-knobs · 3400000000 steps · 4754.33s
-PASS  12/12 checks · stock-first-boot · 6800000000 steps · 3669.59s
+PASS  12/12 checks · stock-first-boot · 6800000000 steps · 1851.40s
 ```
 
 The stock gate asserts `fidelity_clean: true`: an unmapped MMIO access or an
@@ -254,7 +254,7 @@ Timeline, measured on the twin (SysTick is 1 ms = 600 000 cycles):
 | 0.03 .. 1.40 G | 0.05 .. 2.3 s | factory reset: storage format through FlexSPI IP commands (sector erase `0x20`, quad page program `0x32`, status poll `0x05`) |
 | 1.40 .. 3.20 G | 2.3 .. 5.3 s | a fixed `delay_ms(3000)` before the main loop (ITCM `0x17774`; the wait loop is `0x1A01A..0x1A020`, it polls the SysTick ms counter) |
 | 3.20 .. 6.15 G | 5.3 .. 10.3 s | main loop; a software countdown starts the Bluetooth bring-up |
-| 3.23 G | 5.4 s | the display shows `P.0.A.` (then `0.5.0.` at 3.42 G) |
+| 3.23 G | 5.4 s | the display shows `P.0.A.` (then `0.8.3.` at 3.42 G, the knob overlay) |
 | 6.15 .. 6.70 G | 10.3 .. 11.2 s | Bluetooth AT sequence on LPUART5, 150 ms apart |
 
 A run that stops before 6.2 G cycles sees no AT command. (A 3 G probe
@@ -326,19 +326,23 @@ In the first-boot run the `text` log has three lines:
 
 ```
 "P.0.A." at cycle 3228000001
-"0.?.?." at cycle 3408000001
-"0.5.0." at cycle 3420000001
+"0.0.?." at cycle 3408000001
+"0.8.3." at cycle 3420000001
 ```
 
 - `P0A` is preset bank 0, slot A (`P<bank><slot>`, UI_AND_STORAGE.md
-  section 1). `050` follows 180 ms later.
+  section 1). 180 ms later the firmware shows `083`: the 0-100 overlay of
+  a knob that moved. The knob scan starts with the main loop and the first
+  scan reads MASTER (k15) at its start position, 83 % (see the knob
+  section). Before the knobs were modelled, all knobs read mid-scale and
+  this screen was `050`.
 - The dp is on after every digit. This is what the firmware drives, not a
   model error: the stock glyph writer (the code switch) never writes the dp
   line GPIO4_IO23; a separate routine holds it high in this mode (and blinks
   it, or clears it, in others; the tuner uses it as the sharp sign). The
   model shows a segment that is lit under every select.
-- `0.?.?.` is one 20 ms window in which the screen changed from `P0A` to
-  `050`: the two texts share the window, and some segments are lit for less
+- `0.0.?.` is one 20 ms window in which the screen changed from `P0A` to
+  `083`: the two texts share the window, and some segments are lit for less
   than half of it. It is visible for 20 ms only.
 
 A run with a second display instance at `threshold_pct: 95` confirms that
