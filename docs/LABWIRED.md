@@ -151,8 +151,9 @@ stock code and in our firmware (`firmware/audio/src/ui/controls.c`):
 
 Knob `kN` is mux channel `N mod 8`; the panel names come from the measured
 table in `UI_AND_STORAGE.md`. Each knob starts at a distinct position,
-`8 + 5 N` % (never 50 %, the old fixed mid-scale level) (`position` is in %, 0 = fully left), so a gate can tell every
-knob apart. Turn a knob in a test script with a stimulus on its id, for
+`8 + 5 N` %, so a gate can tell every knob apart. No knob starts at 50 %,
+the fixed mid-scale level that the twin used before the knobs existed.
+`position` is in %, 0 = fully left. Turn a knob in a test script with a stimulus on its id, for
 example `target: { component: "knob_k15_master", channel: "position" }`.
 
 The multiplexer re-reads its select pads inside every GPIO register write,
