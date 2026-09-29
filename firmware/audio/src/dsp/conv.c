@@ -110,6 +110,7 @@ static void step(conv_t *c, const float *in, float *out, size_t n)
     arm_rfft_fast_f32(&c->fft, acc, buf, 1);
     arm_copy_f32(buf + DSP_BLOCK + c->fill, out, (uint32_t)n);   /* overlap-save */
     c->fill += (unsigned)n;
+    c->steps++;
     if (c->fill == DSP_BLOCK) {
         arm_copy_f32(c->in + DSP_BLOCK, c->in, DSP_BLOCK);
         c->head = c->head + 1 == c->cap ? 0 : c->head + 1;
@@ -117,8 +118,59 @@ static void step(conv_t *c, const float *in, float *out, size_t n)
     }
 }
 
+#define REPHASE_MAX_PARTS 16
+
+/* Partition phase: a step runs the whole FFT + MAC however few samples it
+ * takes, so a caller whose DSP_BLOCK blocks do not start on a partition edge
+ * (one short block, e.g. a SAI hiccup, shifts every later one) pays two steps
+ * per block: seen on the pedal, the 512-tap cab at 20.9k cycles instead of
+ * ~10.5k. After such a block (fill = k != 0) this moves the partition edge
+ * to "now": the input history is taken back from the spectra (inverse FFT
+ * of the stored rows; the newest 32 + k samples are exact, in c->in), cut
+ * into partitions that end now, and transformed again. One-time cost ~2
+ * (parts - 1) 64-point FFTs (~70k cycles for 16 parts); the next parts
+ * blocks carry the FFT round trip's rounding (~1e-7 relative), then the
+ * output is again that of a convolver that ran in this phase from the start. */
+static __attribute__((noinline)) void rephase(conv_t *c)
+{
+    unsigned k = c->fill, parts = c->parts, cap = c->cap;
+    if (k == 0 || parts > REPHASE_MAX_PARTS) return;
+    /* s[age]: age 0 = the newest sample; 32 * parts samples */
+    float s[REPHASE_MAX_PARTS * DSP_BLOCK], a[CONV_N], b[CONV_N];
+    for (unsigned t = 0; t < k; t++) s[t] = c->in[DSP_BLOCK + k - 1 - t];              /* Q0 */
+    for (unsigned t = 0; t < DSP_BLOCK && k + t < parts * DSP_BLOCK; t++)
+        s[k + t] = c->in[DSP_BLOCK - 1 - t];                                            /* Q1 */
+    /* row head - i (i >= 1) = FFT(Q_{i+1} | Q_i): Q_i for i >= 2 from its
+     * second half, the oldest partial one from the first half of the last row */
+    for (unsigned i = 1; i < parts; i++) {
+        unsigned r = (c->head + cap - i) % cap;
+        arm_copy_f32(c->x[r], a, CONV_N);
+        arm_rfft_fast_f32(&c->fft, a, b, 1);
+        for (unsigned half = 0; half < 2; half++) {
+            unsigned q = i + 1 - half;                 /* Q_q in b[half * 32 ..] */
+            if (q < 2) continue;
+            for (unsigned m = 0; m < DSP_BLOCK; m++) {
+                unsigned age = k + DSP_BLOCK * (q - 1) + (DSP_BLOCK - 1 - m);
+                if (age < parts * DSP_BLOCK) s[age] = b[half * DSP_BLOCK + m];
+            }
+        }
+    }
+    /* new partitions P_j end now: P_j[m] = s[32 j + 31 - m]; row head - j =
+     * FFT(P_j | P_{j-1}) for j = 1..parts-1, and P_0 into c->in */
+    for (unsigned j = 1; j < parts; j++) {
+        for (unsigned m = 0; m < DSP_BLOCK; m++) {
+            a[m] = s[DSP_BLOCK * j + DSP_BLOCK - 1 - m];
+            a[DSP_BLOCK + m] = s[DSP_BLOCK * (j - 1) + DSP_BLOCK - 1 - m];
+        }
+        arm_rfft_fast_f32(&c->fft, a, c->x[(c->head + cap - j) % cap], 0);
+    }
+    for (unsigned m = 0; m < DSP_BLOCK; m++) c->in[m] = s[DSP_BLOCK - 1 - m];
+    c->fill = 0;
+}
+
 void conv_process(conv_t *c, const float *in, float *out, size_t n)
 {
+    size_t total = n;
     while (n) {
         size_t m = DSP_BLOCK - c->fill < n ? DSP_BLOCK - c->fill : n;
         step(c, in, out, m);
@@ -126,4 +178,6 @@ void conv_process(conv_t *c, const float *in, float *out, size_t n)
         out += m;
         n -= m;
     }
+    /* a whole block that straddled a partition edge: realign (see rephase) */
+    if (total == DSP_BLOCK && c->fill) rephase(c);
 }
