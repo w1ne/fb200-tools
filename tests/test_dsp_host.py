@@ -158,7 +158,7 @@ def test_engine_drift_suite():
     assert result.returncode == 0, result.stdout + result.stderr
     print(result.stdout)
     assert "drift host tests OK" in result.stdout
-    assert "drift_rs +500 ppm: inserts 0 drops 0" in result.stdout
+    assert "drift_rs  +500 ppm: inserts 0 drops 0" in result.stdout
 
 
 def test_led_pattern_suite():
