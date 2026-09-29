@@ -6,13 +6,16 @@
  *
  *   lsio_program: one page, then waits (flash_wait_idle: the audio pump
  *     runs) and reads the page back.
- *   lsio_erase_begin / lsio_erase_run: a 4 kB sector or a 64 kB block. The
- *     erase runs in slices: lsio_erase_run resumes it, runs the audio pump
- *     while it is busy, and after slice_ms suspends it (Erase Suspend 75h,
+ *   lsio_erase_begin: a 4 kB sector or a 64 kB block. It returns only once
+ *     that erase is suspended or finished. The caller is XIP code, so a
+ *     return while the erase is still running fetches instructions from a
+ *     busy flash (the chip then comes up in the ROM serial loader).
+ *   lsio_erase_run: resumes a suspended erase, runs the audio pump while it
+ *     is busy, and after slice_ms suspends it again (Erase Suspend 75h,
  *     Winbond and GigaDevice; SUS in status register 2) so the main loop
- *     (XIP code) can run again. While it is suspended the flash reads and
- *     programs other sectors: the looper's streams never wait for an erase.
- *     A chip without suspend runs the erase to its end (the pump still runs).
+ *     can run. While it is suspended the flash reads and programs other
+ *     sectors: the looper's streams never wait for an erase. A chip without
+ *     suspend runs the erase to its end (the pump still runs).
  *   lsio_quiesce: resume a suspended erase and wait for its end. Every other
  *     flash writer calls it first (flash_cmd_init, fw_begin): an erase or a
  *     status write is not allowed while an erase is suspended.
@@ -35,7 +38,7 @@ extern lsio_stats_t g_lsio;
 void lsio_init(int suspend_ok);      /* suspend_ok: the chip has Erase Suspend */
 int lsio_read(uint32_t off, void *dst, uint32_t len);            /* 1 ok */
 int lsio_program(uint32_t off, const uint32_t *page);            /* 1 ok (verified) */
-int lsio_erase_begin(uint32_t off, int block64);                 /* 1 started */
+int lsio_erase_begin(uint32_t off, int block64); /* 1: started; idle or suspended */
 int lsio_erase_run(uint32_t slice_ms);                           /* LSIO_* */
 int lsio_erase_active(void);         /* started, not finished (maybe suspended) */
 void lsio_quiesce(void);

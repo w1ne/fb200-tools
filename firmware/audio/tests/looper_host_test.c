@@ -674,8 +674,30 @@ static void test_boot(void)
     printf("boot: nothing read before written, not ready until erased, no area on 4 MB\n");
 }
 
+/* The caller of lsio_erase_begin runs from flash. The chip must be idle
+ * (WIP clear) when begin returns: suspended, or the erase already finished. */
+static void test_erase_begin_returns_safe(void)
+{
+    sim_flash_init(&SIM_TYPICAL);
+    uint32_t sr = 1, sr2 = 0;
+    assert(lsio_erase_begin(FLASH_LOOP_BASE, 1) == 1);
+    assert(flash_read_status(&sr) == 1 && (sr & 1u) == 0u);
+    if (lsio_erase_active()) assert(flash_read_status2(&sr2) == 1 && (sr2 & 0x80u) != 0u);
+    lsio_quiesce();
+    assert(!lsio_erase_active());
+    assert(flash_read_status(&sr) == 1 && (sr & 1u) == 0u);
+    sim_timing_t ns = SIM_TYPICAL;
+    ns.suspend = 0;
+    sim_flash_init(&ns);
+    assert(lsio_erase_begin(FLASH_LOOP_BASE, 0) == 1);
+    assert(!lsio_erase_active());
+    assert(flash_read_status(&sr) == 1 && (sr & 1u) == 0u);
+    printf("erase begin: returns idle or suspended\n");
+}
+
 int main(void)
 {
+    test_erase_begin_returns_safe();
     test_codec();
     test_quality();
     test_loop_points();

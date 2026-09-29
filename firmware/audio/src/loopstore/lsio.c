@@ -26,6 +26,9 @@ void lsio_init(int suspend_ok)
 
 int lsio_erase_active(void) { return er.on; }
 
+static int finish(int r);
+int lsio_erase_run(uint32_t slice_ms);
+
 int lsio_read(uint32_t off, void *dst, uint32_t len)
 {
     g_lsio.reads++;
@@ -72,7 +75,9 @@ int lsio_erase_begin(uint32_t off, int block64)
     er.susp = 0;
     er.busy_ms = 0;
     g_lsio.erases++;
-    return 1;
+    /* slice 0: suspend on the first poll (or run the erase out on a chip
+     * with no suspend). Do not return to the XIP caller while WIP is set. */
+    return lsio_erase_run(0) != LSIO_FAIL;
 }
 
 static int finish(int r)
