@@ -25,7 +25,7 @@ Its firmware is closed and frozen. This project aims to:
   See [`docs/PARITY.md`](docs/PARITY.md) and
   [`docs/ROADMAP_RESEARCH.md`](docs/ROADMAP_RESEARCH.md).
 
-## Status (v0.10)
+## Status (v0.11)
 
 Verified on a real pedal:
 
@@ -38,6 +38,7 @@ Verified on a real pedal:
 | **USB** | Class-compliant audio interface (record and play back, 44.1 kHz). The stock USB identity and control protocol, so `fb200 info` and IR import work. |
 | **Bluetooth** | Module link. The Bluetooth audio input runs; playback from a phone is not yet checked by ear. The app protocol is implemented and tested on the host, but not yet with the Flamma Manager phone app. |
 | **Our additions** | Bass delay up to 1 s, bass EQ (HPF, 5 bands, LPF; saved in the preset), cab IRs up to 4096 taps in 64 long-IR slots (cab types 20-83, `fb200 ir put`), reamping over USB (`usb in`). Measured on the pedal: echo times, EQ response, CPU (engine 14% average with a 4096-tap IR). |
+| **Looper** | Up to 108 s in the pedal's flash, with undo and `loop save`/`load` of two loops across power-off. On a pedal: a 103 s record, a dub past 54 s, save/load across reset, delay and a stored long IR while the loop played. The sound has not been listened to. |
 | **Power** | Battery level, charger sense, status LED |
 | **Updates & recovery** | USB updates with no button combo. A resident recovery keeps the USB console after a crash or hang. Crash dumps survive a reset. |
 
@@ -60,7 +61,8 @@ save blink, rhythm tempo flash). On the pedal so far: the light ring of the sele
 - Hold **A** and turn LEVEL / RATE / MOD to change drum level, tempo or rhythm live.
 - A looper (the stock has none): up to 108 s mono in the pedal's flash, overdub with
   undo, single-switch control ([Looper](#looper)). The delay and long IRs stay
-  available. Tested on the host (simulated flash), not yet on a pedal.
+  available. Checked on a pedal, including `loop save`/`load` across a reset.
+  The sound has not been listened to.
 - Drums are included in the USB recording.
 - Choosing an empty IR slot never silences the pedal.
 - Drum hits start on time (the stock plays each one up to 31 ms early).

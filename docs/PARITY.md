@@ -347,8 +347,10 @@ preset's cab. With `prof` it measures the real cost on the pedal. Up to
 
 ### M5 P2: long IR storage
 
-Status: on the host (2026-09-29); not yet on the pedal. The flash chip size
-is not verified: console `jedec` first.
+Status: on a pedal (2026-09-30). `loop stats` read JEDEC `ef 40 17` (8 MB).
+`fb200 ir put` stored a 1651-tap IR in slot 20, and `cab 20` stayed selected
+while a loop existed (cab 11333 cycles/block over the following blocks).
+The sound has not been listened to.
 
 - **Slots:** 64, cab types 20..83 (the preset's cab field; the stock app
   protocol clamps only above 120). Up to 4096 taps, float32, 44.1 kHz.
@@ -390,8 +392,19 @@ is not verified: console `jedec` first.
 
 ### M8: looper
 
-Status: the flash looper on the host (2026-09-29), not tried on the pedal.
-It replaces the first version (16 s of ADPCM in borrowed RAM, PR #32).
+Status: on a pedal (2026-09-30), driven from the console (the same engine
+actions as the footswitches; the switches were not pressed). A 103.4 s
+record of the 108.3 s maximum. A dub started at 54.6 s and ended on its own
+when the erased flash ran out (`cut=2`; no underruns, overruns or drops).
+Undo was sent during play and the label became redo after the fade.
+`loop save 1` and `loop save 2` both came back after `reset` (`loop load`,
+stopped, same lengths). With that loop playing, delay on at 320 ms and cab
+20 (a stored 1651-tap IR): engine 9% average and 16% peak, the loop task
+22% busy, cab 11333 / delay 393 / loop 2848 cycles per block. Stack
+high-water 5144 of 8192 bytes. The long record counted 13 extra output
+skips; that playback added none. No crash dump. The sound has not been
+listened to. Host tests still cover the simulated flash. It replaces the
+first version (16 s of ADPCM in borrowed RAM, PR #32).
 
 **Where.** `dsp/looper.c`, mono, after the reverb and before the master
 volume: it records the processed sound, the loop plays into both sides and
@@ -523,8 +536,8 @@ across power-off), `loop stats` (JEDEC, slots, programs,
 erases, suspends, underruns), MCP `looper`. `loop hq` is gone (the flash
 format is better than hq was).
 
-Open: the pedal check (hardware checklist in the PR); drum sync
-(quantise the loop length to bars); a stereo loop.
+Open: drum sync (quantise the loop length to bars); a stereo loop. The
+sound of a loop has not been listened to.
 
 ### M4: bass delay
 

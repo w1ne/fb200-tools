@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.11.0] - 2026-09-30
 
 ### Added
 
@@ -35,8 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hold B = clear; display and ring feedback. Console `loop`, `loop save|load <1-2>`
   (two loops kept across power-off), `loop stats`, MCP `looper`. The delay and
   long IRs stay available
-  ([`docs/PARITY.md`](docs/PARITY.md#m8-looper)). Tested on the host with a
-  simulated flash, not yet on a pedal.
+  ([`docs/PARITY.md`](docs/PARITY.md#m8-looper)). On a pedal: a 103 s record
+  (max 108 s), a dub past 54 s that ended when the erased flash ran out,
+  undo through the fade, and `loop save`/`load` of both slots across a reset.
+  Delay and a stored long IR kept working while that loop played. No crash.
+  The 103 s record counted 13 extra output skips; playback afterwards added
+  none. The sound has not been listened to.
 - `tools/engine_cycles.py --looper rec|play|dub`: the looper's cost per block.
 - Flash: fast read, 64 kB erase, erase suspend/resume, status register 2 and JEDEC
   ID sequences (FlexSPI LUT slots 6..15). `flash_rmw` accepts the long IR store and
