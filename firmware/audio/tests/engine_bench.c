@@ -8,7 +8,10 @@
 #include "dsp/amp.h"
 #include "dsp/cab.h"
 #include "dsp/stock_data.h"
+#include <string.h>
 #include "dsp/looper.h"
+#include "loopstore/loopstore.h"
+#include "loopstore/lsio.h"
 
 const stock_data_t *g_stock;
 static amp_t s_amp;
@@ -48,17 +51,47 @@ void bench_cab(void) { cab_process(&s_cab, bench_buf, DSP_BLOCK); }
 /* a short block (a SAI hiccup on the pedal): shifts the partition phase */
 void bench_cab_n(unsigned n) { cab_process(&s_cab, bench_buf, n); }
 
-/* The looper (tools/engine_cycles.py --looper): 400 blocks of memory (the
- * engine lends it ~1400; the cost does not depend on the size). mode bit 0:
- * hq. Then bench_loop_cmd(LOOPER_*) as the console does, with the poll. */
+/* The looper (tools/engine_cycles.py --looper): the audio side per block
+ * (bench_loop, profiled), its flash side on a RAM "flash" of 16 chunks
+ * (bench_loop_flash, not profiled: main loop work). Then
+ * bench_loop_cmd(LOOPER_*) as the console does, with the poll. */
+#define AREA (16u * LS_CHUNK)
+static uint8_t s_flash[AREA];
+static uint32_t s_ms;
+int flash_cmd_init(void) { return 1; }
+int flash_write_enable(void) { return 1; }
+int flash_cmd_erase(uint32_t sector) { memset(s_flash + sector, 0xFF, FLASH_SECTOR); return 1; }
+int flash_cmd_erase_block(uint32_t block) { memset(s_flash + block, 0xFF, 0x10000u); return 1; }
+int flash_cmd_program(uint32_t page, const uint32_t *data)
+{
+    const uint8_t *d = (const uint8_t *)data;
+    for (uint32_t i = 0; i < FLASH_PAGE; i++) s_flash[page + i] &= d[i];
+    return 1;
+}
+int flash_cmd_read(uint32_t off, void *dst, uint32_t len) { memcpy(dst, s_flash + off, len); return 1; }
+int flash_read_status(uint32_t *sr) { *sr = 0; return 1; }
+int flash_read_status2(uint32_t *sr2) { *sr2 = 0; return 1; }
+int flash_cmd_suspend(void) { return 1; }
+int flash_cmd_resume(void) { return 1; }
+void flash_refresh(uint32_t offset, uint32_t len) { (void)offset; (void)len; }
+const void *flash_map(uint32_t offset) { return s_flash + offset; }
+uint32_t flash_now_ms(void) { return s_ms++; }
+uint32_t flash_capacity(void) { return 0; }
+void flash_pump(void) {}
+
 static looper_t s_loop;
-static uint8_t s_loop_mem[LOOPER_BLK_BYTES * 400];
+static loopio_t s_io;
+static loopstore_t s_ls;
+static uint16_t s_map[2][LS_MAX_CHUNKS];
 
 void bench_loop_setup(unsigned mode)
 {
-    looper_init(&s_loop);
-    (void)looper_set_hq(&s_loop, (int)(mode & 1u));
-    looper_attach(&s_loop, s_loop_mem, sizeof s_loop_mem, 0, 0);
+    (void)mode;
+    lsio_init(1);
+    (void)ls_init(&s_ls, &s_io, s_map[0], s_map[1], 0, AREA);
+    ls_arm(&s_ls);
+    for (int i = 0; i < 8; i++) ls_task(&s_ls);   /* the whole "flash" erased */
+    looper_init(&s_loop, &s_io, &s_ls);
     (void)looper_cmd(&s_loop, LOOPER_REC_A);
 }
 
@@ -69,8 +102,10 @@ void bench_loop_cmd(int action)
 }
 
 /* L and R are the same buffer here: the cost is the same */
-void bench_loop(void)
+void bench_loop(void) { looper_process(&s_loop, bench_buf, bench_buf, DSP_BLOCK); }
+
+void bench_loop_flash(void)
 {
-    looper_process(&s_loop, bench_buf, bench_buf, DSP_BLOCK);
+    ls_task(&s_ls);
     looper_poll(&s_loop);
 }

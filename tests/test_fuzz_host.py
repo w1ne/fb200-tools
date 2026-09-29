@@ -46,7 +46,8 @@ FW_SRC = ["proto/proto.c", "ui/ui.c", "ui/lightbar.c", "preset/preset_check.c",
           "dsp/stock_data.c", "crc32.c", "dsp/drums.c", "dsp/eq.c", "dsp/testgen.c",
           "dsp/math.c", "dsp/delay.c", "dsp/amp.c", "dsp/tone.c", "dsp/cab.c", "dsp/conv.c",
           "dsp/conv2.c", "dsp/gate.c", "dsp/detector.c", "dsp/comp.c", "dsp/mod.c",
-          "dsp/reverb.c", "dsp/looper.c"]
+          "dsp/reverb.c", "dsp/looper.c", "dsp/loopcodec.c", "loopstore/loopstore.c",
+          "loopstore/lsio.c", "debug/flash_rmw.c"]
 
 def _is_clang(cc: str) -> bool:
     out = subprocess.run([cc, "--version"], capture_output=True, text=True, check=False).stdout
@@ -73,7 +74,8 @@ def build_cmds(cc: str, out: Path, rel: Path = FW, coverage: bool | None = None)
     cmds.append([cc, "-g", "-O1", *SAN, *cov, "-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter", "-Wno-missing-field-initializers",
                  *defs, "-I", str(rel / "tests" / "host_include"), "-I", str(rel / "src"),
                  "-I", str(rel / "src" / "debug"), *inc,
-                 str(rel / "tests" / "fuzz_host_test.c"), *[str(rel / "src" / s) for s in FW_SRC],
+                 "-I", str(rel / "tests"), str(rel / "tests" / "fuzz_host_test.c"),
+                 str(rel / "tests" / "loopflash_sim.c"), *[str(rel / "src" / s) for s in FW_SRC],
                  *objs, "-lm", "-o", str(out / "fuzz_host_test")])
     return cmds
 

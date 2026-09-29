@@ -14,7 +14,7 @@ static int fails;
 #define CHECK(c, ...) do { if (!(c)) { printf("FAIL %s:%d: ", __FILE__, __LINE__); \
     printf(__VA_ARGS__); printf("\n"); fails++; } } while (0)
 
-#define FLASH_SIZE 0x00100000u
+#define FLASH_SIZE 0x00800000u   /* 8 MB: the looper's area ends at 0x800000 */
 static uint8_t flash[FLASH_SIZE];
 static uint32_t busy;                   /* status polls left until WIP clears */
 static int wel, in_pump;
@@ -75,6 +75,8 @@ const void *flash_map(uint32_t offset)
     return flash + offset;
 }
 uint32_t flash_now_ms(void) { return now_ms; }
+static uint32_t capacity = FLASH_SIZE;
+uint32_t flash_capacity(void) { return capacity; }
 void flash_pump(void)
 {
     if (in_pump) violations++;
@@ -153,6 +155,33 @@ static void test_rejects(void)
     CHECK(flash_rmw(0x85FFFu, d, 1) == 0, "the byte below the update flag sector");
 }
 
+/* the looper's area (and its meta sector) on a chip that has it */
+static void test_loop_area(void)
+{
+    uint8_t d[16] = {1, 2, 3};
+    static const struct { uint32_t off, len; } bad[] = {
+        {0x50EFFFu, 1}, {0x502000u, 1}, {0x400000u, 1},   /* below the meta sector */
+        {0x800000u, 1}, {0x7FFFF8u, 16},                 /* past the chip */
+    };
+    for (unsigned i = 0; i < sizeof bad / sizeof bad[0]; i++) {
+        reset_counters();
+        int r = flash_rmw(bad[i].off, d, bad[i].len);
+        CHECK(r == -1 && erases == 0, "loop reject %x+%u -> %d", bad[i].off, bad[i].len, r);
+    }
+    CHECK(flash_loop_end() == 0x800000u, "loop end %x", flash_loop_end());
+    CHECK(flash_rmw(0x50F000u, d, sizeof d) == 0, "the meta sector");
+    CHECK(flash_rmw(0x510000u, d, sizeof d) == 0, "the area's first sector");
+    CHECK(flash_rmw(0x7FFFF0u, d, sizeof d) == 0, "the chip's last bytes");
+    CHECK(memcmp(flash + 0x7FFFF0u, d, sizeof d) == 0, "written");
+    capacity = 0x400000u;                                /* 4 MB: no area */
+    CHECK(flash_loop_end() == 0 && flash_rmw(0x510000u, d, sizeof d) == -1, "4 MB chip: refused");
+    capacity = 0;                                        /* unknown */
+    CHECK(flash_rmw(0x600000u, d, sizeof d) == -1, "unknown chip: refused");
+    capacity = 0x1000000u;                               /* 16 MB: the area stops at 8 MB */
+    CHECK(flash_loop_end() == 0x800000u, "16 MB: loop end %x", flash_loop_end());
+    capacity = FLASH_SIZE;
+}
+
 static void test_failures(void)
 {
     uint8_t d[4] = {2, 4, 6, 8};   /* bit 0 clear: drop_bit shows */
@@ -181,6 +210,7 @@ int main(void)
     test_write();
     test_long_erase();
     test_rejects();
+    test_loop_area();
     test_failures();
     printf(fails ? "flash_rmw host tests FAILED\n" : "flash_rmw host tests OK\n");
     return fails ? 1 : 0;
