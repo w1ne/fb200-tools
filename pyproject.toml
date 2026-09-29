@@ -42,5 +42,6 @@ pythonpath = ["src", "app"]
 markers = [
     "hardware: requires a connected FB200 pedal",
     "stock: slow stock-DSP emulation (unicorn + fb200-stock.mr); nightly: pytest -m stock",
+    "fuzz: long fuzz runs of the firmware parsers (ASan/UBSan, minutes); pytest -m fuzz",
 ]
-addopts = "-m 'not hardware and not stock'"
+addopts = "-m 'not hardware and not stock and not fuzz'"

@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from itertools import islice
 
 from fb200 import protocol
-from fb200.errors import CommunicationError, InvalidArgumentError, ProtocolError
+from fb200.errors import CommunicationError, InvalidArgumentError, NoReplyError, ProtocolError
 from fb200.protocol import FrameReader, Transport, pack_frame, write_frame
 
 IR_SLOT_COUNT = 9
@@ -86,7 +86,18 @@ class FB200Device:
         self.reader = FrameReader()
 
     def request(self, fn: int, data: bytes = b"", expect: int | None = None,
-                timeout_ms: int = 1500) -> bytes:
+                timeout_ms: int = 1500, retries: int = 0) -> bytes:
+        """Send one command and wait for its reply. `retries` resends it after a
+        reply timeout: only for commands that change nothing (queries)."""
+        for attempt in range(retries + 1):
+            try:
+                return self._request_once(fn, data, expect, timeout_ms)
+            except NoReplyError:
+                if attempt == retries:
+                    raise
+        raise AssertionError("unreachable")
+
+    def _request_once(self, fn: int, data: bytes, expect: int | None, timeout_ms: int) -> bytes:
         while self.reader.next_packet() is not None:
             pass  # drop stale replies buffered by earlier requests
         write_frame(self.transport, pack_frame(fn, data))
@@ -94,17 +105,17 @@ class FB200Device:
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise CommunicationError(f"no reply to command 0x{fn:02x}")
+                raise NoReplyError(f"no reply to command 0x{fn:02x}")
             packet = self.reader.read_packet(self.transport, int(remaining * 1000))
             if packet is None:
-                raise CommunicationError(f"no reply to command 0x{fn:02x}")
+                raise NoReplyError(f"no reply to command 0x{fn:02x}")
             if not packet:
                 raise ProtocolError(f"empty reply packet for command 0x{fn:02x}")
             if expect is None or packet[0] == expect:
                 return packet
 
     def info(self) -> DeviceInfo:
-        packet = self.request(protocol.CMD_GET_VERSION, expect=protocol.REPLY_VERSION)
+        packet = self.request(protocol.CMD_GET_VERSION, expect=protocol.REPLY_VERSION, retries=1)
         data = packet[1:]
         return DeviceInfo(
             product=_cstr(data, 0, 32),
@@ -119,7 +130,8 @@ class FB200Device:
         slots = []
         for index in range(1, IR_SLOT_COUNT + 1):
             payload = bytes([1]) + ir_index_bytes(index) + bytes([0])
-            packet = self.request(protocol.CMD_QUERY_IR, payload, expect=protocol.REPLY_QUERY_IR)
+            packet = self.request(protocol.CMD_QUERY_IR, payload, expect=protocol.REPLY_QUERY_IR,
+                                  retries=1)
             data = packet[1:]
             if len(data) > 3 and data[3] == 0:
                 slots.append(IrSlot(index, None))
@@ -197,7 +209,7 @@ class FB200Device:
             raise InvalidArgumentError(f"preset index must be 0..{PRESET_COUNT - 1}")
         for _ in range(3):              # skip a 97 notification for another preset
             packet = self.request(protocol.CMD_READ_PRESET, bytes([index]),
-                                  expect=protocol.REPLY_PRESET)
+                                  expect=protocol.REPLY_PRESET, retries=1)
             data = packet[1:]
             if len(data) < 1 + PRESET_SIZE:
                 raise ProtocolError(f"short preset reply ({len(data)} bytes)")

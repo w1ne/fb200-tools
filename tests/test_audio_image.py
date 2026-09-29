@@ -332,3 +332,17 @@ def test_slot_without_its_data_goes_back_to_recovery(tmp_path):
     assert "reached app app_main: False" in out and "software reset requested" in out, out
     need = len((fwbuild.build(FW) / "fb200-app.dtcmdata.bin").read_bytes())
     assert f"crumbs: fa000000 00000000 {need:08x} 60041000" in out, out
+
+
+@pytest.mark.parametrize("variant", ["app", "recovery"])
+def test_worst_case_stack_fits_the_reserve(variant):
+    """-fstack-usage frames over the call graph (firmware/tools/stack_usage.py):
+    the deepest main-loop chain plus two nested interrupts fits the 8 kB
+    stack reserve (linker.ld), with no unbounded frame or recursion. The
+    console's `stack` shows the measured high-water on the pedal."""
+    import stack_usage
+    out = fwbuild.build(FW, variant)
+    r = stack_usage.analyse(out / f"fb200-{variant}.elf", out)
+    print("\n".join(r.lines()))
+    assert not r.unknown, r.unknown
+    assert r.total <= stack_usage.RESERVE - 512, "\n".join(r.lines())   # keep 512 B headroom

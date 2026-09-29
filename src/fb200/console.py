@@ -8,6 +8,7 @@ process in the kernel.
 
 from __future__ import annotations
 
+import errno
 import glob
 import os
 import sys
@@ -38,12 +39,46 @@ def find_port() -> str:
     return ports[0]
 
 
+# errno values of a port whose device went away (pedal reset or unplugged):
+# macOS ENXIO, Linux EIO/ENODEV; EBADF once the fd is closed.
+_GONE = {errno.ENXIO, errno.EIO, errno.ENODEV, errno.EBADF}
+
+
+def busy_message(port: str) -> str:
+    return (f"{port} is busy: another program has the pedal console open (another fb200 "
+            "console/update, the MCP server, the fb200 app, screen/minicom). Close it and retry.")
+
+
+def gone_error(port: str, exc: OSError) -> CommunicationError:
+    return CommunicationError(f"{port}: the pedal console went away ({os.strerror(exc.errno or 0)}); "
+                              "the pedal reset or was unplugged. Reconnect and retry.")
+
+
 class Console:
     def __init__(self, port: str | None = None, echo=None) -> None:
+        import fcntl
         import termios
 
         self.port = port or find_port()
-        self.fd = os.open(self.port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+        try:
+            self.fd = os.open(self.port, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+        except OSError as exc:
+            if exc.errno == errno.EBUSY:
+                raise CommunicationError(busy_message(self.port)) from exc
+            if exc.errno in (errno.ENOENT, *_GONE):
+                raise CommunicationError(f"{self.port}: no such console (pedal unplugged or "
+                                         "still rebooting?)") from exc
+            raise CommunicationError(f"cannot open {self.port}: {exc.strerror}") from exc
+        # One host tool per console: two readers would steal each other's
+        # replies. flock is advisory: it stops our own tools and pyserial
+        # (exclusive=True), not every terminal program.
+        try:
+            fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            os.close(self.fd)
+            raise CommunicationError(busy_message(self.port)) from exc
+        except OSError:
+            pass                                    # no flock on this device: not a lock conflict
         attrs = termios.tcgetattr(self.fd)
         attrs[0] = attrs[1] = attrs[3] = 0          # raw: no iflag/oflag/lflag
         attrs[2] = termios.CS8 | termios.CREAD | termios.CLOCAL
@@ -70,11 +105,19 @@ class Console:
                 if time.monotonic() > deadline:
                     raise CommunicationError("pedal stopped reading USB (firmware hung?)") from None
                 time.sleep(0.01)
+            except OSError as exc:
+                raise gone_error(self.port, exc) from exc
 
     def read_some(self) -> bytes:
+        """Whatever is buffered (b"" if nothing). A vanished device raises
+        CommunicationError: a reset mid-command fails at once, not on a timeout."""
         try:
             return os.read(self.fd, 65536)
-        except (BlockingIOError, OSError):
+        except BlockingIOError:
+            return b""
+        except OSError as exc:
+            if exc.errno in _GONE:
+                raise gone_error(self.port, exc) from exc
             return b""
 
     def drain(self, quiet_s: float = 0.3, max_s: float = 3.0) -> bytes:
@@ -118,7 +161,8 @@ class Console:
                 self.buf += chunk
             else:
                 time.sleep(0.01)
-        raise CommunicationError(f"timeout waiting for {needles!r}")
+        raise CommunicationError(f"timeout waiting for {needles!r} on {self.port} "
+                                 "(pedal busy, reset or hung?)")
 
     def command(self, cmd: str, needles: list[bytes], timeout: float = 5.0) -> bytes:
         self.write(cmd.encode() + b"\r")

@@ -37,7 +37,7 @@ def build() -> Path:
         ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-Wno-missing-field-initializers",
          "-I", str(FW / "src"), str(FW / "tests" / "proto_host_test.c"),
          str(FW / "src" / "proto" / "proto.c"), str(FW / "src" / "ui" / "ui.c"),
-         str(FW / "src" / "ui" / "lightbar.c"),
+         str(FW / "src" / "ui" / "lightbar.c"), str(FW / "src" / "preset" / "preset_check.c"),
          "-o", str(exe)],
         check=True,
     )
