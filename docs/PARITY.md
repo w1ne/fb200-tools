@@ -269,8 +269,9 @@ Budgets on this chip: 600 MHz / 44.1 kHz = 13.6k cycles per sample; RAM
   delay (the stock has none: its delay fields do nothing; first version
   done, see [below](#m4-bass-delay)), better tuner.
 - **M5 - IR engine:** up to 4096 taps (the cab runs on the two-stage
-  convolver, [below](#m5-long-irs-in-the-cab); open: IR storage and
-  transfer for long IRs, P2), WAV import, 50+ slots, low/high cut, dual-IR blend.
+  convolver, [below](#m5-long-irs-in-the-cab)); 64 long-IR slots with
+  storage and transfer (P2, [below](#m5-p2-long-ir-storage), open: the
+  pedal checks), WAV import, low/high cut, dual-IR blend (host, `process_ir`).
 - **M6 - open ecosystem:** done: documented protocol (`PROTOCOL.md`),
   browser firmware update (v0.6.0, WebHID + Web Serial). Open:
   class-compliant USB MIDI, WebMIDI/WebHID editor (self-describing blocks),
@@ -338,6 +339,44 @@ code: +2.6 kB.
 taps) in the cab until the next cab change; `cab long 0` goes back to the
 preset's cab. With `prof` it measures the real cost on the pedal. Up to
 `ENGINE_IR_TAPS` taps (over: "not available").
+
+### M5 P2: long IR storage
+
+Status: on the host (2026-09-29); not yet on the pedal. The flash chip size
+is not verified: console `jedec` first.
+
+- **Slots:** 64, cab types 20..83 (the preset's cab field; the stock app
+  protocol clamps only above 120). Up to 4096 taps, float32, 44.1 kHz.
+  Flash F:0x400000..0x502000, above the model library, only on a chip that
+  holds it (`flash_capacity`: JEDEC size and FlexSPI window, run-time check).
+  Two table copies (seq, CRC), a data CRC per slot
+  ([flash map](UI_AND_STORAGE.md#5-flash-map-and-storage-h-verified-entries-read-on-the-pedal)).
+- **Transfer:** console `irput` streams the taps into the IR staging buffer
+  (`s_ir`, 16 kB OCRAM: no new buffer; cab changes wait meanwhile), checks the
+  CRC, then writes one 4 kB sector per main-loop pass with `flash_store`
+  (each sector stalls the main loop like any `flash_store` today; the
+  `fix/flash-write-audio` change keeps the audio running during it). The
+  table is built in the same buffer. `irls`, `irdel`; host `fb200 ir put`,
+  `ir ls --long`, MCP `long_ir_*` ([PROTOCOL.md §5.10](PROTOCOL.md#510-long-ir-store-our-firmware-usb-console)).
+- **Load:** `engine_apply_preset` checks the data CRC in flash (~0.8 ms for
+  4096 taps, main loop), copies the taps into `s_ir` and calls
+  `cab_set_ir_len`. Empty or bad: cab bypass, as an empty stock slot.
+- **Gain:** the stock user-IR rule (`cab_user_ir_gain`, first 512 taps),
+  computed once at upload and stored. Why: the head of a cab IR carries its
+  level; the same IR plays at the same level from a stock slot (512 taps) and
+  a long slot, and switching between them gives no jump. A long tail adds
+  little energy (it decays).
+- **Code placement:** `irstore.c` and its glue are cold (XIP), as `proto.c`:
+  they run only in the main loop and write only through `flash_store` (RAM).
+  The new RAM code is in `selfupdate.c`: `flash_read_id` (a FlexSPI IP
+  command, `hot_path.py` flash-write root) and `flash_capacity`, reached from
+  `flash_store`; the negative control builds `selfupdate.c` cold and expects
+  both in the report. RAM: +68 B OCRAM (the upload state), ITCM +0.4 kB.
+- **Tests:** `tests/test_irstore_host.py` (irstore.c on a fake flash: upload,
+  table copies, torn writes, bad CRC, full table, small chip, delete, `irls`
+  output; also under gcc 14 ASan/UBSan with `IRSTORE_CFLAGS`),
+  `tests/test_longir_console.py` (host client, CLI and MCP against a pty pedal
+  that runs irstore.c).
 
 ### M4: bass delay
 

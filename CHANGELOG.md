@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Long IR store (M5 P2):** 64 slots of up to 4096 taps (float32, 44.1 kHz), cab
+  types 20..83, in their own flash area F:0x400000..0x502000 (above the model
+  library; two copies of the slot table, a CRC per slot). Console `irput` (binary
+  upload with CRC, the `fwbegin` pattern; one flash sector per main-loop pass),
+  `irls`, `irdel`. Host: `fb200 ir put SLOT WAV [process_ir options]`,
+  `fb200 ir ls --long`, `fb200 ir delete 20..83`; MCP `long_ir_list`,
+  `long_ir_import`, `long_ir_delete` (the app asks before an import or delete).
+  Gain: the stock user-IR rule, computed at upload. An empty or bad slot bypasses
+  the cab. The 9 stock slots and the stock app protocol are unchanged.
+- **Console `jedec`:** the flash chip's JEDEC ID, its size and the FlexSPI window.
+  The long IR store is off on a chip smaller than 5 MB (checked at run time).
+
+### Changed
+
+- A selector knob (CAB) whose stored value no knob position reaches (a long IR,
+  cab 20..83) takes over at the first turn; before, it never picked up.
+
 ## [0.9.0] - 2026-09-29
 
 Bass EQ, 1 s delay that plays on the pedal, IRs up to 4096 taps on an FFT cab,
