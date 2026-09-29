@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include "cold.h"
 #include <string.h>
 #include "tone.h"
 #include "stock_data.h"
@@ -17,7 +18,7 @@ static int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v;
 /* stock: (int)(knob fraction * 31), in float */
 static int step(int knob) { return (int)(knob_fraction(knob) * 31.0f); }
 
-void tone_set(tone_t *t, int bass, int mid, int midfreq, int treble)
+COLD void tone_set(tone_t *t, int bass, int mid, int midfreq, int treble)
 {
     const stock_data_t *d = g_stock;
     if (!d) return;                          /* no stock data: stays flat */

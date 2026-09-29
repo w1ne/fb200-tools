@@ -264,7 +264,8 @@ static void rhythm_single(int sw)
  * foot): empty = record, recording = close and play, dubbing = back to
  * play, stopped = play from the start. While playing, A released = dub (a
  * press that is held is the undo). Hold A = undo / redo the last dub; tap B
- * = stop / play; hold B = clear (the delay and long IRs come back). */
+ * = stop / play; hold B = clear. Looper mode on starts erasing the flash
+ * ahead (loopstore/loopstore.h); a record before it is ready shows "PrP". */
 static void loop_overlay(const char *t)
 {
     display_text(t);
@@ -276,7 +277,10 @@ static void loop_press(void)
     looper_info_t in;
     engine_loop_info(&in);
     loop_acted = in.state != LOOPER_PLAY;
-    if (loop_acted) (void)engine_loop(LOOPER_TAP);
+    if (loop_acted && engine_loop(LOOPER_TAP) == -3) {
+        loop_overlay("PrP");                    /* the flash is being prepared */
+        return;
+    }
     show_loop();
 }
 
@@ -311,6 +315,7 @@ static void loop_long(int sw)
 static void set_looper(bool on)
 {
     looper_mode = on;
+    if (on) engine_loop_arm();                  /* erase ahead: ready by the first A */
     if (on && rhythm_mode) {                    /* one of the two */
         rhythm_mode = false;
         settings.b[S_RHYTHM] = 0;
@@ -595,7 +600,12 @@ void ui_task(uint32_t now_ms)
             if (b != blank) { blank = b; if (b) display_text("   "); else show_preset(); }
         }
     }
-    if (rhythm_dirty && now_ms - rhythm_dirty_ms > 3000u) {
+    /* while a loop exists, autosaves wait: a flash write stalls the loop's
+     * streams (a record or a dub refuses it: flash_store -6) */
+    looper_info_t li;
+    engine_loop_info(&li);
+    bool loop_busy = li.state > LOOPER_EMPTY;
+    if (rhythm_dirty && !loop_busy && now_ms - rhythm_dirty_ms > 3000u) {
         uint8_t r[RHYTHM_SIZE];
         ui_rhythm_block(r);
         (void)rhythm_settings_write(r);
@@ -606,7 +616,7 @@ void ui_task(uint32_t now_ms)
      * unsaved change (the stock saves them on power fail) */
     if (settings_dirty) {
         if (!settings_dirty_ms) settings_dirty_ms = now_ms;
-        if (now_ms - settings_dirty_ms > 3000u) {
+        if (!loop_busy && now_ms - settings_dirty_ms > 3000u) {
             settings_write(&settings);
             settings_dirty = false;
             settings_dirty_ms = 0;

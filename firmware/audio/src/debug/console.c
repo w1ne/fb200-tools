@@ -23,6 +23,7 @@
 #include "recovery.h"
 #include "regs.h"
 #ifndef FB200_RECOVERY
+#include "loopstore/lsio.h"
 #include "ui/display.h"
 #include "ui/controls.h"
 #include "ui/power.h"
@@ -153,7 +154,7 @@ static void cmd_help(void)
              "          preset [0-39] | save | factory [yes] | rgb 0xRRGGBB [led] | rgb cfg 0xIIS0S1\r\n"
              "  bt    : bt | bt send <AT+...> | btaudio\r\n"
              "  music : stock | tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>]\r\n"
-             "  loop  : loop [rec|play|dub|stop|undo|clear|tap] | loop hq on|off | loop level <0-100>\r\n"
+             "  loop  : loop [rec|play|dub|stop|undo|clear|tap] | loop level <0-100> | loop stats\r\n"
              "  delay : delay [on|off] [time " XSTR(DELAY_MS_MIN) "-" XSTR(DELAY_MS_MAX) " ms] [fb 0-100] [mix 0-100] [lowcut 0-100] [tone 0-100]\r\n"
              "  eq    : eq [on|off] | eq hpf <20-200 Hz|0> | eq lpf <2000-20000 Hz|0>\r\n"
              "          eq <band 1-5> <30-10000 Hz> <gain -15..15 dB> [q 0.3-4]\r\n"
@@ -220,9 +221,34 @@ static void cmd_delay(int argc, char **argv)
                v[0], v[1], v[2], v[3], (int)hz, v[4], v[4] >= 100u ? " (off)" : "");
 }
 
-/* loop [rec|play|dub|stop|undo|clear|tap] | loop hq on|off | loop level
- * <0-100>: the looper (dsp/looper.h), then its state. `rec` takes the delay
- * line and the long-IR memory (delay off, long IRs 512 taps) until `clear`. */
+/* loop [rec|play|dub|stop|undo|clear|tap] | loop level <0-100> | loop
+ * stats: the looper (dsp/looper.h, the loop in the flash:
+ * loopstore/loopstore.h), then its state. prep_ms: erased flash ready to
+ * record into. `loop stats`: the flash side's counters. */
+static void cmd_loop_stats(void)
+{
+    engine_loop_stats_t st;
+    engine_loop_stats(&st);
+    uint8_t id[3] = {0, 0, 0};
+    (void)flash_read_id(id);
+    const ls_info_t *li = &st.store;
+    log_printf("loop flash: jedec %02x %02x %02x area 0x%06x..0x%06x chunks=%u used=%u erased=%u "
+               "garbage=%u suspend=%d\r\n", id[0], id[1], id[2], (unsigned)li->base,
+               (unsigned)li->end, (unsigned)li->chunks, (unsigned)li->n_used,
+               (unsigned)li->n_erased, (unsigned)li->n_garbage, flash_suspend_ok());
+    log_printf("loop io: pages=%lu prog_slow=%lu prog_max_ms=%lu verify_errs=%lu prog_errs=%lu "
+               "erases=%lu erase_ms=%lu erase_max_ms=%lu erase_errs=%lu slices=%lu suspends=%lu "
+               "reads=%lu\r\n", (unsigned long)g_lsio.pages, (unsigned long)g_lsio.prog_slow,
+               (unsigned long)g_lsio.prog_max_ms, (unsigned long)g_lsio.verify_errs,
+               (unsigned long)g_lsio.prog_errs, (unsigned long)g_lsio.erases,
+               (unsigned long)g_lsio.erase_ms, (unsigned long)g_lsio.erase_max_ms,
+               (unsigned long)g_lsio.erase_errs, (unsigned long)g_lsio.slices,
+               (unsigned long)g_lsio.suspends, (unsigned long)g_lsio.reads);
+    log_printf("loop streams: underruns=%lu overruns=%lu drops=%lu cut=%lu\r\n",
+               (unsigned long)st.io->rd_under, (unsigned long)st.io->wr_over,
+               (unsigned long)li->drops, (unsigned long)st.cut);
+}
+
 static void cmd_loop(int argc, char **argv)
 {
     static const char *const kAct[] = {"tap", "rec", "play", "dub", "stop", "undo", "clear"};
@@ -234,11 +260,6 @@ static void cmd_loop(int argc, char **argv)
         for (int i = 0; i < 7; i++) if (streq(argv[1], kAct[i])) a = i;
         if (a >= 0) {
             r = engine_loop(a);
-        } else if (streq(argv[1], "hq") && argc > 2 && (streq(argv[2], "on") || streq(argv[2], "off"))) {
-            if (engine_loop_hq(streq(argv[2], "on")) != 0) {
-                log_printf("loop hq: not allowed while a loop exists (loop clear first)\r\n");
-                return;
-            }
         } else if (streq(argv[1], "level") && argc > 2) {
             int ok;
             uint32_t n = parse_num(argv[2], &ok);
@@ -247,21 +268,26 @@ static void cmd_loop(int argc, char **argv)
                 return;
             }
             engine_loop_level(n);
+        } else if (streq(argv[1], "stats")) {
+            cmd_loop_stats();
+            return;
         } else {
-            log_printf("usage: loop [rec|play|dub|stop|undo|clear|tap] | loop hq on|off | loop level <0-100>\r\n");
+            log_printf("usage: loop [rec|play|dub|stop|undo|clear|tap] | loop level <0-100> | loop stats\r\n");
             return;
         }
     }
     looper_info_t in;
     engine_loop_info(&in);
     if (r != 0) {
-        log_printf("loop %s: not allowed %s\r\n", argv[1],
-                   r == -2 ? "with no loop (loop rec first)" : "now");
+        log_printf("loop %s: %s\r\n", argv[1],
+                   r == -2 ? "not available (no flash area for loops)"
+                   : r == -3 ? "not allowed now: preparing the flash, try again in a moment"
+                   : "not allowed now");
     }
-    log_printf("loop %s: len_ms=%u pos_ms=%u max_ms=%u undo_max_ms=%u undo=%s hq=%d level=%u "
-               "mem=%d\r\n", kState[in.state <= LOOPER_STOP ? in.state : 0], in.len_ms, in.pos_ms,
-               in.max_ms, in.undo_max_ms, kUndo[in.undo], in.hq, in.level,
-               in.state != LOOPER_OFF);
+    log_printf("loop %s: len_ms=%u pos_ms=%u max_ms=%u undo_max_ms=%u undo=%s level=%u "
+               "prep_ms=%u flash=%d\r\n", kState[in.state <= LOOPER_STOP ? in.state : 0],
+               in.len_ms, in.pos_ms, in.max_ms, in.undo_max_ms, kUndo[in.undo], in.level,
+               in.prep_ms, in.flash);
 }
 
 /* Signed decimal: "-4.5", "3", "0.71". */
@@ -782,7 +808,6 @@ static void dispatch(char *cmd)
         int r = ok ? engine_cab_long(n) : -1;
         log_printf("cab long %lu: %s\r\n", (unsigned long)n,
                    r == 0 ? "ok" : r == -2 ? "not available (long IRs need more RAM; max " XSTR(ENGINE_IR_TAPS) ")"
-                   : r == -3 ? "not available (the looper has the long-IR memory; max 512 until loop clear)"
                              : "bad taps");
     }
     else if (streq(argv[0], "stock")) {

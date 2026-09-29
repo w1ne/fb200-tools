@@ -30,6 +30,16 @@ void fw_session(void) __attribute__((noreturn));
 void fw_test(void);
 /* Preset/settings/IR store: RMW of one 4 KB sector in F:0x71000..0xA1800. */
 int flash_store(uint32_t offset, const void *data, uint32_t len);          /* non-destructive: WREN must set WEL */
+/* -6: a looper record or dub is writing (dsp/looper.h looper_writing): try
+ * again later. */
 /* 1: flash_store refuses (-5), battery critical (ui/power.c) */
 void flash_store_block(int on);
+/* Flash chip: JEDEC ID (1 on success), the window FlexSPI port A1 maps,
+ * the size from the capacity code (0: unknown); flash_capacity (flash_rmw.h)
+ * is the smaller of the two. */
+int flash_read_id(uint8_t id[3]);
+uint32_t flash_window(void);
+uint32_t flash_chip_size(const uint8_t id[3]);
+int flash_suspend_ok(void);   /* Erase Suspend: Winbond, GigaDevice */
+uint32_t flash_probe(void);   /* reads the JEDEC ID once: flash_capacity() from then on */
 #endif

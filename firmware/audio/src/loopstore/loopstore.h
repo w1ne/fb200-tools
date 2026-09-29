@@ -93,8 +93,14 @@ void ls_swap(loopstore_t *ls, uint32_t next_f);   /* undo / redo */
 void ls_clear(loopstore_t *ls);
 void ls_play_from(loopstore_t *ls, uint32_t f);   /* the read stream restarts at frame f */
 int ls_writer_idle(const loopstore_t *ls);   /* the write ring is empty, no chunk open */
-/* work to do now (writes, erases): the main loop should not sleep */
-int ls_busy(const loopstore_t *ls);
+/* work to do now (writes, erases): the main loop should not sleep. Inline:
+ * main.c's loop_work_pending is RAM code. */
+static inline int ls_busy(const loopstore_t *ls)
+{
+    const loopio_t *io = ls->io;
+    return ls->nch && (io->wr_head != io->wr_tail || ls->w_phase || ls->j_on ||
+                       (ls->armed && (ls->er_on || ls->dirty)));
+}
 uint32_t ls_chunks(const loopstore_t *ls);   /* slots */
 void ls_info(const loopstore_t *ls, ls_info_t *out);
 #endif

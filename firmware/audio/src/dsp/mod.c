@@ -15,6 +15,7 @@
 #pragma GCC optimize("fp-contract=off")
 #endif
 #include <string.h>
+#include "cold.h"
 #include "arm_math.h"
 #include "mod.h"
 
@@ -178,7 +179,7 @@ void mod_init(mod_t *m, float fs)
     m->type = MOD_TYPES;
 }
 
-void mod_set_params(mod_t *m, unsigned type, unsigned p1, unsigned p2, unsigned p3,
+COLD void mod_set_params(mod_t *m, unsigned type, unsigned p1, unsigned p2, unsigned p3,
                     unsigned p4)
 {
     if (type >= MOD_TYPES) type = 0;

@@ -34,17 +34,7 @@ void cab_set_ir(cab_t *c, const float *ir, float gain)
     (void)cab_set_ir_len(c, ir, CAB_TAPS, gain);
 }
 
-COLD void cab_detach_tail(cab_t *c)
-{
-    int staged = c->conv.load == CONV2_LOAD_HEAD;   /* goes live: its gain too */
-    conv2_detach_tail(&c->conv);
-    if (c->scale_due && staged) c->scale = c->next_scale;
-    c->scale_due = 0;
-}
-
-COLD void cab_attach_tail(cab_t *c, conv2_tail_t *tail) { conv2_attach_tail(&c->conv, tail); }
-
-int cab_set_model(cab_t *c, int cab)
+COLD int cab_set_model(cab_t *c, int cab)
 {
     if (!g_stock || cab < 1 || cab > STOCK_CABS) return -1;
     cab_set_ir(c, g_stock->cab_taps[cab - 1], g_stock->cab_gain[cab - 1]);

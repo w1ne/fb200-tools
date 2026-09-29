@@ -93,13 +93,6 @@ static inline int conv2_pending(const conv2_t *c) { return c->load != CONV2_LOAD
  * waits for its frame boundary. For init and tests, not the audio path. */
 void conv2_finish(conv2_t *c);
 void conv2_reset(conv2_t *c);                /* clear the input history */
-/* Lend the tail storage to someone else (the looper, loop_mem.h): a long IR
- * falls back to its first 512 taps (head only; a long IR still loading is
- * dropped); IRs over 512 taps fail until conv2_attach_tail. The head keeps
- * its IR and history. */
-void conv2_detach_tail(conv2_t *c);
-/* Take tail storage back (cleared here; its old contents are garbage). */
-void conv2_attach_tail(conv2_t *c, conv2_tail_t *tail);
 /* Any n, in place allowed. The tail work runs on sample counts, so part
  * blocks keep the schedule. */
 void conv2_process(conv2_t *c, const float *in, float *out, size_t n);

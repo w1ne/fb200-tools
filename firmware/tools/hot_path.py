@@ -23,7 +23,9 @@ table) are not followed: those tables are cold, except usbd's audio entries
 Flash-write roots (second check): the code that runs while the flash is
 busy, or after an app update has erased the app's own cold code (it lives
 in the app slot's data area): fw_begin, fw_rx_task, fw_session and
-flash_store (src/debug/selfupdate.c), and the USB class drivers that
+flash_store (src/debug/selfupdate.c), the looper's flash operations
+(src/loopstore/lsio.c: its cold caller runs only while the flash is idle
+or its erase suspended; these return only then), and the USB class drivers that
 tud_task dispatches through usbd's driver table (cdcd_*, hidd_*, audiod_*).
 Everything they reach must be in RAM (not in flash), and none of it may
 load the address of cold const data. A call guarded by fw_xip_gone() (the
@@ -54,10 +56,13 @@ ITCM = range(0x20000)
 FLASH = range(0x60000000, 0x70000000)
 HOT_ENTRY = ("engine_task", "usb_audio_task")
 HOT_PATTERN = re.compile(r"^audiod_")
-FLASH_WRITE_ENTRY = ("fw_begin", "fw_rx_task", "fw_session", "flash_store")
+FLASH_WRITE_ENTRY = ("fw_begin", "fw_rx_task", "fw_session", "flash_store",
+                     "lsio_read", "lsio_program", "lsio_erase_begin", "lsio_erase_run",
+                     "lsio_quiesce")
 FLASH_WRITE_PATTERN = re.compile(r"^(cdcd_|hidd_|audiod_)")
 FLASH_BUSY_ENTRY = ("flash_pump",)
-PUMP_CALLERS = ("flash_rmw", "fw_begin", "fw_rx_task")
+PUMP_CALLERS = ("flash_rmw", "fw_begin", "fw_rx_task", "lsio_program", "lsio_erase_run",
+                "lsio_quiesce")
 PUMP_MUST_REACH = ("engine_task", "usb_audio_task", "wdog_feed")
 FLASH_DATA = range(0x60000000, 0x61000000)   # the 16 MB of the flash window in use
 # caller -> callee edges not followed by the flash-write check, and the gate

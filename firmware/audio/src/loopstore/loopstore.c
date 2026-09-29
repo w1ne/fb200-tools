@@ -52,12 +52,6 @@ int ls_init(loopstore_t *ls, loopio_t *io, uint16_t *cur, uint16_t *alt, uint32_
 
 void ls_arm(loopstore_t *ls) { ls->armed = 1; }
 
-int ls_busy(const loopstore_t *ls)
-{
-    const loopio_t *io = ls->io;
-    return ls->nch && (io->wr_head != io->wr_tail || ls->w_phase || ls->j_on ||
-                       (ls->armed && (ls->er_on || ls->dirty)));
-}
 uint32_t ls_chunks(const loopstore_t *ls) { return ls->nch; }
 
 /* ------------------------------------------------------------ erase ahead */
