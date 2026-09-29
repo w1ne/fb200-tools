@@ -104,6 +104,12 @@ int irstore_put_begin(unsigned cab_type, unsigned taps, uint32_t crc, const char
                       uint32_t rate);
 int irstore_put_active(void);
 void irstore_put_task(void);
+/* Console output. irls: one line per used slot, "ir <cab> taps <n> rate
+ * <hz> gain <g> crc <crc> ok|BAD name <name>" (ok/BAD: the data CRC), then
+ * "ir store: <used> of 64 slots used ..." (or "ir store: not available:
+ * ..."). irdel: "ir <cab> deleted" | "ir <cab>: empty" | "ir <cab>: FAILED (...)". */
+void irstore_print_list(void);
+void irstore_print_delete(unsigned cab_type);
 /* A name the store accepts: 1..23 printable ASCII characters, no space. */
 int irstore_name_ok(const char *name);
 
@@ -115,6 +121,7 @@ uint32_t irstore_capacity(void);                    /* usable flash bytes, 0 unk
 uint32_t irstore_rx(uint8_t *dst, uint32_t max);    /* raw bytes from the console */
 uint32_t irstore_now_ms(void);
 float irstore_gain(const float *ir);                /* the stock rule, 512 taps */
+void irstore_pump(void);                            /* audio work between long steps */
 /* The engine's IR staging buffer (IRSTORE_TAPS floats), NULL when in use;
  * release makes the engine reload the preset's cab. */
 float *irstore_buf_get(void);

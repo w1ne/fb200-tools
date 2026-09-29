@@ -5,6 +5,7 @@
 #include "irstore/irstore.h"
 #include "debug/selfupdate.h"
 #include "audio/engine.h"
+#include "audio/usb_audio.h"
 #include "dsp/cab.h"
 #include "tusb.h"
 
@@ -28,6 +29,12 @@ extern uint32_t tusb_time_millis_api(void);
 uint32_t irstore_now_ms(void) { return tusb_time_millis_api(); }
 
 float irstore_gain(const float *ir) { return cab_user_ir_gain(ir); }
+
+void irstore_pump(void)
+{
+    usb_audio_task();
+    engine_task();
+}
 
 float *irstore_buf_get(void) { return engine_ir_borrow(); }
 void irstore_buf_put(void) { engine_ir_release(); }

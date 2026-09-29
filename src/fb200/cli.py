@@ -40,6 +40,32 @@ def _slot_arg(value: str) -> int:
     return slot
 
 
+def _delete_slot_arg(value: str) -> int:
+    """1..9 (stock user slots, HID) or 20..83 (long IR store, console)."""
+    from fb200 import longir
+
+    try:
+        slot = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"invalid slot: {value!r}") from exc
+    if not (1 <= slot <= IR_SLOT_COUNT or longir.FIRST <= slot <= longir.LAST):
+        raise argparse.ArgumentTypeError(
+            f"slot must be 1..{IR_SLOT_COUNT} or {longir.FIRST}..{longir.LAST} (long IRs)")
+    return slot
+
+
+def _long_slot_arg(value: str) -> int:
+    from fb200 import longir
+
+    try:
+        slot = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"invalid slot: {value!r}") from exc
+    if not longir.FIRST <= slot <= longir.LAST:
+        raise argparse.ArgumentTypeError(f"long IR slot must be {longir.FIRST}..{longir.LAST}")
+    return slot
+
+
 def _hex_frame_arg(value: str) -> str:
     text = value.replace(" ", "")
     try:
@@ -61,13 +87,48 @@ def _cmd_info(args) -> int:
 
 
 def _cmd_ir_list(args) -> int:
+    if args.long:
+        from fb200 import console, longir
+
+        with console.Console(args.port) as con:
+            res = longir.ls(con)
+        if not res["available"]:
+            print(res["text"], file=sys.stderr)
+            return 1
+        for e in res["slots"]:
+            print(f"{e.slot}: {e.name}  {e.taps} taps  gain {e.gain:.4f}  source {e.rate} Hz"
+                  + ("" if e.ok else "  BAD DATA (plays as bypass)"))
+        print(f"{len(res['slots'])} of {longir.SLOTS} long slots used "
+              f"(cab types {longir.FIRST}..{longir.LAST})", file=sys.stderr)
+        return 0
     with _with_device() as device:
         for slot in device.ir_list():
             print(f"{slot.index}: {slot.name if slot.name else '(empty)'}")
     return 0
 
 
+def _cmd_ir_put(args) -> int:
+    from fb200 import console, longir
+
+    samples, rate = longir.load_wav(args.wav, **_ir_options(args))
+    name = longir.sanitize_name(args.name or Path(args.wav).stem)
+    with console.Console(args.port) as con:
+        res = longir.put(con, args.slot, samples, name, rate)
+    print(f"stored '{res.name}' in long slot {res.slot}: {res.taps} taps, gain {res.gain:.4f} "
+          f"(select it with cab type {res.slot})", file=sys.stderr)
+    return 0
+
+
 def _cmd_ir_delete(args) -> int:
+    from fb200 import longir
+
+    if args.slot >= longir.FIRST:
+        from fb200 import console
+
+        with console.Console(args.port) as con:
+            held = longir.delete(con, args.slot)
+        print(f"deleted long slot {args.slot}" if held else f"long slot {args.slot} was empty")
+        return 0
     with _with_device() as device:
         deleted = device.ir_delete(args.slot)
     if not deleted:
@@ -98,7 +159,7 @@ def _add_ir_process_args(p: argparse.ArgumentParser) -> None:
                    help="cut silence before the onset (-60 dB rel. peak, 8 samples pre-roll)")
     g.add_argument("--taps", type=int, metavar="N",
                    help=f"truncate to N taps (1..{MAX_TAPS}) with a half-Hann fade-out; "
-                        "the pedal plays 512")
+                        "stock slots play 512; `ir put` default 4096 (trailing zeros dropped)")
     g.add_argument("--lowcut", type=float, metavar="HZ", help="2nd-order Butterworth high pass")
     g.add_argument("--highcut", type=float, metavar="HZ", help="2nd-order Butterworth low pass")
     g.add_argument("--blend", type=_blend_arg, metavar="FILE:MIX",
@@ -450,8 +511,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_ir = sub.add_parser("ir", help="manage impulse response slots")
     ir_sub = p_ir.add_subparsers(dest="ir_command", required=True)
 
-    p_list = ir_sub.add_parser("list", help="list IR slots")
+    p_list = ir_sub.add_parser("list", aliases=["ls"], help="list IR slots")
+    p_list.add_argument("--long", action="store_true",
+                        help="the long IR store (slots 20..83, open firmware console)")
+    p_list.add_argument("--port", help="CDC device for --long (default: /dev/cu.usbmodemAUDIO*)")
     p_list.set_defaults(func=_cmd_ir_list)
+
+    p_put = ir_sub.add_parser("put", help="store a WAV as a long IR (up to 4096 taps) in slot "
+                                          "20..83 (open firmware console)")
+    p_put.add_argument("slot", type=_long_slot_arg, help="20..83 = the cab type that plays it")
+    p_put.add_argument("wav")
+    p_put.add_argument("--name", help="up to 23 characters (default: the file name)")
+    p_put.add_argument("--port", help="CDC device (default: /dev/cu.usbmodemAUDIO*)")
+    _add_ir_process_args(p_put)
+    p_put.set_defaults(func=_cmd_ir_put)
 
     p_import = ir_sub.add_parser("import", help="import a WAV into a slot")
     p_import.add_argument("slot", type=_slot_arg)
@@ -466,8 +539,9 @@ def build_parser() -> argparse.ArgumentParser:
     _add_ir_process_args(p_process)
     p_process.set_defaults(func=_cmd_ir_process)
 
-    p_delete = ir_sub.add_parser("delete", help="delete a slot")
-    p_delete.add_argument("slot", type=_slot_arg)
+    p_delete = ir_sub.add_parser("delete", help="delete a slot (1..9, or 20..83: long IRs)")
+    p_delete.add_argument("slot", type=_delete_slot_arg)
+    p_delete.add_argument("--port", help="CDC device for a long slot")
     p_delete.set_defaults(func=_cmd_ir_delete)
 
     p_backup = ir_sub.add_parser("backup", help="write a slot-name manifest")

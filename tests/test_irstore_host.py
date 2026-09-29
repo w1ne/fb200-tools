@@ -335,3 +335,34 @@ def test_sanitize_and_trim():
     assert longir.trim_tail([0.0, 0.0]) == [0.0]
     with pytest.raises(Exception, match="1..4096"):
         longir.pack_samples([0.0] * 4097)
+
+
+def lines(out: list[str]) -> list[str]:
+    return [x.strip() for x in out]
+
+
+def test_irls_and_irdel_output(h):
+    """The console lines fb200.longir parses (console `irls` / `irdel`)."""
+    empty = "ir store: 0 of 64 slots used (cab 20-83, 4096 taps), table empty seq 0"
+    assert lines(h.cmd("irls")) == [empty]
+    x = ir(4096)
+    h.put(20, x, name="Ampeg_8x10", rate=48000)
+    h.cmd("gain 1.23456")
+    h.put(83, ir(10), name="short")
+    h.poke(longir.data_offset(83), b"\0\0\0\0")      # bad data: listed as BAD
+    crc = zlib.crc32(longir.pack_samples(x))
+    h.cmd("pumps")
+    text = "\n".join(lines(h.cmd("irls")))
+    assert text.splitlines()[0] == f"ir 20 taps 4096 rate 48000 gain 0.7500 crc {crc:08x} ok name Ampeg_8x10"
+    assert "gain 1.2346" in text and " BAD name short" in text
+    assert text.splitlines()[-1] == "ir store: 2 of 64 slots used (cab 20-83, 4096 taps), table B seq 2"
+    assert h.cmd("pumps") == ["pumps 2"]               # the audio runs between CRC checks
+    res = longir.parse_irls(text)
+    assert [(e.slot, e.taps, e.ok, e.name) for e in res["slots"]] == \
+        [(20, 4096, True, "Ampeg_8x10"), (83, 10, False, "short")]
+    assert lines(h.cmd("irdel 83")) == ["ir 83 deleted"]
+    assert lines(h.cmd("irdel 83")) == ["ir 83: empty"]
+    assert lines(h.cmd("irdel 19")) == ["ir 19: FAILED (store not available)"]
+    h.cmd("cap 4194304")
+    assert lines(h.cmd("irls")) == ["ir store: not available: flash 4096 kB, needs 5128 kB"]
+    assert longir.parse_irls(lines(h.cmd("irls"))[0])["available"] is False

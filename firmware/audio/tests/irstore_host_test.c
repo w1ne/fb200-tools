@@ -17,6 +17,8 @@
  *   buf busy|free            the engine's IR buffer is taken / free
  *   gain <g>                 what the stock gain rule returns
  *   gainseen                 nonzero taps (of 512) the gain rule saw; buffer taken
+ *   irls | irdel <cab>       the console output of irls / irdel (irstore_print_*)
+ *   pumps                    audio pump calls since the last `pumps`
  *   slot <cab>               irstore_slot_of
  *   nameok <name>            irstore_name_ok
  *
@@ -92,6 +94,9 @@ float *irstore_buf_get(void)
 }
 
 void irstore_buf_put(void) { buf_taken = 0; }
+
+static unsigned pumps;
+void irstore_pump(void) { pumps++; }
 
 static unsigned char *read_file(const char *path, size_t *len)
 {
@@ -171,6 +176,9 @@ int main(void)
             nwrites = 0;
         } else if (!strcmp(c, "buf")) buf_busy = !strcmp(argv[1], "busy");
         else if (!strcmp(c, "gainseen")) printf("gainseen %d taken %d\n", gain_seen, buf_taken);
+        else if (!strcmp(c, "irls")) irstore_print_list();
+        else if (!strcmp(c, "irdel")) irstore_print_delete((unsigned)a1);
+        else if (!strcmp(c, "pumps")) { printf("pumps %u\n", pumps); pumps = 0; }
         else if (!strcmp(c, "gain")) gain_value = (float)strtod(argv[1], NULL);
         else if (!strcmp(c, "slot")) printf("slot %d\n", irstore_slot_of((unsigned)a1));
         else if (!strcmp(c, "nameok")) printf("nameok %d\n", irstore_name_ok(argc > 1 ? argv[1] : ""));

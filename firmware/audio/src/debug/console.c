@@ -382,49 +382,15 @@ static void cmd_irput(int argc, char **argv)
     (void)irstore_put_begin(slot, taps, crc, argv[4], rate);
 }
 
-static void cmd_irls(void)
-{
-    if (!irstore_ready()) {
-        log_printf("ir store: not available: flash %lu kB, needs %lu kB\r\n",
-                   (unsigned long)(flash_capacity() / 1024u), (unsigned long)(IRSTORE_END / 1024u));
-        return;
-    }
-    uint32_t seq = 0;
-    int copy = irstore_current(&seq);
-    unsigned used = 0;
-    for (unsigned i = 0; i < IRSTORE_SLOTS; i++) {
-        irstore_entry_t e;
-        if (irstore_get(i, &e) <= 0) continue;
-        used++;
-        /* ~0.8 ms per 4096-tap slot: keep the audio going between slots */
-        int good = crc32_ieee(irstore_map(IRSTORE_DATA(i)), e.taps * 4u) == e.crc;
-        usb_audio_task();
-        engine_task();
-        uint32_t g = (uint32_t)(e.gain * 10000.0f + 0.5f);
-        log_printf("ir %u taps %u rate %lu gain %lu.%04lu crc %08lx %s name %s\r\n",
-                   i + IRSTORE_FIRST, (unsigned)e.taps, (unsigned long)e.rate,
-                   (unsigned long)(g / 10000u), (unsigned long)(g % 10000u), (unsigned long)e.crc,
-                   good ? "ok" : "BAD", e.name);
-    }
-    log_printf("ir store: %u of %u slots used (cab %u-%u, %u taps), table %s seq %lu\r\n", used,
-               IRSTORE_SLOTS, IRSTORE_FIRST, IRSTORE_LAST, IRSTORE_TAPS,
-               copy < 0 ? "empty" : copy ? "B" : "A", (unsigned long)seq);
-}
-
 static void cmd_irdel(const char *a1)
 {
     int ok;
     uint32_t t = parse_num(a1, &ok);
-    int slot = ok ? irstore_slot_of(t) : -1;
-    if (slot < 0) {
+    if (!ok || irstore_slot_of(t) < 0) {
         log_printf("ir: usage: irdel <slot %u-%u>\r\n", IRSTORE_FIRST, IRSTORE_LAST);
         return;
     }
-    int r = irstore_delete((unsigned)slot);
-    log_printf(r == 1 ? "ir %lu deleted\r\n" : r == 0 ? "ir %lu: empty\r\n"
-               : r == -1 ? "ir %lu: FAILED (store not available)\r\n"
-               : r == -2 ? "ir %lu: FAILED (busy)\r\n" : "ir %lu: FAILED (flash write)\r\n",
-               (unsigned long)t);
+    irstore_print_delete(t);
 }
 #endif
 
@@ -785,7 +751,7 @@ static void dispatch(char *cmd)
     }
     else if (streq(argv[0], "prof")) engine_profile();
     else if (streq(argv[0], "irput")) cmd_irput(argc, argv);
-    else if (streq(argv[0], "irls")) cmd_irls();
+    else if (streq(argv[0], "irls")) irstore_print_list();
     else if (streq(argv[0], "irdel")) cmd_irdel(argv[1]);
     else if (streq(argv[0], "cab") && argc > 2 && streq(argv[1], "long")) {
         int ok;

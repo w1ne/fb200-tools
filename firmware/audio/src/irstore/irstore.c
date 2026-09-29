@@ -12,6 +12,12 @@
 #define IRSTORE_RAM __attribute__((section(".ocram")))
 #endif
 
+static void print_gain(float g)
+{
+    uint32_t m = (uint32_t)(g * 10000.0f + 0.5f);
+    log_printf("%lu.%04lu", (unsigned long)(m / 10000u), (unsigned long)(m % 10000u));
+}
+
 static void put16(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); }
 static void put32(uint8_t *p, uint32_t v) { put16(p, v); put16(p + 2, v >> 16); }
 static uint32_t get16(const uint8_t *p) { return (uint32_t)p[0] | (uint32_t)p[1] << 8; }
@@ -161,6 +167,45 @@ static unsigned irstore_name_len(const char *name)
     return n;
 }
 
+/* ---- console output (irls, irdel) ---- */
+
+void irstore_print_list(void)
+{
+    if (!irstore_ready()) {
+        log_printf("ir store: not available: flash %lu kB, needs %lu kB\r\n",
+                   (unsigned long)(irstore_capacity() / 1024u), (unsigned long)(IRSTORE_END / 1024u));
+        return;
+    }
+    uint32_t seq = 0;
+    int copy = irstore_current(&seq);
+    unsigned used = 0;
+    for (unsigned i = 0; i < IRSTORE_SLOTS; i++) {
+        irstore_entry_t e;
+        if (irstore_get(i, &e) <= 0) continue;
+        used++;
+        /* ~0.8 ms per 4096-tap slot: keep the audio going between slots */
+        int good = crc32_ieee(irstore_map(IRSTORE_DATA(i)), e.taps * 4u) == e.crc;
+        irstore_pump();
+        log_printf("ir %u taps %u rate %lu gain ", i + IRSTORE_FIRST, (unsigned)e.taps,
+                   (unsigned long)e.rate);
+        print_gain(e.gain);
+        log_printf(" crc %08lx %s name %s\r\n", (unsigned long)e.crc, good ? "ok" : "BAD", e.name);
+    }
+    log_printf("ir store: %u of %u slots used (cab %u-%u, %u taps), table %s seq %lu\r\n", used,
+               IRSTORE_SLOTS, IRSTORE_FIRST, IRSTORE_LAST, IRSTORE_TAPS,
+               copy < 0 ? "empty" : copy ? "B" : "A", (unsigned long)seq);
+}
+
+void irstore_print_delete(unsigned cab_type)
+{
+    int slot = irstore_slot_of(cab_type);
+    int r = slot < 0 ? -1 : irstore_delete((unsigned)slot);
+    log_printf(r == 1 ? "ir %u deleted\r\n" : r == 0 ? "ir %u: empty\r\n"
+               : r == -1 ? "ir %u: FAILED (store not available)\r\n"
+               : r == -2 ? "ir %u: FAILED (busy)\r\n" : "ir %u: FAILED (flash write)\r\n",
+               cab_type);
+}
+
 int irstore_name_ok(const char *name)
 {
     unsigned n = irstore_name_len(name);
@@ -181,12 +226,6 @@ static struct {
     float *buf;
     irstore_entry_t e;
 } s IRSTORE_RAM;
-
-static void print_gain(float g)
-{
-    uint32_t m = (uint32_t)(g * 10000.0f + 0.5f);
-    log_printf("%lu.%04lu", (unsigned long)(m / 10000u), (unsigned long)(m % 10000u));
-}
 
 int irstore_put_begin(unsigned cab_type, unsigned taps, uint32_t crc, const char *name,
                       uint32_t rate)
