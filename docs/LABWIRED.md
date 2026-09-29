@@ -14,7 +14,7 @@ has no FB200 special cases.
 |------|------------|
 | `labwired/chip/mimxrt1052.yaml` | the chip: memory map, pins, peripherals |
 | `labwired/chip/peripherals/*.yaml` | register files ingested from the NXP SVD |
-| `labwired/system.yaml` | the FB200 board: knob multiplexers and knobs, ADC inputs, FlexIO2 clock, footswitches, UART, 14-segment display |
+| `labwired/system.yaml` | the FB200 board: NAU88L21 codec, knob multiplexers and knobs, 14-segment display, ADC inputs, FlexIO2 clock, footswitches, UART |
 | `labwired/smoke.yaml` | gate for the open smoke firmware |
 | `labwired/stock-boot.yaml` | gate for the unmodified vendor firmware, boot to USB (short) |
 | `labwired/stock-knobs.yaml` | gate for the vendor firmware: it reads all 16 knobs through the 74HC4051 muxes, and a turned knob (long: 3.4 G cycles) |
@@ -25,11 +25,12 @@ has no FB200 special cases.
 
 ## 2. Get the LabWired CLI
 
-The i.MX RT parts and the `peripheral_log` and `fidelity_clean` assertions
-are on core `main` (PRs #1254 and #1255) and are not released yet. The
-14-segment display model (`segment-display-mux`) is on core `main` too (PR
-[#1273](https://github.com/w1ne/labwired-core/pull/1273)), not released yet. Until the
-next core release, build the CLI from `main`:
+The i.MX RT parts, the `peripheral_log` and `fidelity_clean` assertions,
+the NAU88L21 codec part with device logs (PR #1272) and the 14-segment
+display part `segment-display-mux` (PR
+[#1273](https://github.com/w1ne/labwired-core/pull/1273)) are on core
+`main` and are not released yet. Until the next core release, build the CLI
+from `main`:
 
 ```bash
 git clone https://github.com/w1ne/labwired-core.git
@@ -77,7 +78,7 @@ Expected result:
 
 ```
 PASS  5/5 checks · smoke · 40000000 steps · 36.87s
-PASS  24/24 checks · stock-boot · 90000000 steps · 15.26s
+PASS  37/37 checks · stock-boot · 90000000 steps · 15.26s
 PASS  20/20 checks · stock-knobs · 3400000000 steps · 4754.33s
 PASS  12/12 checks · stock-first-boot · 6800000000 steps · 1851.40s
 ```
@@ -133,7 +134,7 @@ descriptor values, not bytes of the vendor image.
 | 1 | loader copies its code to ITCM and enters ITCM `0x4D6` | indirect only (see below) |
 | 2 | clocks: VDD_SOC raised (DCDC REG3.TRG), DCDC STS_DC_OK, ARM PLL powered and locked at DIV_SELECT 100 | yes |
 | 3 | FlexSPI driver reads the NOR JEDEC ID (`0x9F`) and quad-reads (`0x6B`) the configuration sector at `0xB0000` | yes (FlexSPI `ip` log) |
-| 4 | LPI2C1 probes the NAU88L21 at `0x54` and gets a NACK | yes (MSR.NDF and the bus trace `addr 0x54 W nack`) |
+| 4 | LPI2C1 finds the NAU88L21 at `0x54`, reads its ID and writes its 76-register init table, each write read back | yes (MSR, the bus trace, the codec's `reads`, `writes` and `state` logs) |
 | 5 | WS2812 frame on FlexIO2 through eDMA: at least 960 8-bit words on pin 2, encoded `0xC0` / `0xFC` | yes (FlexIO `wire` log) |
 | 6 | USB1 enumeration: device mode, running, port enabled at high speed, DEVICEADDR = 5, endpoints 1/4/5 enabled; VID:PID `34DB:800F`, HID interface 3, product string `FB200` | yes (registers and USB `host` log) |
 | 7 | 14-segment display pins are outputs (GPIO4 16..31, GPIO3 18 and 21) | yes |
@@ -146,11 +147,44 @@ repository. All later stages run from ITCM, so a failed copy fails them too.
 The stage 5 check counts words and finds both encodings; it does not prove
 that every word is `0xC0` or `0xFC`.
 
-The board parts are not modelled yet: NAU88L21 codec, Bluetooth module. The
-knobs and their multiplexers are modelled, see the stock knob gate below,
-and so is the 14-segment display (section 6). The stock boot gate sees
-neither: the firmware scans the knobs and refreshes the display only in its
-main loop, after 3.2 G cycles; the first-boot gate checks the display.
+The board parts not modelled yet: Bluetooth module. The knobs and their
+multiplexers are modelled, see the stock knob gate below, and so is the
+14-segment display (section 6). The stock boot gate sees neither: the
+firmware scans the knobs and refreshes the display only in its main loop,
+after 3.2 G cycles; the first-boot gate checks the display.
+
+#### Stage 4: the codec
+
+The NAU88L21 is the generic core part `nau88l21` (control port and register
+file, reset values from the datasheet Rev 3.3 section 10), attached in
+`system.yaml` as `codec` on `lpi2c1` at `0x54` (CSB high). The gate reads
+the codec's own logs by that id (`peripheral_log: {peripheral: codec, ...}`).
+
+What the unmodified firmware does on the twin, at 60.75 M .. 64.66 M cycles
+(about 6.5 ms):
+
+1. Probe: read R58 `I2C_DEVICE_ID` (the codec returns `0x1A20`).
+2. Write R00 = `0x0000` (reset), then 75 more registers in address order,
+   each one read back after the write: R01 = `0x0FFF` (DAC and ADC L/R on),
+   R03 = `0x0050`, R1C = `0x000E` (I2S, 32-bit), R1D = `0x0000` (clock
+   slave, ADCOUT driven), R4B = `0x2007` (class G), R66 = `0x0060`,
+   R72 = `0x0170`, R73 = `0x3308`, R74 = `0x0502`, R76 = `0x3140`,
+   R7E = `0x0101`, R7F = `0xC03F`, R80 = `0x0720`, and the others. This is
+   the table the open firmware replays (`firmware/audio/src/audio/codec.c`);
+   only R1C differs there (16-bit).
+
+Without the codec the firmware sent three transfers to `0x54` (write, read,
+write), got a NACK on each and went on. With the codec it does the init
+above. Nothing else changes, in the 90 M cycles of the gate and also in a
+700 M-cycle probe run: SAI1 and SAI3 stay disabled (TCSR/RCSR at reset), and
+the GPIO1..3 data, eDMA ERQ and IOMUXC_GPR1 values are the same with and
+without the codec. The stock does not wait on the codec or retry it.
+The codec is configured before audio starts; the SAI data path is not
+modelled.
+
+Negative control: the same run with the codec strapped to `0x1B`
+(`i2c_address: 0x1b`) fails every stage 4 check (`FAIL 22/37`); only the
+other stages pass.
 
 ### Knobs: two 74HC4051 multiplexers
 
