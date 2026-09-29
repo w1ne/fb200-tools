@@ -31,9 +31,7 @@ void tone_set(tone_t *t, int bass, int mid, int midfreq, int treble)
     t->active = 1;
 }
 
-/* one stage and sample, CMSIS order (-ffp-contract=off: no FMA) */
-#define DF1(c, x0, x1, x2, y1, y2) \
-    ((c)[0] * (x0) + (c)[1] * (x1) + (c)[2] * (x2) + (c)[3] * (y1) + (c)[4] * (y2))
+#define DF1 TONE_DF1
 
 /* one stage over the block, two samples per iteration */
 static void df1_one(const float *restrict c, float *restrict state, float *restrict x, unsigned n)

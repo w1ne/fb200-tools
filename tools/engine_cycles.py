@@ -64,8 +64,8 @@ SETTINGS = [(m, g, b, mi, mf, t, v, c) for m, g, b, mi, mf, t, v, c in (
     (9, 100, 100, 100, 2, 100, 100, 9), (10, 45, 55, 65, 1, 35, 85, 10))]
 
 
-def _obj(cross: str, src: Path, obj: Path, inc: list[str]) -> None:
-    if obj.exists() and obj.stat().st_mtime >= src.stat().st_mtime:
+def _obj(cross: str, src: Path, obj: Path, inc: list[str], cache: bool = False) -> None:
+    if cache and obj.exists() and obj.stat().st_mtime >= src.stat().st_mtime:
         return
     extra = ["-ffp-contract=off"] if src.name in NO_CONTRACT else []
     subprocess.run([f"{cross}gcc", *FLAGS, *extra, *inc, "-c", str(src), "-o", str(obj)],
@@ -83,7 +83,7 @@ def build(cross: str, src: Path, out: Path) -> tuple[Path, dict[str, int], list]
     objs = []
     for g in GROUPS:
         objs.append(cm / f"{g}.o")
-        _obj(cross, DSP / "Source" / g / f"{g}.c", objs[-1], inc)
+        _obj(cross, DSP / "Source" / g / f"{g}.c", objs[-1], inc, cache=True)
     for f in [*(src / "dsp" / n for n in DSP_SRC), src / "memfuncs.c",
               FW / "tests" / "engine_bench.c"]:
         objs.append(out / f"{f.stem}.o")
