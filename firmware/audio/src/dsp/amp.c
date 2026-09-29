@@ -57,7 +57,7 @@ void amp_process(amp_t *a, float *x, unsigned n)
         vol[i] = a->vol;
         x[i] = m->pre_gain * (m->drive_scale2 * a->drv * m->drive_scale * x[i]);
     }
-    arm_biquad_cascade_df1_f32(&a->pre, x, x, n);
+    tone_df1(a->pre.pCoeffs, a->pre_state, STOCK_AMP_SOS, x, n);
 
     for (unsigned i = 0; i < n; i++) {           /* 3x: prev, prev + d, prev + 2d */
         float v = a->prev, d = (x[i] - a->prev) / 3.0f;
@@ -67,10 +67,10 @@ void amp_process(amp_t *a, float *x, unsigned n)
         }
         a->prev = x[i];
     }
-    arm_biquad_cascade_df1_f32(&a->aa, os, os, 3 * n);
+    tone_df1(a->aa.pCoeffs, a->aa_state, 1, os, 3 * n);
     for (unsigned i = 0; i < n; i++) x[i] = os[3 * i + 2];
 
-    arm_biquad_cascade_df1_f32(&a->post, x, x, n);
+    tone_df1(a->post.pCoeffs, a->post_state, STOCK_AMP_SOS, x, n);
     float level2 = m->level * 2.0f;
     for (unsigned i = 0; i < n; i++) x[i] = x[i] * m->out_gain * level2 * vol[i];
     tone_process(&a->tone, x, n);

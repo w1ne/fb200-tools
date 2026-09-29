@@ -254,6 +254,8 @@ class Bench:
         import bisect
         self.counts: dict[str, int] = {}
         self.cycles: dict[str, int] = {}
+        if not hasattr(self, "at"):
+            self.at: dict[int, int] = {}          # cycles per address, all calls
         cache: dict[int, str] = {}
         model = self.model
 
@@ -266,6 +268,7 @@ class Bench:
                 c0 = model.cyc
                 model.step(uc, addr, size)
                 self.cycles[name] = self.cycles.get(name, 0) + model.cyc - c0
+                self.at[addr] = self.at.get(addr, 0) + model.cyc - c0
         self.hook = [self.uc.hook_add(UC_HOOK_CODE, code)]
         if lines is not None:
             data = sorted((f[0], f[0] + f[1], f[3]) for f in self.funcs if f[2] in "bBdDrR")
@@ -337,6 +340,20 @@ def warm(b: Bench, blocks: int = 1300) -> None:
         b.call("bench_cab")
 
 
+def annotate(b: Bench, cross: str, elf: Path, func: str, blocks: int) -> None:
+    """disassembly of func with the model's cycles per instruction per block"""
+    dis = subprocess.run([f"{cross}objdump", "-d", "--no-show-raw-insn", f"--disassemble={func}",
+                          str(elf)], capture_output=True, text=True, check=True).stdout
+    for line in dis.splitlines():
+        head = line.split(":")[0].strip()
+        try:
+            addr = int(head, 16)
+        except ValueError:
+            continue
+        if "\t" in line:
+            print(f"{b.at.get(addr, 0) / blocks:7.0f} {line.strip()}")
+
+
 def do_profile(args, cross: str) -> int:
     import numpy as np
     elf, syms, funcs = build(cross, FW / "src", FW / "build" / "engine_bench" / "new")
@@ -377,6 +394,9 @@ def do_profile(args, cross: str) -> int:
             print(f"  {f:40s} {agg_n[f] / nb:8.0f} instr {agg_c.get(f, 0) / nb:8.0f} cycles")
         for s in sorted(lines, key=lambda s: -sum(lines[s])):
             print(f"  data {s:20s} {sum(lines[s]) / nb:6.0f} lines of 32 B touched/block")
+        if args.annotate:
+            annotate(b, cross, elf, args.annotate, args.blocks)
+            b.at = {}
     a, c = tot["bench_amp"], tot["bench_cab"]
     if args.ocram_miss:
         print(f"cab with its OCRAM data cold: +{c[2] * args.ocram_miss:.0f} cycles "
@@ -434,6 +454,7 @@ def main() -> int:
     ap.add_argument("--mispredict", type=int, default=6)
     ap.add_argument("--ocram-miss", type=int, default=0)
     ap.add_argument("--compare", metavar="REV")
+    ap.add_argument("--annotate", metavar="FUNC", help="cycles per instruction of FUNC")
     ap.add_argument("--seed", type=int, default=7)
     args = ap.parse_args()
     cross = os.environ.get("CROSS", "arm-none-eabi-")
