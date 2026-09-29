@@ -155,7 +155,8 @@ $(STOCK_OBJS) $(TARGET)/$(DSP_SRC)/FilteringFunctions/FilteringFunctions.c.o: \
 #    usb_audio_task, or through a driver callback is here;
 #  - flash writes: nothing that runs while the flash is busy or after an app
 #    update has erased this very code is here: the flash write path
-#    (selfupdate.c: fw_begin, fw_rx_task, flash_store, the update session)
+#    (selfupdate.c: fw_begin, fw_rx_task, flash_store, the update session;
+#    flash_rmw.c and the audio pump it runs while the flash is busy)
 #    and what it reaches (tud_task and the USB class drivers, the CDC log,
 #    the USB descriptors, fsl_flexspi.c).
 # Every other file stays in ITCM. The main loop (main.c), boot (startup.c),

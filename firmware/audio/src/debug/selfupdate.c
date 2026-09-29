@@ -13,7 +13,9 @@
  * nothing that runs while the flash is busy may be there, and an app update
  * erases that very code. So fw_begin(FW_APP) never returns to its caller: it
  * ends in fw_session(), which runs only RAM code until the reset.
- * firmware/tools/hot_path.py checks both (flash-write roots). */
+ * firmware/tools/hot_path.py checks both (flash-write roots).
+ * While the flash is busy, flash_wait_idle (flash_rmw.c) keeps the audio
+ * running (flash_pump below; hot_path.py flash-busy roots). */
 #include <stdint.h>
 #include <string.h>
 #include "fsl_device_registers.h"

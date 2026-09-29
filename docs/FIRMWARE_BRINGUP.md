@@ -108,8 +108,8 @@ every build):
 | Region | Range | Contents | Free |
 |---|---|---|---|
 | ITCM | `0x00000..0x00400` | vectors | - |
-| ITCM | `0x00400..0x13C4C` | hot code + flash write path (`.blob`) | - |
-| ITCM | `0x13C50..0x1F390` | reverb state `s_rev` (`.itcm_bss`) | 3.1 kB |
+| ITCM | `0x00400..0x13D2C` | hot code + flash write path (`.blob`) | - |
+| ITCM | `0x13D30..0x1F470` | reverb state `s_rev` (`.itcm_bss`) | 2.9 kB |
 | DTCM low | `0x20000000..0x20018000` | long-IR tail, 4096 taps (`.dtcm_lo`) | 2.5 kB |
 | DTCM | `0x20018A00..0x20018B44` | crash dump (survives a warm reset) | - |
 | DTCM | `0x20018B44..0x20040608` | CMSIS tables (`.dtcmdata`), `.bss` | - |
@@ -174,6 +174,19 @@ from flash (XIP):
   buffers, the whole I-cache and the D-cache lines of the XIP code are
   invalidated (a speculative fetch during the busy time may have cached
   garbage).
+- **Audio while the flash is busy:** a sector erase keeps the flash busy
+  for tens of ms (an audio block is 0.73 ms) and blocks the main loop. The
+  busy wait (`flash_wait_idle`, `src/debug/flash_rmw.c`) runs the audio
+  pump `flash_pump` between status polls: `wdog_feed`, then
+  `engine_pump` (`usb_audio_task` + `engine_task`). The pump never reads
+  flash: its call graph is checked for flash addresses, and the drums,
+  whose samples stay in flash (0x600D0000), advance silently while it runs
+  (`drums_t.no_flash`), so they neither play garbage nor leave stale cache
+  lines. Not `tud_task`: the USB audio endpoints run in the USB ISR
+  (`audiod_xfer_isr`), and a flash write can itself run inside `tud_task`
+  (HID report -> `proto_feed`). Every write path uses it: `flash_store`
+  (presets, settings, rhythm, IRs, BT name), the `fwbegin`/`fwrec`/`fwstock`
+  erase and page programs.
 - **Cold (flash, linker `.xiptext`):** the files in `COLD_SRC`
   (`firmware/audio/Makefile`): console, UI and display, preset storage
   (the policy; the write itself is `flash_store`), protocol, clock and pin
@@ -182,10 +195,12 @@ from flash (XIP):
   executable), I-cache and D-cache on (`CCR` 0x00070200), FlexSPI AHB
   cacheable and prefetching (`AHBCR` 0x78, RX buffer 3 256 B, prefetch).
 - **Rules:** `firmware/tools/hot_path.py` follows direct calls, tail calls,
-  veneers and callback addresses from both root sets and fails if a hot
-  function is outside ITCM, if a flash-write function is in flash, or if
-  either reads cold const data; `tests/test_audio_image.py` runs it, with
-  negative controls.
+  veneers and callback addresses from its root sets and fails if a hot
+  function is outside ITCM, if a flash-write function is in flash, if
+  either reads cold const data, if the audio pump (`flash_pump`) reaches
+  code outside ITCM or loads any flash address, or if a flash wait
+  (`flash_rmw`, `fw_begin`, `fw_rx_task`) no longer reaches the pump;
+  `tests/test_audio_image.py` runs it, with negative controls.
 - **Load:** `.xiptext` is the first part of the slot data blob (flash
   0x60041000: `.xiptext`, `.ocramdata`, `.dtcmdata`; the slot header
   carries its length and CRC, recovery checks it). `stage2_main` refuses a
