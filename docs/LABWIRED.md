@@ -14,11 +14,11 @@ has no FB200 special cases.
 |------|------------|
 | `labwired/chip/mimxrt1052.yaml` | the chip: memory map, pins, peripherals |
 | `labwired/chip/peripherals/*.yaml` | register files ingested from the NXP SVD |
-| `labwired/system.yaml` | the FB200 board: NAU88L21 codec, knob multiplexers and knobs, 14-segment display, ADC inputs, FlexIO2 clock, footswitches, UART |
+| `labwired/system.yaml` | the FB200 board: NAU88L21 codec, knob multiplexers and knobs, 14-segment display, ADC inputs, FlexIO2 clock, footswitches, Bluetooth module on LPUART5 |
 | `labwired/smoke.yaml` | gate for the open smoke firmware |
 | `labwired/stock-boot.yaml` | gate for the unmodified vendor firmware, boot to USB (short) |
 | `labwired/stock-knobs.yaml` | gate for the vendor firmware: it reads all 16 knobs through the 74HC4051 muxes, and a turned knob (long: 3.4 G cycles) |
-| `labwired/stock-first-boot.yaml` | gate for the vendor firmware from a blank flash: factory reset and Bluetooth AT sequence (long: about 30 min of CPU time) |
+| `labwired/stock-first-boot.yaml` | gate for the vendor firmware from a blank flash: factory reset, Bluetooth AT sequence and module replies, a scripted phone (long: about 30 min of CPU time) |
 | `firmware/labwired-smoke/` | the open smoke firmware (bare registers, no SDK) |
 | `tools/labwired_elf.py` | puts raw blobs into one ARM ELF, one PT_LOAD per blob |
 | `tools/labwired_stock.py` | builds `build/labwired/stock.elf` from your `.mr` |
@@ -26,11 +26,11 @@ has no FB200 special cases.
 ## 2. Get the LabWired CLI
 
 The i.MX RT parts, the `peripheral_log` and `fidelity_clean` assertions,
-the NAU88L21 codec part with device logs (PR #1272) and the 14-segment
+the NAU88L21 codec part with device logs (PR #1272), the 14-segment
 display part `segment-display-mux` (PR
-[#1273](https://github.com/w1ne/labwired-core/pull/1273)) are on core
-`main` and are not released yet. Until the next core release, build the CLI
-from `main`:
+[#1273](https://github.com/w1ne/labwired-core/pull/1273)) and the BT201
+Bluetooth module `bt201` (PR #1274) are on core `main` and are not
+released yet. Until the next core release, build the CLI from `main`:
 
 ```bash
 git clone https://github.com/w1ne/labwired-core.git
@@ -80,7 +80,7 @@ Expected result:
 PASS  5/5 checks · smoke · 40000000 steps · 36.87s
 PASS  37/37 checks · stock-boot · 90000000 steps · 15.26s
 PASS  20/20 checks · stock-knobs · 3400000000 steps · 4754.33s
-PASS  12/12 checks · stock-first-boot · 6800000000 steps · 3772.25s
+PASS  24/24 checks · stock-first-boot · 6800000000 steps · 6031.15s
 ```
 
 The stock gate asserts `fidelity_clean: true`: an unmapped MMIO access or an
@@ -147,11 +147,13 @@ repository. All later stages run from ITCM, so a failed copy fails them too.
 The stage 5 check counts words and finds both encodings; it does not prove
 that every word is `0xC0` or `0xFC`.
 
-The board parts not modelled yet: Bluetooth module. The knobs and their
-multiplexers are modelled, see the stock knob gate below, and so is the
-14-segment display (section 6). The stock boot gate sees neither: the
-firmware scans the knobs and refreshes the display only in its main loop,
-after 3.2 G cycles; the first-boot gate checks the display.
+The 40 WS2812 LEDs are not modelled (stage 5 checks their FlexIO2 frame).
+The knobs and their
+multiplexers are modelled (see the stock knob gate below), and so are the
+14-segment display (section 6) and the Bluetooth module (see the first-boot
+gate). The stock boot gate sees none of them: the firmware scans the knobs
+and refreshes the display only in its main loop, after 3.2 G cycles; the
+first-boot gate checks the display and the Bluetooth module.
 
 #### Stage 4: the codec
 
@@ -299,13 +301,39 @@ stopped inside the 3 s delay. That is why its `uart.log` was empty.)
 | sector erase and page program of the settings sector F:0x82000 and of F:0xB0000 | `peripheral_log` FlexSPI `ip`: `cmd 0x20 addr 0x00082000`, `cmd 0x32 addr 0x00082000`, same for `0x000b0000` |
 | magic `FB200` at F:0x82000 and `B01` at F:0xB0000 | `memory_value` at `0x60082000`, `0x60082004`, `0x600B0000` (the NOR array, read through the FlexSPI AHB window) |
 | Bluetooth AT sequence `AT+TM`, `AT+BD..`, `AT+BM..`, `AT+CN00`, `AT+B501`, `AT+B401`, in this order | `uart_ordered`, `uart_contains "AT+B401"` |
+| the module got each command and answered as the BT201 manual says (`TM+BT201-BLE`, then `OK` for each setting) | `peripheral_log` LPUART5 `at`: `AT+TM -> TM+BT201-BLE`, `AT+BDFB200 Audio -> OK`, ... |
+| a phone connects (script, 6.72 G): classic `TS+01`, BLE `TL+03` | `peripheral_log` LPUART5 `link` |
+| the firmware parsed the module's `TS+01`: DTCM `0x2000782D` = `'1'` (the display-dot state, UI_AND_STORAGE.md section 4) | `memory_value` `0x2000782C` mask `0xFF00` = `0x3100` |
+| the phone sends "get version" over BLE (6.73 G); the firmware answers on the BLE transport and the module sends the answer to the phone | `peripheral_log` LPUART5 `air`: `phone->mcu aa 55 01 00 00 c8 cf`, `mcu->phone aa 55 38 00 01 46 42 32 30 30 00` |
 | the first display screen of the main loop, `P.0.A.` | `peripheral_log` display `text`: `"P.0.A."` |
 | no fidelity gap, run not stopped early | `fidelity_clean`, stop reason `max_cycles` |
 
-The Bluetooth module is not modelled: nothing answers the AT commands. The
-firmware does not wait for `OK`, so the sequence is complete anyway.
+The Bluetooth module is the core `bt201` part (system.yaml, id `bt`): a
+BT201 (Jieli KT1025A) as its V2.3 manual describes it. It answers the AT
+commands, pushes its link status (`TS+..`, `TL+..`) and passes BLE data
+through while a phone is connected. The phone is scripted in the gate:
+`stimuli` set the links (`edr_link`, `ble_link`) and `uart_injections` with
+`device: bt` is data the phone writes. The frame bytes in the gate are
+`fb200.protocol.pack_frame` output; `tests/test_labwired_gates.py` checks
+that. The console connector stays as a tap: `uart.log` has what the
+firmware sent to the module.
 
-Negative control: the same run with each new expected value changed (an
+What the stock does with the module's answers (UI_AND_STORAGE.md section 4):
+it parses `TS+nn` / `TL+nn` in its LPUART5 RX handler, and the `TS` state
+drives the display dot. It does not check `OK`. It compares the `AT+TM`
+answer with `FB200` to skip the name commands, which never matches a BT201
+(`TM+<name>`), so it sends the whole sequence at every boot.
+
+Negative control for the Bluetooth checks (2026-09-29): the same run
+without the phone stimuli and with `AT+TM -> TM+FB200FB200` expected (a name
+the module uses only after a reset) fails exactly the six checks that need
+the module or the phone (`FAIL 17/23`): the `AT+TM` answer, `TS+01` and
+`TL+03`, the `TS` byte (still `'0'`, from the module's `TS+00` at power-on),
+and both `air` lines (the phone's frame is logged `phone->mcu dropped (no ble
+link)`). The passing run took 8190 s of wall time (2033 s CPU, 1.15 GB peak)
+on a loaded Mac.
+
+Negative control (earlier): the same run with each new expected value changed (an
 erase and a program of F:0x10000 and F:0xB1000, `FB21`, `1`, `B02`,
 `AT+BD` before `AT+TM`, `AT+B402`) fails all nine of these checks
 (`FAIL 2/11`; only `fidelity_clean` and the stop reason pass). The same
