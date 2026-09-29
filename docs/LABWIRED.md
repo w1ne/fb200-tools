@@ -27,7 +27,7 @@ has no FB200 special cases.
 The i.MX RT parts and the `peripheral_log` and `fidelity_clean` assertions
 are on core `main` (PRs #1254 and #1255) and are not released yet. The
 NAU88L21 codec part and device logs (`peripheral_log` with a device id) need
-the core branch `feat/nau88l21-codec` until it is merged. Until the next core
+core PR #1272 (branch `feat/nau88l21-codec`) until it is merged. Until the next core
 release, build the CLI from `main`:
 
 ```bash
