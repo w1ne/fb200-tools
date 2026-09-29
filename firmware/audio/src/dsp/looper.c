@@ -392,6 +392,41 @@ COLD int looper_cmd(looper_t *lp, int a)
     }
 }
 
+COLD int looper_save(looper_t *lp, unsigned n)
+{
+    if (lp->state == LOOPER_OFF) return -2;
+    if (n >= 2u) return -1;
+    if (lp->state == LOOPER_EMPTY || lp->state == LOOPER_REC || lp->len == 0u) return -1;
+    if (lp->pend || writer_busy(lp)) return -6;
+    return ls_save(lp->ls, n, lp->len, lp->alt, lp->redo);
+}
+
+COLD int looper_load(looper_t *lp, unsigned n)
+{
+    if (lp->state == LOOPER_OFF) return -2;
+    if (n >= 2u) return -1;
+    if (lp->state == LOOPER_REC || lp->state == LOOPER_DUB) return -1;
+    if (lp->pend || writer_busy(lp)) return -6;
+    uint32_t len = 0;
+    int alt = 0, redo = 0;
+    int r = ls_load(lp->ls, n, &len, &alt, &redo);
+    if (r) return r;
+    lp->len = len;
+    lp->nfr = lp->io->nfr;
+    lp->state = LOOPER_STOP;
+    lp->pos = 0;
+    lp->rd_f = 0;
+    lp->alt = (uint8_t)(alt != 0);
+    lp->redo = (uint8_t)(redo != 0);
+    lp->sess = lp->mark = 0;
+    lp->xfade = 0;
+    lp->pend = lp->dub_req = 0;
+    lp->dub_g = lp->dub_t = 0.0f;
+    lp->out_g = lp->out_t = 0.0f;
+    lp->passes = 0;
+    return 0;
+}
+
 COLD void looper_poll(looper_t *lp)
 {
     if (lp->state == LOOPER_PLAY || lp->state == LOOPER_DUB) {

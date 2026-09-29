@@ -45,6 +45,12 @@ uint32_t flash_loop_end(void);
  * 0 on success; -1 bad range, -2 erase failed, -3 program failed,
  * -4 read-back differs. */
 int flash_rmw(uint32_t offset, const void *data, uint32_t len);
+/* The same write, split so the caller can fill the bytes in the sector
+ * buffer (there is no second buffer). stage copies the sector and returns
+ * the slice; commit erases and programs it. NULL / -1 on a bad range.
+ * Not re-entered. The slice is valid until commit. */
+void *flash_rmw_stage(uint32_t offset, uint32_t len);
+int flash_rmw_commit(void);
 /* Poll the status register until WIP clears, running flash_pump() while the
  * flash is busy. 1 idle, 0 status read failed or timeout. */
 int flash_wait_idle(uint32_t timeout_ms);

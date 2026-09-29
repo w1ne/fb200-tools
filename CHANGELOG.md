@@ -32,8 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   suspend, so the audio and the UI never wait; a record or a dub that runs out of
   erased flash ends cleanly. Looper mode on the footswitches: hold D, then C long;
   A = record / play / overdub (acts when pressed), hold A = undo, B = stop/play,
-  hold B = clear; display and ring feedback. Console `loop`, `loop stats`, MCP
-  `looper`. The delay and long IRs stay available
+  hold B = clear; display and ring feedback. Console `loop`, `loop save|load <1-2>`
+  (two loops kept across power-off), `loop stats`, MCP `looper`. The delay and
+  long IRs stay available
   ([`docs/PARITY.md`](docs/PARITY.md#m8-looper)). Tested on the host with a
   simulated flash, not yet on a pedal.
 - `tools/engine_cycles.py --looper rec|play|dub`: the looper's cost per block.

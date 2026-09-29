@@ -41,7 +41,7 @@ ERROR_MARKERS = ("usage:", "unknown command", "bad ", "not allowed", "not availa
 CHAIN_SIGNALS = {"sine": "sine", "noise": "white", "impulse": "impulse"}
 USB_ROUTE_RE = re.compile(r"route=(out|in|mix)")
 CAB_MAX_TAPS = 4096       # dsp/conv2.h CONV2_MAX_TAPS
-LOOP_ACTIONS = ("rec", "play", "dub", "stop", "undo", "clear", "tap")
+LOOP_ACTIONS = ("rec", "play", "dub", "stop", "undo", "clear", "tap", "save", "load")
 LOOP_RE = re.compile(r"loop (off|empty|rec|play|dub|stop): len_ms=(\d+) pos_ms=(\d+) max_ms=(\d+) "
                      r"undo_max_ms=(\d+) undo=(none|undo|redo) level=(\d+) prep_ms=(\d+) "
                      r"flash=([01])")
@@ -498,17 +498,19 @@ class PedalTools:
         out["text"] = text
         return out
 
-    def looper(self, action: Literal["rec", "play", "dub", "stop", "undo", "clear", "tap"]
-               | None = None, level: int | None = None) -> dict:
+    def looper(self, action: Literal["rec", "play", "dub", "stop", "undo", "clear", "tap",
+                                      "save", "load"] | None = None,
+               level: int | None = None, slot: int | None = None) -> dict:
         """The looper (console `loop`): mono, after the reverb (records the
         processed sound), before the master volume; the loop is in the
         pedal's flash (up to max_ms, ~108 s). Actions: rec (start the first
         record; while recording: close the loop and play), play (close a
         record, end a dub, or restart from stop), dub (overdub from play),
         stop, undo (the whole last dub; again = redo), clear, tap (the
-        footswitch cycle rec -> play -> dub -> play). A dub over the whole
-        loop needs loops up to undo_max_ms (~54 s); a longer loop dubs until
-        the free flash runs out. level 0..100: loop playback level. No
+        footswitch cycle rec -> play -> dub -> play), save and load (slot
+        1 or 2: the loop survives power-off). A dub over the whole loop
+        needs loops up to undo_max_ms (~54 s); a longer loop dubs until the
+        free flash runs out. level 0..100: loop playback level. No
         arguments: the state. prepared_ms: erased flash ready for a record
         (a `rec` before it is ready is "not allowed now: preparing the
         flash": wait a moment). The loop runs in real time: record by
@@ -517,10 +519,17 @@ class PedalTools:
             raise InvalidArgumentError(f"action must be one of {', '.join(LOOP_ACTIONS)}")
         if level is not None and not 0 <= level <= 100:
             raise InvalidArgumentError("level must be 0..100")
+        if action in ("save", "load"):
+            if slot not in (1, 2):
+                raise InvalidArgumentError("slot must be 1 or 2")
+        elif slot is not None:
+            raise InvalidArgumentError("slot is only for save and load")
         cmds = []
         if level is not None:
             cmds.append(f"loop level {level}")
-        if action is not None:
+        if action in ("save", "load"):
+            cmds.append(f"loop {action} {slot}")
+        elif action is not None:
             cmds.append(f"loop {action}")
         text = ""
         for cmd in cmds or ["loop"]:

@@ -58,8 +58,16 @@ class FakeConsole:
                 lp["state"] = nxt
         elif len(args) > 1 and args[0] == "level":
             lp["level"] = int(args[1])
+        elif args and args[0] in ("save", "load"):
+            if len(args) < 2 or args[1] not in ("1", "2"):
+                return "usage: loop save <1-2> | loop load <1-2>"
+            if args[0] == "save" and lp["state"] in ("empty", "rec", "off"):
+                err = "loop save: not allowed now\r\n"
+            elif args[0] == "load":
+                lp["state"] = "stop"
         elif args:
-            return "usage: loop [rec|play|dub|stop|undo|clear|tap] | loop level <0-100> | loop stats"
+            return ("usage: loop [rec|play|dub|stop|undo|clear|tap] | loop save|load <1-2> | "
+                    "loop level <0-100> | loop stats")
         return (err + f"loop {lp['state']}: len_ms=0 pos_ms=0 max_ms=108299 "
                 f"undo_max_ms=54294 undo=none level={lp['level']} prep_ms=2310 flash=1")
 
@@ -338,6 +346,21 @@ def test_looper_state_and_actions(rig):
         tools.looper(level=101)
     with pytest.raises(InvalidArgumentError):
         tools.looper("record")                     # type: ignore[arg-type]
+
+
+def test_looper_save_load(rig):
+    tools, con, _hid = rig
+    tools.looper("rec")
+    tools.looper("rec")
+    tools.looper("stop")
+    con.sent.clear()
+    assert tools.looper("save", slot=1)["state"] == "stop"
+    assert tools.looper("load", slot=2)["state"] == "stop"
+    assert con.sent == ["loop save 1", "loop load 2"]
+    with pytest.raises(InvalidArgumentError):
+        tools.looper("save")
+    with pytest.raises(InvalidArgumentError):
+        tools.looper("load", slot=3)
 
 
 def test_parse_loop_firmware_text():

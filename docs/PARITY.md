@@ -402,7 +402,8 @@ are not recorded. Live sound passes at unity.
 `ef 40 17`), F:0x510000 to the end of the chip (`flash_capacity`, from the
 JEDEC ID and the FlexSPI window; at most F:0x800000): 2.94 MB. The bounds
 are in `debug/flash_rmw.h` (`FLASH_LOOP_*`); `flash_rmw` accepts the area.
-F:0x50F000 (one sector) is kept for a later `loop save` header. RAM holds
+F:0x50F000 (one sector) holds two `loop save` records (the chunk maps, the
+length and the undo flag). RAM holds
 only two rings of 16 frames between the audio and the flash side
 (`loopstore/loopio.h`, DTCM) and the flash side's maps (OCRAM). The delay and
 the long-IR cab keep their RAM.
@@ -461,9 +462,12 @@ slots to start (`loop rec` answers "preparing the flash" before that,
 **Lengths.** Record: up to 375 chunks = **108.3 s** (one slot is kept for
 the closing crossfade). Dub over the whole loop: a loop up to 188 chunks =
 **54.3 s** (it needs as many free slots as it touches); a longer loop dubs
-until the free slots run out. The shortest loop is 0.5 s. Power off: the
-loop is lost (nothing is read at boot: every slot is garbage until it is
-erased and written again).
+until the free slots run out. The shortest loop is 0.5 s. Power off: a
+loop that was not saved is lost. `loop save 1|2` writes the maps into
+F:0x50F000; those slots are not erased by `loop clear` or by erase-ahead.
+`loop load 1|2` installs that loop, stopped at the start. At boot the
+records are read and their slots stay protected. A new recording takes
+erased slots only, so a saved loop remains until that record is saved over.
 
 **Behaviour.** First record: A press to A press sets the length
 (sample-accurate at 22.05 kHz; the wrap is at that sample, no drift, host
@@ -514,12 +518,12 @@ pressed (record, close, punch out, restart), a tap of A while playing dubs
 hold B = clear. Display `rEC`, `PLY`, `odb`, `StP`, `Und`/`rdo`, `CLr`,
 `PrP` (the flash is not ready yet); ring A red/green/orange with a white
 flash at each loop start, ring B blue while a loop exists. Console `loop`
-(`prep_ms` = erased flash ready), `loop stats` (JEDEC, slots, programs,
+(`prep_ms` = erased flash ready), `loop save|load <1-2>` (two loops kept
+across power-off), `loop stats` (JEDEC, slots, programs,
 erases, suspends, underruns), MCP `looper`. `loop hq` is gone (the flash
 format is better than hq was).
 
-Open: the pedal check (hardware checklist in the PR); `loop save <n>` /
-`load <n>` (a header in F:0x50F000 and a copy of the maps); drum sync
+Open: the pedal check (hardware checklist in the PR); drum sync
 (quantise the loop length to bars); a stereo loop.
 
 ### M4: bass delay

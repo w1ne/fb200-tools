@@ -167,12 +167,14 @@ loop playing: presets and knobs work as usual, come back to stop or clear it.
   for loops up to 54 s; a longer loop dubs until the free flash runs out (the dub
   fades out). Undo takes back the whole last dub; again = redo. The record closes by
   itself when the flash is full.
-- **Flash:** the loop is lost at power off (nothing is saved yet). While a loop
-  exists, the automatic settings saves wait; a preset save during a record or a dub
-  is refused (try again after it).
+- **Flash:** `loop save 1|2` keeps that loop across power-off (two slots).
+  `loop load 1|2` brings it back, stopped at the start. A loop that was not
+  saved is lost. While a loop exists, the automatic settings saves wait; a
+  preset save during a record or a dub is refused (try again after it).
 - **Console:** `loop` (state; `prep_ms` = erased flash ready for a record),
-  `loop rec|play|dub|stop|undo|clear|tap`, `loop level <0-100>` (loop playback
-  level), `loop stats` (flash counters). MCP: the `looper` tool.
+  `loop rec|play|dub|stop|undo|clear|tap`, `loop save|load <1-2>`,
+  `loop level <0-100>` (loop playback level), `loop stats` (flash counters).
+  MCP: the `looper` tool.
 
 ## Host tools
 

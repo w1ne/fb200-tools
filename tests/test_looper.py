@@ -20,7 +20,7 @@ from test_dsp_host import FW
 pytestmark = pytest.mark.skipif(shutil.which("cc") is None, reason="host C compiler not installed")
 
 SRC = [FW / "src" / p for p in ("dsp/looper.c", "dsp/loopcodec.c", "loopstore/loopstore.c",
-                                "loopstore/lsio.c", "debug/flash_rmw.c")]
+                                "loopstore/lsio.c", "debug/flash_rmw.c", "crc32.c")]
 TESTS = [FW / "tests" / "looper_host_test.c", FW / "tests" / "loopflash_sim.c"]
 
 

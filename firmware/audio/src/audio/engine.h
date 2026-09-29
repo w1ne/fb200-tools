@@ -90,6 +90,9 @@ void engine_ir_release(void);
 #include "dsp/looper.h"
 #include "loopstore/loopstore.h"
 int engine_loop(int action);
+/* loop save / load, record n = 0 or 1 (console slots 1 and 2). */
+int engine_loop_save(unsigned n);
+int engine_loop_load(unsigned n);
 void engine_loop_poll(void);
 void engine_loop_info(looper_info_t *out);
 void engine_loop_level(unsigned pct);  /* 0..100 */

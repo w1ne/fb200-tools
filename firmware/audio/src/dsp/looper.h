@@ -108,6 +108,12 @@ void looper_init(looper_t *lp, loopio_t *io, struct loopstore *ls);
 /* 0 ok, -1 not now, -2 no flash area (OFF), -3 not ready (the flash is
  * still being erased: try again) */
 int looper_cmd(looper_t *lp, int action);
+/* Save or load record n (0 or 1). Save keeps the current loop (not while
+ * recording, empty, or while the writer is busy). Load installs it and
+ * stops at frame 0. 0 ok, -1 nothing to save or no record, -2 no flash
+ * area, -5 flash write failed, -6 writer busy. */
+int looper_save(looper_t *lp, unsigned n);
+int looper_load(looper_t *lp, unsigned n);
 void looper_poll(looper_t *lp);                  /* main loop: finish the fades */
 void looper_set_level(looper_t *lp, unsigned pct);   /* 0..100 = 0..unity */
 void looper_info(const looper_t *lp, looper_info_t *out);

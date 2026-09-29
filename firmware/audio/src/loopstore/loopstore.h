@@ -24,9 +24,11 @@
  * would need a slot the pool does not have ends cleanly (loopio.h pool,
  * alloc; dsp/looper.c).
  *
- * Nothing persistent: at boot every slot is garbage (ls_init); nothing
- * reads the area until it is erased and written again. FLASH_LOOP_META is
- * kept free for a later `loop save`.
+ * `loop save` (ls_save): two records in the sector at FLASH_LOOP_META.
+ * Each is the loop's maps, so the audio in those slots survives power-off.
+ * ls_init marks those slots and erase-ahead will not touch them. `loop
+ * clear` drops the live loop only. A new recording takes erased slots, so
+ * a saved loop stays until that record is saved over.
  *
  * Threads: ls_task and the ls_* control calls run in the main loop (COLD,
  * XIP: the flash is never busy while they run, lsio.h). The audio side
@@ -91,6 +93,13 @@ void ls_rec_begin(loopstore_t *ls);          /* forget the loop; read from frame
 void ls_dub_begin(loopstore_t *ls);          /* alt = cur (the undo point) */
 void ls_swap(loopstore_t *ls, uint32_t next_f);   /* undo / redo */
 void ls_clear(loopstore_t *ls);
+/* Store or install record n (0 or 1; the console's slots 1 and 2). The
+ * record is the maps, the length and the undo flag. Save refuses a busy
+ * writer. Load installs the maps and leaves the slots claimed.
+ * 0 ok, -1 bad n / nothing to save / no record, -2 no area, -5 the flash
+ * write failed, -6 the writer is busy. */
+int ls_save(loopstore_t *ls, unsigned n, uint32_t len, int alt_valid, int redo);
+int ls_load(loopstore_t *ls, unsigned n, uint32_t *len, int *alt_valid, int *redo);
 void ls_play_from(loopstore_t *ls, uint32_t f);   /* the read stream restarts at frame f */
 int ls_writer_idle(const loopstore_t *ls);   /* the write ring is empty, no chunk open */
 /* work to do now (writes, erases): the main loop should not sleep. Inline:

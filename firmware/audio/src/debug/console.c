@@ -158,7 +158,8 @@ static void cmd_help(void)
              "          preset [0-39] | save | factory [yes] | rgb 0xRRGGBB [led] | rgb cfg 0xIIS0S1\r\n"
              "  bt    : bt | bt send <AT+...> | btaudio\r\n"
              "  music : stock | tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>]\r\n"
-             "  loop  : loop [rec|play|dub|stop|undo|clear|tap] | loop level <0-100> | loop stats\r\n"
+             "  loop  : loop [rec|play|dub|stop|undo|clear|tap] | loop save|load <1-2>\r\n"
+             "          loop level <0-100> | loop stats\r\n"
              "  delay : delay [on|off] [time " XSTR(DELAY_MS_MIN) "-" XSTR(DELAY_MS_MAX) " ms] [fb 0-100] [mix 0-100] [lowcut 0-100] [tone 0-100]\r\n"
              "  eq    : eq [on|off] | eq hpf <20-200 Hz|0> | eq lpf <2000-20000 Hz|0>\r\n"
              "          eq <band 1-5> <30-10000 Hz> <gain -15..15 dB> [q 0.3-4]\r\n"
@@ -229,10 +230,11 @@ static void cmd_delay(int argc, char **argv)
                v[0], v[1], v[2], v[3], (int)hz, v[4], v[4] >= 100u ? " (off)" : "");
 }
 
-/* loop [rec|play|dub|stop|undo|clear|tap] | loop level <0-100> | loop
- * stats: the looper (dsp/looper.h, the loop in the flash:
- * loopstore/loopstore.h), then its state. prep_ms: erased flash ready to
- * record into. `loop stats`: the flash side's counters. */
+/* loop [rec|play|dub|stop|undo|clear|tap] | loop save|load <1-2> | loop
+ * level <0-100> | loop stats: the looper (dsp/looper.h, the loop in the
+ * flash: loopstore/loopstore.h), then its state. prep_ms: erased flash
+ * ready to record into. save/load: two loops kept across power-off.
+ * `loop stats`: the flash side's counters. */
 static void cmd_loop_stats(void)
 {
     engine_loop_stats_t st;
@@ -262,12 +264,27 @@ static void cmd_loop(int argc, char **argv)
     static const char *const kAct[] = {"tap", "rec", "play", "dub", "stop", "undo", "clear"};
     static const char *const kState[] = {"off", "empty", "rec", "play", "dub", "stop"};
     static const char *const kUndo[] = {"none", "undo", "redo"};
+    static const char *kUse =
+        "usage: loop [rec|play|dub|stop|undo|clear|tap] | loop save|load <1-2> | "
+        "loop level <0-100> | loop stats\r\n";
     int r = 0;
+    unsigned slot = 0;
+    int stored = 0;                 /* 1 save, 2 load */
     if (argc > 1) {
         int a = -1;
         for (int i = 0; i < 7; i++) if (streq(argv[1], kAct[i])) a = i;
         if (a >= 0) {
             r = engine_loop(a);
+        } else if ((streq(argv[1], "save") || streq(argv[1], "load")) && argc > 2) {
+            int ok;
+            uint32_t n = parse_num(argv[2], &ok);
+            if (!ok || n < 1u || n > 2u) {
+                log_printf("usage: loop save <1-2> | loop load <1-2>\r\n");
+                return;
+            }
+            slot = (unsigned)n;
+            stored = streq(argv[1], "save") ? 1 : 2;
+            r = stored == 1 ? engine_loop_save(n - 1u) : engine_loop_load(n - 1u);
         } else if (streq(argv[1], "level") && argc > 2) {
             int ok;
             uint32_t n = parse_num(argv[2], &ok);
@@ -280,7 +297,7 @@ static void cmd_loop(int argc, char **argv)
             cmd_loop_stats();
             return;
         } else {
-            log_printf("usage: loop [rec|play|dub|stop|undo|clear|tap] | loop level <0-100> | loop stats\r\n");
+            log_printf("%s", kUse);
             return;
         }
     }
@@ -290,7 +307,10 @@ static void cmd_loop(int argc, char **argv)
         log_printf("loop %s: %s\r\n", argv[1],
                    r == -2 ? "not available (no flash area for loops)"
                    : r == -3 ? "not allowed now: preparing the flash, try again in a moment"
+                   : r == -5 ? "bad flash write"
                    : "not allowed now");
+    } else if (stored) {
+        log_printf("loop %s %u: ok\r\n", stored == 1 ? "save" : "load", slot);
     }
     log_printf("loop %s: len_ms=%u pos_ms=%u max_ms=%u undo_max_ms=%u undo=%s level=%u "
                "prep_ms=%u flash=%d\r\n", kState[in.state <= LOOPER_STOP ? in.state : 0],

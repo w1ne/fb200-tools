@@ -340,6 +340,8 @@ COLD void engine_apply_settings(const settings_t *s)
 }
 
 COLD int engine_loop(int action) { return looper_cmd(&s_loop, action); }
+COLD int engine_loop_save(unsigned n) { return looper_save(&s_loop, n); }
+COLD int engine_loop_load(unsigned n) { return looper_load(&s_loop, n); }
 COLD void engine_loop_poll(void) { looper_poll(&s_loop); }
 COLD void engine_loop_info(looper_info_t *out) { looper_info(&s_loop, out); }
 COLD void engine_loop_level(unsigned pct) { looper_set_level(&s_loop, pct); }

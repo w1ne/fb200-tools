@@ -70,7 +70,10 @@ static void update(void)
 
 static int in_area(uint32_t off, uint32_t len)
 {
-    return off >= FLASH_LOOP_BASE && off + len <= SIZE && len <= SIZE;
+    if (len == 0u || off + len < off || off + len > SIZE) return 0;
+    if (off >= FLASH_LOOP_BASE) return 1;
+    /* the loop-save sector, and nothing between it and the loop area */
+    return off >= FLASH_LOOP_META && off + len <= FLASH_LOOP_BASE;
 }
 
 /* a command other than status/suspend: allowed now? */
@@ -88,7 +91,11 @@ static int free_for(const char *what, uint32_t off, uint32_t len)
     return 1;
 }
 
-int flash_cmd_init(void) { return 1; }
+int flash_cmd_init(void)
+{
+    lsio_quiesce();   /* same as the pedal: a suspended erase ends first */
+    return 1;
+}
 
 int flash_write_enable(void)
 {

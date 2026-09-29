@@ -39,7 +39,8 @@ SP = BASE + 0x1E0000
 GROUPS = ["BasicMathFunctions", "ComplexMathFunctions", "FastMathFunctions",
           "FilteringFunctions", "TransformFunctions", "SupportFunctions", "CommonTables"]
 DSP_SRC = ["dsp/amp.c", "dsp/tone.c", "dsp/cab.c", "dsp/conv.c", "dsp/conv2.c", "dsp/looper.c",
-           "dsp/loopcodec.c", "loopstore/loopstore.c", "loopstore/lsio.c", "debug/flash_rmw.c"]
+           "dsp/loopcodec.c", "loopstore/loopstore.c", "loopstore/lsio.c", "debug/flash_rmw.c",
+           "crc32.c"]
 NO_CONTRACT = {"amp.c", "tone.c", "cab.c", "FilteringFunctions.c"}   # Makefile STOCK_OBJS
 FLAGS = ["-mcpu=cortex-m7", "-mthumb", "-mfloat-abi=hard", "-mfpu=fpv5-d16", "-O2",
          "-ffreestanding", "-fno-builtin", "-ffunction-sections", "-fdata-sections",

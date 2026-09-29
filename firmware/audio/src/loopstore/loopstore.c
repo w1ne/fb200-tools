@@ -1,9 +1,41 @@
 /* The looper's flash side: see loopstore.h. Main loop code, cold (the
  * Makefile's COLD_SRC: XIP): it runs only while the flash is idle or its
  * erase is suspended (lsio.h). */
+#include <stddef.h>
 #include <string.h>
 #include "loopstore/loopstore.h"
 #include "loopstore/lsio.h"
+#include "crc32.h"
+
+/* Two records in the one sector at FLASH_LOOP_META, 2048 bytes apart.
+ * crc32 is of these bytes with the crc field zero. Slots past the loop
+ * are LS_NONE, and so is alt[] when the undo map is not valid, so a
+ * record never protects a slot it does not use. */
+#define LS_SAVE_MAGIC  0x534C4246u   /* 'FBLS' */
+#define LS_SAVE_VER    1u
+#define LS_SAVE_ALT    1u
+#define LS_SAVE_REDO   2u
+#define LS_SAVE_N      2u
+#define LS_SAVE_STRIDE 2048u
+
+typedef struct {
+    uint32_t magic;
+    uint16_t ver;
+    uint16_t flags;
+    uint32_t len;
+    uint32_t nfr;
+    uint32_t crc;
+    uint16_t cur[LS_MAX_CHUNKS];
+    uint16_t alt[LS_MAX_CHUNKS];
+} ls_rec_t;
+
+_Static_assert(sizeof(ls_rec_t) == 1524u, "loop save record");
+_Static_assert(offsetof(ls_rec_t, crc) == 16u, "loop save crc");
+
+/* One looper. Not on loopstore_t: that struct is in OCRAM, which has no
+ * room, and a copy of the record would push the delay line into the stack. */
+static uint8_t s_saved[(LS_MAX_CHUNKS + 7u) / 8u];
+static void ls_protect_saved(loopstore_t *ls);
 
 static inline int bit(const uint8_t *b, unsigned i) { return (b[i >> 3] >> (i & 7u)) & 1; }
 
@@ -20,10 +52,11 @@ static inline uint32_t slot_off(const loopstore_t *ls, unsigned s)
 
 static void publish_pool(loopstore_t *ls) { ls->io->pool = ls->pool; }
 
-/* not in a map, not erased, not the writer's, not being erased */
+/* not in a map, not a saved loop's slot, not erased, not the writer's,
+ * not being erased */
 static int garbage(const loopstore_t *ls, unsigned s)
 {
-    if (bit(ls->erased, s) || bit(ls->used, s)) return 0;
+    if (bit(ls->erased, s) || bit(ls->used, s) || bit(s_saved, s)) return 0;
     if (ls->w_phase && s == ls->w_slot) return 0;
     if (ls->j_on && s == ls->j_slot) return 0;
     if (ls->er_on && s >= ls->er_slot && s < (unsigned)ls->er_slot + ls->er_n) return 0;
@@ -34,6 +67,7 @@ int ls_init(loopstore_t *ls, loopio_t *io, uint16_t *cur, uint16_t *alt, uint32_
                  uint32_t end)
 {
     memset(ls, 0, sizeof *ls);
+    memset(s_saved, 0, sizeof s_saved);
     memset(io, 0, sizeof *io);
     ls->io = io;
     ls->cur = cur;
@@ -47,6 +81,7 @@ int ls_init(loopstore_t *ls, loopio_t *io, uint16_t *cur, uint16_t *alt, uint32_
         ls->nch = 0;
         return -1;
     }
+    ls_protect_saved(ls);            /* before any erase-ahead */
     return 0;
 }
 
@@ -340,7 +375,7 @@ static void forget(loopstore_t *ls)
 {
     abort_writer(ls);
     for (unsigned i = 0; i < LS_MAX_CHUNKS; i++) ls->cur[i] = ls->alt[i] = LS_NONE;
-    memset(ls->used, 0, sizeof ls->used);
+    memset(ls->used, 0, sizeof ls->used);   /* s_saved stays: clear does not erase a saved loop */
     ls->io->nfr = 0;
 }
 
@@ -389,6 +424,182 @@ void ls_swap(loopstore_t *ls, uint32_t next_f)
 int ls_writer_idle(const loopstore_t *ls)
 {
     return ls->io->wr_head == ls->io->wr_tail && ls->w_phase == 0u && !ls->j_on;
+}
+
+/* ------------------------------------------------------------ loop save */
+
+static unsigned chunks_of(uint32_t nfr)
+{
+    return (nfr + LS_FPC - 1u) / LS_FPC;
+}
+
+static int slot_ok(const loopstore_t *ls, uint16_t s)
+{
+    return s == LS_NONE || s < ls->nch;
+}
+
+/* The record is read and written as bytes (memcpy). It lives in the flash
+ * and in the sector buffer, which are not ls_rec_t objects. */
+static uint16_t ru16(const uint8_t *p) { uint16_t v; memcpy(&v, p, 2); return v; }
+static uint32_t ru32(const uint8_t *p) { uint32_t v; memcpy(&v, p, 4); return v; }
+static void wu16(uint8_t *p, uint16_t v) { memcpy(p, &v, 2); }
+static void wu32(uint8_t *p, uint32_t v) { memcpy(p, &v, 4); }
+
+#define REC_CUR 20u
+#define REC_ALT (20u + LS_MAX_CHUNKS * 2u)
+
+static uint16_t rec_slot(const uint8_t *r, unsigned which, unsigned i)
+{
+    return ru16(r + (which ? REC_ALT : REC_CUR) + i * 2u);
+}
+
+/* CRC of the record with the crc field read as zero. Does not write. */
+static uint32_t crc_rec(const uint8_t *p)
+{
+    uint8_t z[4] = {0, 0, 0, 0};
+    uint32_t c = crc32_ieee_update(0xFFFFFFFFu, p, 16u);
+    c = crc32_ieee_update(c, z, 4u);
+    c = crc32_ieee_update(c, p + 20u, (uint32_t)sizeof(ls_rec_t) - 20u);
+    return ~c;
+}
+
+static const uint8_t *mapped_rec(unsigned n)
+{
+    const uint8_t *p = (const uint8_t *)flash_map(FLASH_LOOP_META);
+    return p + (uint32_t)n * LS_SAVE_STRIDE;
+}
+
+static int rec_ok(const loopstore_t *ls, const uint8_t *r)
+{
+    if (ru32(r) != LS_SAVE_MAGIC || ru16(r + 4u) != LS_SAVE_VER) return 0;
+    if (crc_rec(r) != ru32(r + 16u)) return 0;
+    uint32_t nfr = ru32(r + 12u), len = ru32(r + 8u);
+    if (nfr == 0u || nfr > (uint32_t)ls->nch * LS_FPC) return 0;
+    if (len == 0u || len > nfr * LC_N || len <= (nfr - 1u) * LC_N) return 0;
+    unsigned nc = chunks_of(nfr);
+    if (nc == 0u || nc > ls->nch) return 0;
+    int alt = (ru16(r + 6u) & LS_SAVE_ALT) != 0;
+    for (unsigned i = 0; i < LS_MAX_CHUNKS; i++) {
+        uint16_t c = rec_slot(r, 0, i), a = rec_slot(r, 1, i);
+        if (!slot_ok(ls, c) || !slot_ok(ls, a)) return 0;
+        if (i >= nc && (c != LS_NONE || a != LS_NONE)) return 0;
+        if (!alt && a != LS_NONE) return 0;
+    }
+    return 1;
+}
+
+static void mark_saved(const uint8_t *r)
+{
+    unsigned nc = chunks_of(ru32(r + 12u));
+    int alt = (ru16(r + 6u) & LS_SAVE_ALT) != 0;
+    for (unsigned i = 0; i < nc; i++) {
+        uint16_t c = rec_slot(r, 0, i), a = rec_slot(r, 1, i);
+        if (c != LS_NONE) put(s_saved, c, 1);
+        if (alt && a != LS_NONE) put(s_saved, a, 1);
+    }
+}
+
+static void claim_slot(loopstore_t *ls, uint16_t s)
+{
+    if (s == LS_NONE || s >= ls->nch) return;
+    put(ls->used, s, 1);
+    if (bit(ls->erased, s)) {
+        put(ls->erased, s, 0);
+        if (ls->pool) ls->pool--;
+    }
+}
+
+/* The bench's flash is not this area (base 0, no capacity): do not read it. */
+static void ls_protect_saved(loopstore_t *ls)
+{
+    memset(s_saved, 0, sizeof s_saved);
+    if (ls->base != FLASH_LOOP_BASE || ls->nch == 0u) return;
+    if (flash_capacity() < FLASH_LOOP_META + FLASH_SECTOR) return;
+    for (unsigned n = 0; n < LS_SAVE_N; n++) {
+        const uint8_t *r = mapped_rec(n);
+        if (rec_ok(ls, r)) mark_saved(r);
+    }
+}
+
+int ls_save(loopstore_t *ls, unsigned n, uint32_t len, int alt_valid, int redo)
+{
+    if (n >= LS_SAVE_N) return -1;
+    if (ls->nch == 0u || ls->base != FLASH_LOOP_BASE) return -2;
+    if (!ls_writer_idle(ls)) return -6;
+    uint32_t nfr = ls->io->nfr;
+    unsigned nc = chunks_of(nfr);
+    if (len == 0u || nfr == 0u || nc == 0u || nc > ls->nch ||
+        nfr > (uint32_t)ls->nch * LS_FPC || len > nfr * LC_N ||
+        len <= (nfr - 1u) * LC_N) {
+        return -1;
+    }
+    lsio_quiesce();                 /* a suspended erase ends before the sector write */
+    memset(s_saved, 0, sizeof s_saved);
+    {
+        const uint8_t *other = mapped_rec(n ^ 1u);
+        if (rec_ok(ls, other)) mark_saved(other);
+    }
+    /* Built in the sector buffer. A second 1524-byte copy does not fit:
+     * DTCM has 140 bytes under the stack. */
+    uint8_t *r = flash_rmw_stage(FLASH_LOOP_META + (uint32_t)n * LS_SAVE_STRIDE,
+                                 sizeof(ls_rec_t));
+    if (!r) {
+        ls_protect_saved(ls);
+        return -5;
+    }
+    memset(r, 0, sizeof(ls_rec_t));
+    wu32(r, LS_SAVE_MAGIC);
+    wu16(r + 4u, LS_SAVE_VER);
+    if (alt_valid) wu16(r + 6u, (uint16_t)(LS_SAVE_ALT | (redo ? LS_SAVE_REDO : 0)));
+    wu32(r + 8u, len);
+    wu32(r + 12u, nfr);
+    for (unsigned i = 0; i < LS_MAX_CHUNKS; i++) {
+        uint16_t c = i < nc ? ls->cur[i] : LS_NONE;
+        uint16_t a = (alt_valid && i < nc) ? ls->alt[i] : LS_NONE;
+        if (!slot_ok(ls, c) || !slot_ok(ls, a)) {
+            ls_protect_saved(ls);
+            return -1;
+        }
+        wu16(r + REC_CUR + i * 2u, c);
+        wu16(r + REC_ALT + i * 2u, a);
+    }
+    wu32(r + 16u, crc_rec(r));
+    if (flash_rmw_commit() != 0) {
+        ls_protect_saved(ls);
+        return -5;
+    }
+    mark_saved(r);
+    return 0;
+}
+
+int ls_load(loopstore_t *ls, unsigned n, uint32_t *len, int *alt_valid, int *redo)
+{
+    if (n >= LS_SAVE_N) return -1;
+    if (ls->nch == 0u || ls->base != FLASH_LOOP_BASE) return -2;
+    if (!ls_writer_idle(ls)) return -6;
+    lsio_quiesce();
+    const uint8_t *r = mapped_rec(n);
+    if (!rec_ok(ls, r)) return -1;
+    unsigned nc = chunks_of(ru32(r + 12u));
+    int alt = (ru16(r + 6u) & LS_SAVE_ALT) != 0;
+    uint32_t got = ru32(r + 8u);
+    int is_redo = alt && (ru16(r + 6u) & LS_SAVE_REDO) != 0;
+    uint32_t nfr = ru32(r + 12u);
+    forget(ls);
+    for (unsigned i = 0; i < nc; i++) {
+        ls->cur[i] = rec_slot(r, 0, i);
+        ls->alt[i] = alt ? rec_slot(r, 1, i) : LS_NONE;
+        claim_slot(ls, ls->cur[i]);
+        claim_slot(ls, ls->alt[i]);
+    }
+    publish_pool(ls);
+    ls->io->nfr = nfr;
+    ls->dirty = 1;
+    ls_play_from(ls, 0);
+    if (len) *len = got;
+    if (alt_valid) *alt_valid = alt;
+    if (redo) *redo = is_redo;
+    return 0;
 }
 
 void ls_info(const loopstore_t *ls, ls_info_t *out)

@@ -201,8 +201,8 @@ would read our copy as its data. The stock format itself has no spare room
 | 0x400000 | 0x2000 | ours: long IR slot table, 2 copies of 4 KB (A, B) |
 | 0x402000 + s x 0x4000 | 0x4000 | ours: long IR slot s = cab type 20 + s (s 0..63), float32 taps |
 | 0x502000 | - | end of the long IR store |
-| 0x50F000 | 0x1000 | ours: looper loop-save header (one sector; not written yet) |
-| 0x510000 | to the chip end (0x2F0000 on 8 MB) | ours: the looper's loops (`loopstore/loopstore.h`; lost at power off) |
+| 0x50F000 | 0x1000 | ours: looper `loop save` (one sector, two records of the chunk maps) |
+| 0x510000 | to the chip end (0x2F0000 on 8 MB) | ours: the looper's loops (`loopstore/loopstore.h`; a saved loop survives power off) |
 
 **Long IR store** (ours, `firmware/audio/src/irstore/irstore.h`). The chip
 size is not verified yet (console `jedec`; `docs/HARDWARE.md`): the store

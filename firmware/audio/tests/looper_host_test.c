@@ -652,8 +652,112 @@ static void test_full_area(void)
     free(x);
 }
 
-/* Nothing reads the area at boot, and a record right after boot waits for
- * the first erases (not ready), then works. A chip too small: no looper. */
+/* Two stored loops survive clear, erase-ahead and a reboot. The header
+ * is the sector at FLASH_LOOP_META; the audio stays in its slots. */
+static void test_save(void)
+{
+    const double fa = 220.0, fb = 330.0, a = 0.2;
+    fresh(&SIM_TYPICAL);
+    prep();
+    assert(looper_save(&lp, 0) == -1);             /* empty */
+    float *xa = sine(SEC, fa, a, 0), *xb = sine(SEC, fb, a, 0);
+    float *y = malloc(B(2 * SEC) * sizeof *y);
+    assert(looper_cmd(&lp, LOOPER_REC_A) == 0);
+    assert(looper_save(&lp, 0) == -1);             /* recording */
+    run(xa, NULL, SEC);
+    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
+    run(NULL, NULL, 8192);
+    idle_flash();
+    assert(looper_cmd(&lp, LOOPER_STOP_A) == 0);
+    run(NULL, NULL, 8192);
+    idle_flash();
+    assert(lp.state == LOOPER_STOP);
+    assert(looper_save(&lp, 0) == 0 && looper_save(&lp, 2) == -1);
+
+    assert(looper_cmd(&lp, LOOPER_CLEAR_A) == 0);
+    prep();
+    assert(looper_cmd(&lp, LOOPER_REC_A) == 0);
+    run(xb, NULL, SEC);
+    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
+    run(NULL, NULL, 8192);
+    idle_flash();
+    assert(looper_cmd(&lp, LOOPER_STOP_A) == 0);
+    run(NULL, NULL, 8192);
+    idle_flash();
+    assert(looper_save(&lp, 1) == 0);
+
+    assert(looper_cmd(&lp, LOOPER_CLEAR_A) == 0);
+    prep_n(16);                                    /* must not erase a saved slot */
+    assert(looper_load(&lp, 0) == 0 && lp.state == LOOPER_STOP);
+    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
+    run(NULL, y, B(2 * SEC));
+    assert(fabs(amp_at(y, 8000, 22050, fa) - a) < 0.02);
+    assert(amp_at(y, 8000, 22050, fb) < 0.01);
+
+    assert(looper_cmd(&lp, LOOPER_STOP_A) == 0);
+    run(NULL, NULL, 8192);
+    idle_flash();
+    assert(looper_load(&lp, 1) == 0);
+    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
+    run(NULL, y, B(2 * SEC));
+    assert(fabs(amp_at(y, 8000, 22050, fb) - a) < 0.02);
+    assert(amp_at(y, 8000, 22050, fa) < 0.01);
+
+    /* a dub, saved: undo brings the first loop back after a clear */
+    assert(looper_cmd(&lp, LOOPER_STOP_A) == 0);
+    run(NULL, NULL, 8192);
+    idle_flash();
+    assert(looper_load(&lp, 0) == 0);
+    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
+    run(NULL, NULL, 8192);
+    assert(looper_cmd(&lp, LOOPER_DUB_A) == 0);
+    run(xb, NULL, 8192);
+    assert(looper_cmd(&lp, LOOPER_STOP_A) == 0);
+    run(NULL, NULL, 8192);
+    idle_flash();
+    assert(lp.alt && looper_save(&lp, 0) == 0);
+    assert(looper_cmd(&lp, LOOPER_CLEAR_A) == 0);
+    prep_n(16);
+    assert(looper_load(&lp, 0) == 0);
+    looper_info_t in;
+    looper_info(&lp, &in);
+    assert(in.undo == 1 && lp.state == LOOPER_STOP);
+    assert(looper_cmd(&lp, LOOPER_UNDO_A) == 0);
+    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
+    run(NULL, y, B(2 * SEC));
+    assert(fabs(amp_at(y, 8000, 22050, fa) - a) < 0.02);
+    assert(amp_at(y, 8000, 22050, fb) < 0.01);
+
+    uint8_t *rec = (uint8_t *)flash_map(FLASH_LOOP_META);
+    rec[2048 + 16] ^= 0xFFu;                       /* record 2: bad crc */
+    assert(looper_cmd(&lp, LOOPER_STOP_A) == 0);
+    run(NULL, NULL, 8192);
+    idle_flash();
+    assert(looper_load(&lp, 1) == -1);
+
+    sim_loop_setup(&lp);                           /* reboot: the flash stays */
+    ls = sim_loop_store();
+    io = sim_loop_io();
+    g_t0 = sim_us;
+    g_blk = 0;
+    prep_n(8);
+    assert(looper_load(&lp, 0) == 0);
+    looper_info(&lp, &in);
+    assert(in.undo == 1);
+    assert(looper_cmd(&lp, LOOPER_UNDO_A) == 0);
+    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
+    run(NULL, y, B(2 * SEC));
+    assert(fabs(amp_at(y, 8000, 22050, fa) - a) < 0.02);
+    assert(sim_errors == 0);
+    printf("save: two loops, undo, bad crc, reboot OK\n");
+    free(xa);
+    free(xb);
+    free(y);
+}
+
+/* Nothing reads the loop area at boot (the save header is not that area),
+ * and a record right after boot waits for the first erases (not ready),
+ * then works. A chip too small: no looper. */
 static void test_boot(void)
 {
     fresh(&SIM_TYPICAL);
@@ -703,6 +807,7 @@ int main(void)
     test_loop_points();
     test_no_click();
     test_states();
+    test_save();
     test_streaming();
     test_margin();
     test_full_area();

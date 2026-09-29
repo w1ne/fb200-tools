@@ -208,6 +208,8 @@ int engine_loop(int a)
     CHECK(a >= LOOPER_TAP && a <= LOOPER_CLEAR_A, "loop action %d", a);
     return looper_cmd(&loop, a);
 }
+int engine_loop_save(unsigned n) { return looper_save(&loop, n); }
+int engine_loop_load(unsigned n) { return looper_load(&loop, n); }
 void engine_loop_poll(void)
 {
     float l[DSP_BLOCK] = {0}, r[DSP_BLOCK] = {0};

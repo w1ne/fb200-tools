@@ -38,15 +38,26 @@ static int in_region(uint32_t offset, uint32_t len)
     return offset < end && len <= end - offset;
 }
 
-int flash_rmw(uint32_t offset, const void *data, uint32_t len)
+static uint32_t staged_off, staged_len;
+
+void *flash_rmw_stage(uint32_t offset, uint32_t len)
 {
     uint32_t sector = offset & ~(FLASH_SECTOR - 1u);
     if (sector == FLASH_UPDATE_FLAG || !in_region(offset, len) ||
         len > sector + FLASH_SECTOR - offset) {
-        return -1;
+        return 0;
     }
     memcpy(sector_buf, flash_map(sector), FLASH_SECTOR);
-    memcpy((uint8_t *)sector_buf + (offset - sector), data, len);
+    staged_off = offset;
+    staged_len = len;
+    return (uint8_t *)sector_buf + (offset - sector);
+}
+
+int flash_rmw_commit(void)
+{
+    uint32_t offset = staged_off, len = staged_len;
+    uint32_t sector = offset & ~(FLASH_SECTOR - 1u);
+    const uint8_t *slice = (const uint8_t *)sector_buf + (offset - sector);
     if (!flash_cmd_init() || !flash_write_enable() || !flash_cmd_erase(sector) ||
         !flash_wait_idle(2000u)) {
         return -2;
@@ -58,5 +69,13 @@ int flash_rmw(uint32_t offset, const void *data, uint32_t len)
         }
     }
     flash_refresh(sector, FLASH_SECTOR);
-    return memcmp(flash_map(offset), data, len) == 0 ? 0 : -4;
+    return memcmp(flash_map(offset), slice, len) == 0 ? 0 : -4;
+}
+
+int flash_rmw(uint32_t offset, const void *data, uint32_t len)
+{
+    void *p = flash_rmw_stage(offset, len);
+    if (!p) return -1;
+    memcpy(p, data, len);
+    return flash_rmw_commit();
 }
