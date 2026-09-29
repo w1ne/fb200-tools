@@ -40,6 +40,7 @@ static unsigned evq_n;
 static uint32_t clock_ms = 1000;
 void log_printf(const char *fmt, ...) { (void)fmt; }
 void wdog_feed(void) {}
+void power_activity(void) {}
 const stock_factory_t *g_stock_factory;
 static stock_factory_t fake_factory;
 void display_text(const char *s) { snprintf(disp, sizeof disp, "%s", s); }

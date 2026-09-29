@@ -355,8 +355,12 @@ void fw_rx_task(void)
  * BT name, update flag, IR names/flags and the 9 user IR slots at 0x89000 +
  * slot * 0x2800 (docs/UI_AND_STORAGE.md §5, docs/PROTOCOL.md). Not during an
  * update stream or after an app update erased the cold code. 0 on success. */
+static int store_blocked;
+void flash_store_block(int on) { store_blocked = on; }
+
 int flash_store(uint32_t offset, const void *data, uint32_t len)
 {
     if (active || xip_gone) return -1;
+    if (store_blocked) return -5;   /* battery critical: no erase at brown-out risk */
     return flash_rmw(offset, data, len);
 }

@@ -8,6 +8,7 @@
  * TX_BCLK = GPIO_AD_B1_14, TX_SYNC = GPIO_AD_B1_15, all ALT3, pad config
  * 0x10B0 (same value the stock uses). */
 #include "fsl_clock.h"
+#include "cold.h"
 #include "fsl_common.h"
 #include "fsl_dmamux.h"
 #include "fsl_edma.h"
@@ -134,7 +135,7 @@ static void tx_done(I2S_Type *base, sai_edma_handle_t *handle, status_t status,
     (void)SAI_TransferSendEDMA(base, &s_tx, &xfer);
 }
 
-void sai_audio_init(void)
+COLD void sai_audio_init(void)
 {
     sai_clock_init();
     sai_pads();
@@ -218,6 +219,11 @@ size_t sai_push(const int16_t *src, size_t frames)
         n++;
     }
     return n;
+}
+
+uint32_t sai_rx_fill(void)
+{
+    return (s_rx_head + RING_FRAMES - s_rx_tail) % RING_FRAMES;
 }
 
 uint32_t sai_tx_fill(void)

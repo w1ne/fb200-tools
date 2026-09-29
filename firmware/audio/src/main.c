@@ -21,6 +21,9 @@
 #include "bt/bt.h"
 #include "proto/proto.h"
 #include "dsp/stock_data.h"
+#include "audio/sai.h"
+#include "debug/selfupdate.h"
+#include "cpu_power.h"
 void usb_hid_init(void);   /* proto/usb_hid.c */
 void usb_hid_task(void);
 
@@ -40,6 +43,17 @@ __attribute__((noreturn)) void console_reboot(void)
     NVIC_SystemReset();
     __builtin_unreachable();
 }
+
+#ifndef FB200_RECOVERY
+/* Work the main loop must do before it may sleep: work that no interrupt
+ * would announce again. Everything else arrives by interrupt (SAI/eDMA
+ * blocks, USB, the Bluetooth UART) or is paced by the 1 ms SysTick, which
+ * also wakes the core. engine_task takes at most one block per pass. */
+static bool loop_work_pending(void)
+{
+    return sai_rx_fill() != 0u || tud_task_event_ready() || fw_active();
+}
+#endif
 
 #ifdef FB200_RECOVERY
 #define VARIANT "recovery"
@@ -87,10 +101,15 @@ void app_main(void)
         engine_set_mute(true); /* start muted when the codec did not answer */
     }
     crumb_alive();   /* after init: recovery treats a leftover marker as a hang */
+    cpu_power_init();
 #endif
     log_printf("ready\r\n");
 
+#ifdef FB200_RECOVERY
     uint32_t loops = 0;
+#else
+    uint32_t hb_ms = 0;   /* the loop sleeps: count time, not passes */
+#endif
     while (1) {
         wdog_feed();
         tud_task();
@@ -129,9 +148,17 @@ void app_main(void)
         }
         led_task();
 #endif
+#ifdef FB200_RECOVERY
         if (console_heartbeat_on() && ++loops >= 2000000u) {
             loops = 0;
             log_printf("hb\r\n");
         }
+#else
+        if (console_heartbeat_on() && tusb_time_millis_api() - hb_ms >= 2000u) {
+            hb_ms = tusb_time_millis_api();
+            log_printf("hb\r\n");
+        }
+        cpu_idle(loop_work_pending);   /* sleep until the next interrupt */
+#endif
     }
 }

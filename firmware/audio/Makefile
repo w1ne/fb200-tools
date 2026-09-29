@@ -81,7 +81,7 @@ LDFLAGS   := $(CPUFLAGS) -nostdlib -Wl,--gc-sections -L $(TARGET) -T linker.ld \
 
 SRC_C := \
   src/startup.c src/vectors.c src/main.c src/memfuncs.c \
-  src/system_clock.c src/usb_descriptors.c src/compat/stubs.c src/led.c src/crc32.c \
+  src/system_clock.c src/usb_descriptors.c src/compat/stubs.c src/led.c src/crc32.c src/cpu_idle.c src/cpu_power.c \
   src/dsp/dsp.c src/dsp/math.c src/dsp/gain.c src/dsp/testgen.c \
   src/dsp/conv.c src/dsp/conv2.c src/dsp/biquad.c src/dsp/detector.c src/dsp/gate.c src/dsp/comp.c \
   src/dsp/mod.c src/dsp/reverb.c src/dsp/delay.c src/dsp/eq.c \
@@ -91,7 +91,7 @@ SRC_C := \
   src/debug/selfupdate.c src/debug/flash_rmw.c src/debug/recovery.c src/debug/regs.c \
   src/audio/i2c_probe.c \
   src/audio/usb_audio.c src/audio/engine.c src/audio/frontend.c src/audio/bt_audio.c \
-  src/ui/pads.c src/ui/display.c src/ui/controls.c src/ui/power.c \
+  src/ui/pads.c src/ui/display.c src/ui/controls.c src/ui/power.c src/ui/power_logic.c \
   src/ui/ui.c src/ui/lightbar.c src/ui/rgb.c src/preset/preset.c src/preset/preset_check.c src/bt/bt.c src/audio/codec.c \
   src/proto/proto.c src/proto/proto_port.c src/usb_hid.c \
   src/audio/sai.c src/audio/drift.c \
@@ -125,7 +125,7 @@ SRC_C := \
 # The recovery image is a resident launcher: it must stay below ITCM 0x1F000
 # (the copier), so it carries none of the audio/DSP/LED code.
 ifeq ($(VARIANT),recovery)
-SRC_C := $(filter-out src/led.c src/dsp/% src/audio/engine.c \
+SRC_C := $(filter-out src/led.c src/cpu_idle.c src/cpu_power.c src/dsp/% src/audio/engine.c \
                     src/audio/usb_audio.c src/audio/codec.c src/audio/sai.c \
                     src/audio/drift.c src/audio/frontend.c src/audio/bt_audio.c src/ui/% src/preset/% src/bt/% src/proto/% \
                     $(MCUX_CORE)/drivers/adc_12b1msps_sar/% $(MCUX_CORE)/drivers/flexio/% \
@@ -164,8 +164,8 @@ $(STOCK_OBJS) $(TARGET)/$(DSP_SRC)/FilteringFunctions/FilteringFunctions.c.o: \
 # Recovery has no XIP code: it runs everything from ITCM.
 COLD_SRC := \
   src/debug/console.c src/debug/regs.c \
-  src/led.c \
-  src/ui/ui.c src/ui/display.c src/ui/controls.c src/ui/power.c src/ui/lightbar.c \
+  src/led.c src/cpu_power.c \
+  src/ui/ui.c src/ui/display.c src/ui/controls.c src/ui/power.c src/ui/power_logic.c src/ui/lightbar.c \
   src/preset/preset.c src/preset/preset_check.c src/proto/proto.c \
   src/audio/i2c_probe.c src/audio/frontend.c src/dsp/stock_data.c \
   $(BOARD_DIR)/board/clock_config.c \

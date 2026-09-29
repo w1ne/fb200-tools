@@ -42,6 +42,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hang (a sub-ms HID timeout blocked forever); a busy console port says which
   port and what to do; read-only queries retry once.
 - **BT name:** a control byte ends the name sent in AT commands.
+- **Battery operation** ([docs/POWER.md](docs/POWER.md)): the main loop sleeps
+  (`WFI`) when there is no audio block or USB event (the stock busy-loops at
+  600 MHz); `cpu` shows the loop busy %. Unused PLLs, the second USB PHY and
+  unused clock gates are off. `power led 100|66|33` dims the display, knob LEDs
+  and light rings; `power idle <min>` (off by default) darkens the panel after
+  idle minutes. `power clock 528|396` for measurements (not saved). Battery
+  gauge: filtered, with hysteresis, an mV/% estimate, a "LOb" warning, and a
+  critical state that saves the settings and stops flash writes.
 
 ## [0.9.1] - 2026-09-29
 

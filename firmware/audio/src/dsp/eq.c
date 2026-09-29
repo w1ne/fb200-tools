@@ -1,5 +1,6 @@
 /* Bass EQ: see eq.h. */
 #include <string.h>
+#include "cold.h"
 #include "eq.h"
 
 #define PI_D 3.14159265358979323846
@@ -81,7 +82,7 @@ void eq_design(int type, double fs, double f0, double q, double gain_db, double 
 
 static int stage_type(unsigned s) { return s == 0 ? 0 : s == EQ_STAGES - 1 ? 2 : 1; }
 
-/* The stage's current parameters -> its float CMSIS coefficients. */
+/* The stage's current parameters -> its coefficients (double, CMSIS signs). */
 static void design_stage(eq_t *e, unsigned s)
 {
     const eq_par_t *p = &e->cur[s];
@@ -95,9 +96,9 @@ static void design_stage(eq_t *e, unsigned s)
         d[2] = d[4] + m * (d[2] - d[4]);
     }
     /* CMSIS: y = b0 x + b1 x1 + b2 x2 + a1 y1 + a2 y2 (a negated) */
-    float *c = &e->c[5 * s];
-    c[0] = (float)d[0]; c[1] = (float)d[1]; c[2] = (float)d[2];
-    c[3] = (float)-d[3]; c[4] = (float)-d[4];
+    double *c = &e->c[5 * s];
+    c[0] = d[0]; c[1] = d[1]; c[2] = d[2];
+    c[3] = -d[3]; c[4] = -d[4];
 }
 
 static int neutral(const eq_par_t *p)
@@ -198,7 +199,7 @@ int eq_set_band(eq_t *e, unsigned band, float hz, float gain_db, float q)
     return 0;
 }
 
-void eq_load(eq_t *e, const uint8_t *r)
+COLD void eq_load(eq_t *e, const uint8_t *r)
 {
     static const uint8_t def[EQ_REC] = {0, 0, 0, 0, 40, 0, 0, 50, 100, 0, 0, 50,
                                         250, 0, 0, 50, 0x20, 3, 0, 50, 0xb8, 0x0b, 0, 50};
@@ -230,22 +231,26 @@ void eq_save(const eq_t *e, uint8_t r[EQ_REC])
     }
 }
 
-/* One stage over a block, DF1 as CMSIS (state x1 x2 y1 y2), with the
+/* One stage over a block, DF1 (state x1 x2 y1 y2), in double, with the
  * coefficients moving from c0 to c1 in n equal steps: no step between
- * blocks (the glide). Plain C: only while a stage glides. */
-static void glide_stage(float *st, const float *c0, const float *c1, float *x, unsigned n)
+ * blocks (the glide). c0 == NULL: settled, the coefficients c1. */
+static void run_stage(double *st, const double *c0, const double *c1, float *x, unsigned n)
 {
-    const float r = 1.0f / (float)n;
-    const float d0 = (c1[0] - c0[0]) * r, d1 = (c1[1] - c0[1]) * r, d2 = (c1[2] - c0[2]) * r,
-                d3 = (c1[3] - c0[3]) * r, d4 = (c1[4] - c0[4]) * r;
-    float b0 = c0[0], b1 = c0[1], b2 = c0[2], a1 = c0[3], a2 = c0[4];
-    float x1 = st[0], x2 = st[1], y1 = st[2], y2 = st[3];
+    double b0 = c1[0], b1 = c1[1], b2 = c1[2], a1 = c1[3], a2 = c1[4];
+    double d0 = 0.0, d1 = 0.0, d2 = 0.0, d3 = 0.0, d4 = 0.0;
+    if (c0) {
+        const double r = 1.0 / (double)n;
+        d0 = (c1[0] - c0[0]) * r; d1 = (c1[1] - c0[1]) * r; d2 = (c1[2] - c0[2]) * r;
+        d3 = (c1[3] - c0[3]) * r; d4 = (c1[4] - c0[4]) * r;
+        b0 = c0[0]; b1 = c0[1]; b2 = c0[2]; a1 = c0[3]; a2 = c0[4];
+    }
+    double x1 = st[0], x2 = st[1], y1 = st[2], y2 = st[3];
     for (unsigned i = 0; i < n; i++) {
-        b0 += d0; b1 += d1; b2 += d2; a1 += d3; a2 += d4;
-        float in = x[i];
-        float y = (b0 * in) + (b1 * x1) + (b2 * x2) + (a1 * y1) + (a2 * y2);
+        if (c0) { b0 += d0; b1 += d1; b2 += d2; a1 += d3; a2 += d4; }
+        double in = (double)x[i];
+        double y = (b0 * in) + (b1 * x1) + (b2 * x2) + (a1 * y1) + (a2 * y2);
         x2 = x1; x1 = in; y2 = y1; y1 = y;
-        x[i] = y;
+        x[i] = (float)y;
     }
     st[0] = x1; st[1] = x2; st[2] = y1; st[3] = y2;
 }
@@ -255,9 +260,9 @@ void eq_process(eq_t *e, float *x, unsigned n)
     if (n == 0) return;
     int any = 0;
     for (unsigned s = 0; s < EQ_STAGES; s++) {
-        float *st = &e->st[4 * s], *c = &e->c[5 * s];
+        double *st = &e->st[4 * s], *c = &e->c[5 * s];
         if (e->ramp[s]) {                       /* gliding */
-            float c0[5];
+            double c0[5];
             memcpy(c0, c, sizeof c0);
             eq_par_t *p = &e->cur[s];
             const eq_par_t *t = &e->tgt[s];
@@ -270,10 +275,9 @@ void eq_process(eq_t *e, float *x, unsigned n)
                 p->v += k * (t->v - p->v);
             }
             design_stage(e, s);
-            glide_stage(st, c0, c, x, n);
+            run_stage(st, c0, c, x, n);
         } else if (e->active[s]) {
-            arm_biquad_casd_df1_inst_f32 one = {1u, st, c};
-            arm_biquad_cascade_df1_f32(&one, x, x, n);
+            run_stage(st, NULL, c, x, n);
         } else {                                /* skipped: x untouched; keep the history */
             st[1] = st[3] = n >= 2 ? x[n - 2] : st[0];
             st[0] = st[2] = x[n - 1];
@@ -282,7 +286,7 @@ void eq_process(eq_t *e, float *x, unsigned n)
         for (unsigned i = 0; i < 4; i++)         /* decaying signals go subnormal */
             if (st[i] < TINY && st[i] > -TINY) st[i] = 0.0f;
         /* skip from the next block: neutral, settled, out = in (to QUIET) */
-        float d1 = st[0] - st[2], d2 = st[1] - st[3];
+        double d1 = st[0] - st[2], d2 = st[1] - st[3];
         if (!e->ramp[s] && neutral(&e->cur[s]) && d1 < QUIET && d1 > -QUIET && d2 < QUIET && d2 > -QUIET)
             e->active[s] = 0;
         any |= e->active[s];
