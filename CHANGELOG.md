@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Long IR store (M5 P2):** 64 slots of up to 4096 taps (float32, 44.1 kHz), cab
+  types 20..83, in their own flash area F:0x400000..0x502000 (above the model
+  library; two copies of the slot table, a CRC per slot). Console `irput` (binary
+  upload with CRC, the `fwbegin` pattern; one flash sector per main-loop pass),
+  `irls`, `irdel`. Host: `fb200 ir put SLOT WAV [process_ir options]`,
+  `fb200 ir ls --long`, `fb200 ir delete 20..83`; MCP `long_ir_list`,
+  `long_ir_import`, `long_ir_delete` (the app asks before an import or delete).
+  Gain: the stock user-IR rule, computed at upload. An empty or bad slot bypasses
+  the cab. The 9 stock slots and the stock app protocol are unchanged.
+  A stored long IR plays all of its taps while a loop exists.
+- **Console `cab [<1-83>]`:** select a cab type in the edit buffer (stock, user IR or
+  long IR) without the app.
+- **Console `jedec`:** the flash chip's JEDEC ID, its size and the FlexSPI window.
+  The long IR store is off on a chip smaller than 5 MB (checked at run time).
 - **Looper** (the stock has none): mono, after the reverb, up to 108 s in the
   external flash (F:0x510000..0x800000 on the 8 MB chip, sized from its JEDEC ID):
   22.05 kHz (half-band resampling), 10-bit block floating point (60 dB SNR). Overdub
@@ -24,15 +38,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   simulated flash, not yet on a pedal.
 - `tools/engine_cycles.py --looper rec|play|dub`: the looper's cost per block.
 - Flash: fast read, 64 kB erase, erase suspend/resume, status register 2 and JEDEC
-  ID sequences (FlexSPI LUT slots 6..11); `flash_rmw` accepts the looper's area.
+  ID sequences (FlexSPI LUT slots 6..15). `flash_rmw` accepts the long IR store and
+  the looper's area. `flash_probe` reads the JEDEC ID once at boot; `flash_capacity`
+  is that stored size.
 
 ### Changed
 
+- A selector knob (CAB) whose stored value no knob position reaches (a long IR,
+  cab 20..83) takes over at the first turn; before, it never picked up.
 - More control code runs from flash (`COLD`): `engine_cab_long`,
   `engine_apply_settings`, `engine_profile`, stats, the amp/tone/mod/comp/EQ/cab
-  parameter setters, `fw_info`, `fw_test`: ITCM for the looper.
+  parameter setters, `fw_info`, `fw_test`, `flash_read_id`, `flash_probe`.
+  ITCM keeps the looper's audio path and `flash_capacity`.
 - While a loop exists, the automatic settings and rhythm saves wait; a flash store
   during a record or a dub is refused (`flash_store` -6).
+
+### Fixed
+
+- An erase the looper starts returns only once the flash is suspended or idle.
+  Returning to flash-resident code while the chip was still erasing reset the
+  pedal into the ROM serial loader.
 
 ## [0.10.0] - 2026-09-29
 

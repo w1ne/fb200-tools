@@ -100,7 +100,7 @@ and every app failure, stays on USB.
   tests), `fwinfo`, `fwtest`, `fwbegin` (app slot), `fwrec` (recovery),
   `fwstock` (stock data), `stock` (app: stock data status), `stack` (the
   high-water of the 8 kB stack reserve, painted at boot).
-- Flash writes use plain SPI-NOR commands in FlexSPI LUT slots 12-15 as IP
+- Flash writes use plain SPI-NOR commands in FlexSPI LUT slots 11-15 (11: JEDEC ID) as IP
   commands; the boot configuration is left alone, so memory-mapped reads keep
   working.
 - Host: `firmware/tools/pack_images.py` -> `fb200-recovery.bin`,

@@ -61,6 +61,7 @@ static uint32_t host_crc(uint32_t a, uint32_t n);
 #include "dsp/delay.h"
 #include "loopflash_sim.h"
 #include "dsp/looper.h"
+#include "irstore/irstore.h"
 #include "crc32.h"
 
 #define FAIL(...) do { fprintf(stderr, "FAIL: " __VA_ARGS__); fprintf(stderr, "\n"); fail_dump(); abort(); } while (0)
@@ -353,6 +354,51 @@ static uint32_t cdc_head, cdc_tail;
 uint32_t tud_cdc_available(void) { return cdc_head - cdc_tail; }
 int32_t tud_cdc_read_char(void) { return cdc_tail < cdc_head ? cdc[cdc_tail++] : -1; }
 
+/* ---- long IR store (irstore.c, real, on its own fake flash) ----
+ * flash_read_id is the looper stub above (W25Q64, 8 MB). flash_capacity is
+ * the simulated chip (loopflash_sim.c). The IR store ends at 0x502000. */
+uint32_t flash_window(void) { return 0x00800000u; }
+uint32_t flash_chip_size(const uint8_t id[3]) { return 1u << id[2]; }
+static uint8_t ir_flash[IRSTORE_END - IRSTORE_BASE];
+static float ir_buf[IRSTORE_TAPS];
+static int ir_buf_busy;
+static uint32_t ir_ms;
+const uint8_t *irstore_map(uint32_t off)
+{
+    CHECK(off >= IRSTORE_BASE && off < IRSTORE_END, "irstore map %x", off);
+    return ir_flash + (off - IRSTORE_BASE);
+}
+int irstore_flash_write(uint32_t off, const void *data, uint32_t len)
+{
+    /* flash_rmw.h: inside the store, inside one sector */
+    CHECK(off >= IRSTORE_BASE && len >= 1u && len <= IRSTORE_END - off &&
+          (off & (IRSTORE_SECTOR - 1u)) + len <= IRSTORE_SECTOR, "irstore write %x+%u", off, len);
+    memcpy(ir_flash + (off - IRSTORE_BASE), data, len);
+    stores++;
+    return 0;
+}
+uint32_t irstore_capacity(void) { return flash_capacity(); }
+uint32_t irstore_rx(uint8_t *dst, uint32_t max)
+{
+    uint32_t n = 0;
+    while (n < max && cdc_tail < cdc_head) dst[n++] = cdc[cdc_tail++];
+    return n;
+}
+uint32_t irstore_now_ms(void) { return ir_ms += 500u; }   /* an idle upload times out */
+float irstore_gain(const float *ir) { return cab_user_ir_gain(ir); }
+void irstore_pump(void) {}
+float *irstore_buf_get(void)
+{
+    if (ir_buf_busy) return NULL;
+    ir_buf_busy = 1;
+    return ir_buf;
+}
+void irstore_buf_put(void)
+{
+    CHECK(ir_buf_busy, "irstore buffer given back twice");
+    ir_buf_busy = 0;
+}
+
 /* ---- invariants after every op ------------------------------------------ */
 static void check_state(void)
 {
@@ -535,7 +581,8 @@ static const char *const kWords[] = {
     "0x20200000", "0x20207FFF", "0x20208000", "0x400F8000", "0x400F8FFF", "0x401B8000",
     "0x60000000", "0x607FFFFF", "0x60800000", "0x3FFFFF", "0x400000", "0xE000ED00", "0x40000000",
     "0xFFFFFF00", "0x60000", "0x7FFFFF", "0x800000",
-    "loop", "rec", "play", "dub", "stop", "undo", "clear", "tap", "stats",
+    "loop", "rec", "play", "dub", "stop", "undo", "clear", "tap", "stats", "save", "load",
+    "irput", "irls", "irdel", "jedec", "19", "20", "83", "84", "44100", "0xdeadbeef", "ir_name",
 };
 
 static void cdc_put(const char *s, size_t n)
@@ -877,6 +924,7 @@ static void setup(void)
     g_stock = NULL;
     sim_flash_init(&SIM_INSTANT);
     sim_loop_setup(&loop);
+    memset(ir_flash, 0xFF, sizeof ir_flash);   /* erased: an empty long IR store */
     seed_flash();
     bank_init();
     proto_set_sender(PROTO_USB, on_frame);
@@ -980,6 +1028,26 @@ static void cases(void)
     stock_fix_crc(&blob, blob.d.size);
     CHECK(stock_check(&blob, blob.d.size) == -5, "zero beats accepted");
     puts("ok stock_bad_tables");
+    /* console: a loop lives in its own flash, so a stored long IR and the
+     * delay stay available while it records */
+    seed_flash();
+    boot();
+    console_line("loop rec");
+    for (unsigned i = 0; i < 8; i++) engine_loop_poll();
+    console_line("loop rec");
+    looper_info_t in;
+    engine_loop_info(&in);
+    CHECK(in.state == LOOPER_REC, "loop rec did not start (state %u)", in.state);
+    console_line("cab 20");
+    CHECK(pget(ui_edit_preset(), P_CAB_TYPE) == 20, "long IR refused during a loop: %s", out_log);
+    console_line("cab 12");
+    CHECK(pget(ui_edit_preset(), P_CAB_TYPE) == 12, "user IR refused during a loop");
+    console_line("loop clear");
+    engine_loop_info(&in);
+    CHECK(in.state == LOOPER_EMPTY, "loop clear left state %u", in.state);
+    console_line("cab 83");
+    CHECK(pget(ui_edit_preset(), P_CAB_TYPE) == 83, "long IR refused after clear: %s", out_log);
+    puts("ok console_long_ir_looper");
     puts("cases OK");
 }
 

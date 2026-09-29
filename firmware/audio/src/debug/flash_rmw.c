@@ -24,13 +24,16 @@ uint32_t flash_loop_end(void)
     return cap >= FLASH_LOOP_BASE + FLASH_LOOP_MIN ? cap : 0u;
 }
 
-/* [offset, offset + len), len > 0, inside the data store, or inside the
- * looper's area (with its meta sector) on a chip that has it. */
+/* [offset, offset + len), len > 0, inside the data store, the long IR store,
+ * or the looper's area (with its meta sector) on a chip that holds it. */
 static int in_region(uint32_t offset, uint32_t len)
 {
     if (len == 0u) return 0;
     if (offset >= FLASH_STORE_BASE && offset < FLASH_STORE_LIMIT)
         return len <= FLASH_STORE_LIMIT - offset;
+    if (offset >= FLASH_IRSTORE_BASE && offset < FLASH_IRSTORE_LIMIT)
+        return len <= FLASH_IRSTORE_LIMIT - offset &&
+               flash_capacity() >= FLASH_IRSTORE_LIMIT;
     uint32_t end = offset >= FLASH_LOOP_META ? flash_loop_end() : 0u;
     return offset < end && len <= end - offset;
 }

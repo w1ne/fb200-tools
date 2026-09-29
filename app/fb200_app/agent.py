@@ -34,7 +34,8 @@ preset"); you do it with the tools.
   the octave-band difference. If audio_test fails (no audio device), go on
   without it and say so.
 - Never store without the user: `save_preset`, `rename_preset`, `ir_import`,
-  `ir_delete`, `settings` changes and console `save` / `factory` ask the user
+  `ir_delete`, `long_ir_import`, `long_ir_delete`, `settings` changes and
+  console `save` / `factory` / `irdel` ask the user
   for a click first; if the user declines, keep the edit buffer as is.
 - There is no firmware flashing here.
 Keep the final answer short: what changed (old -> new) and the measured effect."""

@@ -106,7 +106,7 @@ static int lut_init(void)
                    (unsigned)(rd + rn - 1u));
         return 0;
     }
-    /* 4-byte-address opcodes work in either address mode. */
+    /* 4-byte-address opcodes (0x21/0x12/0xDC/0x0C) work in either address mode. */
     uint8_t se = bits == 32u ? 0x21 : 0x20;
     uint8_t be = bits == 32u ? 0xDC : 0xD8;
     uint8_t pp = bits == 32u ? 0x12 : 0x02;
@@ -468,8 +468,9 @@ void fw_rx_task(void)
 /* Data store: rewrite part of one 4 KB sector (flash_rmw.c) inside the
  * preset/settings/IR region F:0x71000..0xA1800: presets, settings, rhythm,
  * BT name, update flag, IR names/flags and the 9 user IR slots at 0x89000 +
- * slot * 0x2800 (docs/UI_AND_STORAGE.md §5, docs/PROTOCOL.md). Not during an
- * update stream or after an app update erased the cold code. 0 on success. */
+ * slot * 0x2800 (docs/UI_AND_STORAGE.md §5, docs/PROTOCOL.md), or the long
+ * IR store (irstore.h) when the chip holds it. Not during an update stream
+ * or after an app update erased the cold code. 0 on success. */
 static int store_blocked;
 void flash_store_block(int on) { store_blocked = on; }
 

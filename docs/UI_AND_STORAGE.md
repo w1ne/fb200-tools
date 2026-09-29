@@ -131,6 +131,31 @@ AA 55 app protocol (BLE transparent UART). Boot AT sequence: `AT+TM`, names
 (L). BT audio arrives digitally on SAI3 (MCU = I2S master, RX only, 32-bit
 slots) and is mixed into the output.
 
+Module replies (H, code; M for the meaning of the module strings, from the
+BT201 KT1025A/B manual V2.3):
+
+- The LPUART5 RX interrupt (`0xAF70`) gives every byte to the app-protocol
+  ring and to a small parser (`0x3D3C`) for the module status lines `TS+nn`
+  (classic Bluetooth) and `TL+nn` (BLE). It keeps the second digit as ASCII:
+  `TS` at DTCM `0x2000782D`, `TL` at `0x2000782E`.
+- The display dot (`0x19B70`, GPIO4 pin 23): when BT audio is on (S`+0x17` =
+  1) and the tuner is off, it blinks while `TS` is `'0'` (waiting for pairing)
+  and is on for any other value (connected, music, call). Before the first
+  `TS` line the byte is 0, so the dot is on. Nothing reads `TL`.
+- Boot sequence (`0x1B630`): the name from F:0x83000 is read first. Then
+  `AT+TM` is sent and, for 150 ms, the RX bytes are also copied to DTCM
+  `0x2001DFBC` (flag `0x200077E2`). If the stored name is not `FB200`
+  (a blank flash), the fixed commands follow (`AT+BDFB200 Audio`,
+  `AT+BMFB200FB200`, `AT+CN00`, `AT+B501`, `AT+B401`) and `FB200` is written to
+  F:0x83000. If it is `FB200`, the first 5 captured bytes are compared with
+  it (`strncmp`); on a match the rest of the sequence is skipped, else the
+  names are sent from the template (`AT+BD%-15.15s Audio`, `AT+BM%-20.20s`)
+  and `AT+CN00`, `AT+B501`, `AT+B401` follow. The manual's reply to `AT+TM`
+  is `TM+<BLE name>`, which never matches, so with such a module the stock
+  sends the whole sequence at every boot.
+- The stock does not check `OK` / `ER+n`: the bytes go to the app-protocol
+  ring, which drops them (no `AA 55`).
+
 ## 5. Flash map and storage (H; verified entries read on the pedal)
 
 No wear levelling, CRC or journal; writes are read-modify-write of a 4 KB
@@ -172,9 +197,27 @@ would read our copy as its data. The stock format itself has no spare room
 | 0x88000 | 9 | IR slot used flags |
 | 0x89000 + s x 0x2800 | 0x2800 | user IR data |
 | 0xB0000 | 8 | magic "B01" - **verified** |
-| 0xD0000 | 3286016 | model library (block 1) - **verified** (count 0x14 = 20) |
-| 0x50F000 | 0x1000 | ours: kept for a looper `loop save` header (not written yet) |
+| 0xD0000 | 3286016 | model library (block 1) - **verified** (count 0x14 = 20); ends at 0x3F2400 |
+| 0x400000 | 0x2000 | ours: long IR slot table, 2 copies of 4 KB (A, B) |
+| 0x402000 + s x 0x4000 | 0x4000 | ours: long IR slot s = cab type 20 + s (s 0..63), float32 taps |
+| 0x502000 | - | end of the long IR store |
+| 0x50F000 | 0x1000 | ours: looper loop-save header (one sector; not written yet) |
 | 0x510000 | to the chip end (0x2F0000 on 8 MB) | ours: the looper's loops (`loopstore/loopstore.h`; lost at power off) |
+
+**Long IR store** (ours, `firmware/audio/src/irstore/irstore.h`). The chip
+size is not verified yet (console `jedec`; `docs/HARDWARE.md`): the store
+is used only when the chip holds F:0x502000 (JEDEC capacity and the FlexSPI
+window both). Nothing of the stock uses flash above the model library (block
+1 ends at 0x3F2400; the stock code's literal words hold no flash address
+above it). The looper starts at F:0x50F000, so the two stores do not overlap.
+Table (little endian, 3092 B): magic "FBIR", version u16 = 1,
+slots u16 = 64, seq u32, entry size u16 = 48, 0 u16; 64 entries of taps u16
+(0 = empty), flags u16, source rate u32, gain f32, data crc32 u32, name[24];
+then crc32 of all bytes before it. The valid copy with the higher seq is
+current; a write goes to the other copy with seq + 1, so a power loss keeps
+the old table. Slot data is written before its entry; a slot whose data CRC
+does not match plays as cab bypass. Writes: `flash_store` (sector RMW).
+A stored long IR plays all of its taps while a loop exists.
 
 Preset record (u16 LE fields): name[20] @0x00; module 0x80 enable/type
 0x14/0x16, params 0x18-0x1e; amp 0x2c/0x2e, params 0x30-0x3a; cab

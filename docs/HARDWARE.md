@@ -174,7 +174,9 @@ header (RST/CLK/D1/MOSI) are visible as well.
 ## 6. Open questions
 
 - Exact MCU part number within the i.MX RT10xx family and the external flash
-  chip (size, vendor, QSPI/OSPI mode).
+  chip (size, vendor, QSPI/OSPI mode). The open firmware's console command
+  `jedec` reads the JEDEC ID (0x9F), the size and the FlexSPI window; the long
+  IR store (F:0x400000..0x502000) needs 8 MB.
 - Audio codec chip on the LPI2C/SAI bus, and the display/button wiring.
 - Whether `ROM_ID` selects a second physical flash device or a region of the
   same one, and where block 1 (models) is actually stored.

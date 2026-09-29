@@ -268,6 +268,41 @@ state; the notification mask is configurable (`proto_set_notify_mask`,
 default BLE like the stock); `9B` is not sent; the version reply reports our
 firmware version (`PROTO_FW_VERSION`).
 
+### 5.10 Long IR store (our firmware, USB console)
+
+Not in the stock protocol: our firmware stores long IRs (up to 4096 taps)
+in 64 slots, selected as cab types **20..83** (the cab field of a preset,
+`83` block type; our firmware and the stock clamp only above 120). How the
+stock app shows such a preset is not tested. Before you go back to the stock firmware, set these presets to a
+cab 1..19: the stock plays cab type N >= 11 as user slot N - 11, which is
+not a stored slot above 19.
+
+The transfer is on the USB console (CDC), not HID
+(`firmware/audio/src/irstore/irstore.h`, host `fb200.longir`):
+
+- `irput <slot 20-83> <taps 1-4096> <crc32> <name> [rate]` -> `ir ready`
+  (or `ir: ...` with the reason). Then the host sends `taps x 4` raw bytes,
+  float32 little endian, 44.1 kHz, no echo. `crc32` = zlib CRC-32 of these
+  bytes; `name` 1..23 printable ASCII characters, no spaces; `rate` = the
+  source WAV rate (information only). 3 s without a byte aborts
+  (`ir aborted at n/len bytes (nothing written)`). The pedal checks the CRC
+  in RAM (`ir done crc=<crc> BAD (nothing written)`), computes the gain
+  (the stock user-IR rule on the first 512 taps), writes the data (one 4 kB
+  sector per main-loop pass), checks the CRC in flash, then writes the table
+  entry: `ir done crc=<crc> ok slot <n> taps <n> gain <g>`, or
+  `ir FAILED: ...`.
+- `irls`: `ir <slot> taps <n> rate <hz> gain <g> crc <crc> ok|BAD name <name>`
+  per used slot (`ok`/`BAD`: the data CRC in flash), then
+  `ir store: <used> of 64 slots used (cab 20-83, 4096 taps), table A|B|empty seq <n>`,
+  or `ir store: not available: flash <n> kB, needs 5128 kB`.
+- `irdel <slot>`: `ir <slot> deleted` | `ir <slot>: empty` | `ir <slot>: FAILED (...)`.
+- `jedec`: `jedec <mf> <type> <cap>: manufacturer ..., capacity .. = <n> kB`,
+  the FlexSPI window and whether the store fits.
+- `cab [<1-83>]`: cab on with this type in the edit buffer (`save` stores
+  it); `cab en=<0|1> type=<n>`.
+
+Flash layout and table format: [UI_AND_STORAGE.md §5](UI_AND_STORAGE.md#5-flash-map-and-storage-h-verified-entries-read-on-the-pedal).
+
 ## 6. IR format
 
 The official renderer decodes any WAV to **44.1 kHz**, takes **channel 0**,

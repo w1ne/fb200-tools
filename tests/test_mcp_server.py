@@ -406,6 +406,22 @@ def test_set_blocks_frame_bytes(rig):
         FB200Device(hid).set_module("amp", {"bogus": 1})
 
 
+def test_long_ir_cab_during_a_loop(rig):
+    """The flash looper does not borrow the long-IR memory: cab 20..83 is
+    written while a loop exists."""
+    tools, con, hid = rig
+    tools.looper("rec")
+    hid.frames.clear()
+    before = len(con.sent)
+    tools.set_cab(type=83)
+    assert [f[0] for f in hid.frames if f[0] == 0x83] == [0x83]
+    assert con.sent[before:] == []
+    tools.set_cab(type=12)
+    tools.looper("rec")                            # close the record
+    tools.looper("clear")
+    tools.set_cab(enabled=True, type=21)
+
+
 def test_pedal_info_over_hid(rig):
     tools, _, _ = rig
     assert tools.pedal_info()["firmware_version"] == "V1.0.1"

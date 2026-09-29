@@ -70,15 +70,23 @@ bool engine_needs_reapply(void);   /* after a DSP reset: apply the preset again 
 #define ENGINE_IR_TAPS 4096
 /* `cab long <taps>`: synthetic long IR in the cab (0: the preset's cab). 0 on
  * success, -2 when taps is over what this build has RAM for (long IRs off:
- * 512, engine.c ENGINE_IR_TAPS), -1 on other bad taps. */
+ * 512, engine.c ENGINE_IR_TAPS), -4 while the IR buffer is in use (long IR
+ * upload), -1 on other bad taps. */
 int engine_cab_long(unsigned taps);
+/* The IR staging buffer (ENGINE_IR_TAPS floats) for the long IR upload
+ * (irstore.h): NULL while in use, and always with long IRs off. While
+ * borrowed, cab changes wait; release reloads the preset's cab. Main loop
+ * only. */
+float *engine_ir_borrow(void);
+void engine_ir_release(void);
 /* Looper (dsp/looper.h), after the reverb; the loop is in the flash
- * (loopstore/loopstore.h). engine_loop: a LOOPER_* action, looper_cmd's
- * result. engine_loop_poll: main loop, every pass (finishes fades).
- * engine_loop_task: main loop, every pass: the flash side (streams, erase
- * ahead). engine_loop_busy: it has work now (the main loop must not sleep).
- * engine_loop_writing: a record or a dub is writing (flash_store waits; RAM
- * code). engine_loop_arm: start erasing ahead (looper mode on). */
+ * (loopstore/loopstore.h). The delay and the long-IR cab keep their RAM.
+ * engine_loop: a LOOPER_* action, looper_cmd's result. engine_loop_poll:
+ * main loop, every pass (finishes fades). engine_loop_task: main loop,
+ * every pass: the flash side (streams, erase ahead). engine_loop_busy: it
+ * has work now (the main loop must not sleep). engine_loop_writing: a
+ * record or a dub is writing (flash_store waits; RAM code).
+ * engine_loop_arm: start erasing ahead (looper mode on). */
 #include "dsp/looper.h"
 #include "loopstore/loopstore.h"
 int engine_loop(int action);

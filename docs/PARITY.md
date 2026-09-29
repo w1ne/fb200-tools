@@ -273,8 +273,9 @@ Budgets on this chip: 600 MHz / 44.1 kHz = 13.6k cycles per sample; RAM
   delay (the stock has none: its delay fields do nothing; first version
   done, see [below](#m4-bass-delay)), better tuner.
 - **M5 - IR engine:** up to 4096 taps (the cab runs on the two-stage
-  convolver, [below](#m5-long-irs-in-the-cab); open: IR storage and
-  transfer for long IRs, P2), WAV import, 50+ slots, low/high cut, dual-IR blend.
+  convolver, [below](#m5-long-irs-in-the-cab)); 64 long-IR slots with
+  storage and transfer (P2, [below](#m5-p2-long-ir-storage), open: the
+  pedal checks), WAV import, low/high cut, dual-IR blend (host, `process_ir`).
 - **M6 - open ecosystem:** done: documented protocol (`PROTOCOL.md`),
   browser firmware update (v0.6.0, WebHID + Web Serial). Open:
   class-compliant USB MIDI, WebMIDI/WebHID editor (self-describing blocks),
@@ -344,6 +345,49 @@ taps) in the cab until the next cab change; `cab long 0` goes back to the
 preset's cab. With `prof` it measures the real cost on the pedal. Up to
 `ENGINE_IR_TAPS` taps (over: "not available").
 
+### M5 P2: long IR storage
+
+Status: on the host (2026-09-29); not yet on the pedal. The flash chip size
+is not verified: console `jedec` first.
+
+- **Slots:** 64, cab types 20..83 (the preset's cab field; the stock app
+  protocol clamps only above 120). Up to 4096 taps, float32, 44.1 kHz.
+  Flash F:0x400000..0x502000, above the model library, only on a chip that
+  holds it (`flash_capacity`: JEDEC size and FlexSPI window, run-time check).
+  Two table copies (seq, CRC), a data CRC per slot
+  ([flash map](UI_AND_STORAGE.md#5-flash-map-and-storage-h-verified-entries-read-on-the-pedal)).
+- **Transfer:** console `irput` streams the taps into the IR staging buffer
+  (`s_ir`, 16 kB OCRAM: no new buffer; cab changes wait meanwhile), checks the
+  CRC, then writes one 4 kB sector per main-loop pass with `flash_store`
+  (`flash_rmw`: the audio keeps running while the flash is busy; its range
+  check takes the store's range only on a chip that holds it). The table is
+  built in the same buffer. `irls`, `irdel`; host `fb200 ir put`,
+  `ir ls --long`, MCP `long_ir_*` ([PROTOCOL.md §5.10](PROTOCOL.md#510-long-ir-store-our-firmware-usb-console)).
+- **Load:** `engine_apply_preset` checks the data CRC in flash (~0.8 ms for
+  4096 taps, main loop), copies the taps into `s_ir` and calls
+  `cab_set_ir_len`. Empty or bad: cab bypass, as an empty stock slot.
+- **With the looper (M8):** both stay. The loop is in its own flash and does
+  not borrow the delay line or the long-IR tail. A stored long IR plays all
+  of its taps while a loop exists. `cab long`, `cab <20-83>` and `irput`
+  work during a loop. `cab long` answers -4 while an upload holds the IR
+  buffer.
+- **Gain:** the stock user-IR rule (`cab_user_ir_gain`, first 512 taps),
+  computed once at upload and stored. Why: the head of a cab IR carries its
+  level; the same IR plays at the same level from a stock slot (512 taps) and
+  a long slot, and switching between them gives no jump. A long tail adds
+  little energy (it decays).
+- **Code placement:** `irstore.c` and its glue are cold (XIP), as `proto.c`:
+  they run only in the main loop and write only through `flash_store` (RAM).
+  `flash_probe` reads the JEDEC ID once at boot (`flash_read_id`, cold) and
+  stores the size. `flash_capacity` is that RAM word, so a store does not
+  send a JEDEC command. The image test keeps `flash_capacity` in ITCM.
+  RAM: the upload state in OCRAM (`s_irput`).
+- **Tests:** `tests/test_irstore_host.py` (irstore.c on a fake flash: upload,
+  table copies, torn writes, bad CRC, full table, small chip, delete, `irls`
+  output; also under gcc 14 ASan/UBSan with `IRSTORE_CFLAGS`),
+  `tests/test_longir_console.py` (host client, CLI and MCP against a pty pedal
+  that runs irstore.c).
+
 ### M8: looper
 
 Status: the flash looper on the host (2026-09-29), not tried on the pedal.
@@ -361,7 +405,7 @@ are in `debug/flash_rmw.h` (`FLASH_LOOP_*`); `flash_rmw` accepts the area.
 F:0x50F000 (one sector) is kept for a later `loop save` header. RAM holds
 only two rings of 16 frames between the audio and the flash side
 (`loopstore/loopio.h`, DTCM) and the flash side's maps (OCRAM). The delay and
-the long-IR cab keep their RAM (no borrowing any more).
+the long-IR cab keep their RAM.
 
 **Format.** 22.05 kHz: the input decimated by 2 with a 27-tap half-band FIR
 (flat +-0.03 dB to 8 kHz, <= -64 dB from 15 kHz), the output interpolated

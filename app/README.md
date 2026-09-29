@@ -78,6 +78,7 @@ record, and the agent can measure before/after.
 | Delay (open firmware) | done | `set_delay` (console) |
 | EQ: HPF, LPF, 5 bands | done | `set_eq` (console) |
 | User IR list, import (WAV + process_ir options), delete, use as cab | done, confirm | `ir_list`, `ir_import`, `ir_delete`, `set_cab` |
+| Long IRs (slots 20..83, up to 4096 taps): list, import, delete | agent only (no UI panel yet), confirm | `long_ir_list`, `long_ir_import`, `long_ir_delete`, `set_cab` |
 | Drum machine on/off, pattern, bpm, level | done | `drums` (console) |
 | Tuner readout | done (one reading per click) | `tuner` |
 | Output gain / mute | done | `set_output` |
@@ -103,7 +104,8 @@ record, and the agent can measure before/after.
   (collapsible). `audio_test` results show the level and an octave-band chart
   (the last two runs: before / latest).
 - Confirmation: `save_preset`, `rename_preset`, `ir_import`, `ir_delete`,
-  `settings` changes, `crash_dump clear`, and console `save`, `factory`,
+  `long_ir_import`, `long_ir_delete`,
+  `settings` changes, `crash_dump clear`, and console `save`, `irdel`, `factory`,
   `reset`, `reboot`, `recovery`, `crash`, `hang`, `poke*`, `bt`, `fwtest`
   wait for Allow / Decline in the chat (5 min timeout = declined). The same
   policy (`toolhost.needs_confirmation`) guards the UI: the server refuses

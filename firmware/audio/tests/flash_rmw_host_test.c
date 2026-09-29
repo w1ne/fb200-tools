@@ -76,7 +76,13 @@ const void *flash_map(uint32_t offset)
 }
 uint32_t flash_now_ms(void) { return now_ms; }
 static uint32_t capacity = FLASH_SIZE;
-uint32_t flash_capacity(void) { return capacity; }
+static uint32_t capacity_calls;
+uint32_t flash_capacity(void)
+{
+    /* RAM word filled by flash_probe at boot: not a flash command. */
+    capacity_calls++;
+    return capacity;
+}
 void flash_pump(void)
 {
     if (in_pump) violations++;
@@ -160,8 +166,8 @@ static void test_loop_area(void)
 {
     uint8_t d[16] = {1, 2, 3};
     static const struct { uint32_t off, len; } bad[] = {
-        {0x50EFFFu, 1}, {0x502000u, 1}, {0x400000u, 1},   /* below the meta sector */
-        {0x800000u, 1}, {0x7FFFF8u, 16},                 /* past the chip */
+        {0x50EFFFu, 1}, {0x502000u, 1},          /* the gap under the meta sector */
+        {0x800000u, 1}, {0x7FFFF8u, 16},         /* past the chip */
     };
     for (unsigned i = 0; i < sizeof bad / sizeof bad[0]; i++) {
         reset_counters();
@@ -173,12 +179,51 @@ static void test_loop_area(void)
     CHECK(flash_rmw(0x510000u, d, sizeof d) == 0, "the area's first sector");
     CHECK(flash_rmw(0x7FFFF0u, d, sizeof d) == 0, "the chip's last bytes");
     CHECK(memcmp(flash + 0x7FFFF0u, d, sizeof d) == 0, "written");
-    capacity = 0x400000u;                                /* 4 MB: no area */
+    capacity = 0x400000u;                        /* 4 MB: no area */
     CHECK(flash_loop_end() == 0 && flash_rmw(0x510000u, d, sizeof d) == -1, "4 MB chip: refused");
-    capacity = 0;                                        /* unknown */
+    capacity = 0;                                /* unknown */
     CHECK(flash_rmw(0x600000u, d, sizeof d) == -1, "unknown chip: refused");
-    capacity = 0x1000000u;                               /* 16 MB: the area stops at 8 MB */
+    capacity = 0x1000000u;                       /* 16 MB: the area stops at 8 MB */
     CHECK(flash_loop_end() == 0x800000u, "16 MB: loop end %x", flash_loop_end());
+    capacity = FLASH_SIZE;
+}
+
+static void test_long_ir_store_range(void)
+{
+    /* the long IR store (irstore.h): F:0x400000..0x502000, only on a chip
+     * that holds all of it */
+    static const struct { uint32_t off, len; } bad[] = {
+        {0x3FFFFFu, 1}, {0x3FFFFFu, 2},           /* below the store */
+        {0x502000u, 1}, {0x501FFFu, 2},           /* past the store */
+        {0x0A1800u, 16}, {0x100000u, 16},         /* between the two stores */
+        {0x400FFFu, 2},                           /* crosses a sector */
+        {0x400000u, 0},
+    };
+    uint8_t d[16] = {1, 2, 3, 4};
+    capacity = 0x01000000u;
+    for (unsigned i = 0; i < sizeof bad / sizeof bad[0]; i++) {
+        reset_counters();
+        int r = flash_rmw(bad[i].off, d, bad[i].len);
+        CHECK(r == -1 && erases == 0, "reject %x+%u -> %d", bad[i].off, bad[i].len, r);
+    }
+    reset_counters();
+    CHECK(flash_rmw(0x400000u, d, sizeof d) == 0 && memcmp(flash + 0x400000u, d, sizeof d) == 0,
+          "first bytes of the IR store");
+    static uint8_t sec[FLASH_SECTOR];
+    memset(sec, 0x3C, sizeof sec);
+    CHECK(flash_rmw(0x501000u, sec, FLASH_SECTOR) == 0, "the last sector, whole");
+    CHECK(pumps == busy_polls && violations == 0, "pumps %u busy %u violations %u", pumps,
+          busy_polls, violations);
+    /* a 4 MB chip (or an unknown one): the store is off, the data store works */
+    capacity_calls = 0;
+    capacity = 0x00400000u;
+    reset_counters();
+    CHECK(flash_rmw(0x400000u, d, sizeof d) == -1 && erases == 0, "4 MB chip: refused");
+    capacity = 0;
+    CHECK(flash_rmw(0x480000u, d, sizeof d) == -1 && erases == 0, "unknown chip: refused");
+    CHECK(capacity_calls == 2, "capacity asked %u times", capacity_calls);
+    CHECK(flash_rmw(0x71000u, d, sizeof d) == 0 && capacity_calls == 2,
+          "the data store needs no capacity");
     capacity = FLASH_SIZE;
 }
 
@@ -211,6 +256,7 @@ int main(void)
     test_long_erase();
     test_rejects();
     test_loop_area();
+    test_long_ir_store_range();
     test_failures();
     printf(fails ? "flash_rmw host tests FAILED\n" : "flash_rmw host tests OK\n");
     return fails ? 1 : 0;
