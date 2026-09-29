@@ -75,7 +75,10 @@ and input front-end enable).
 ## Our firmware
 
 - `src/audio/sai.c`: SAI1 + eDMA (ping-pong, 32-frame blocks, 512-frame SPSC
-  rings), `sai_pull`/`sai_push` for the engine.
+  rings, `src/audio/sai_ring.h`), `sai_pull_block`/`sai_push_block` for the
+  engine. The rings move whole 32-frame blocks only: an RX block that does
+  not fit (the engine stalled > 11 ms) is dropped whole (`sai` `ovf` counts
+  blocks), so the chain always runs whole DSP blocks (`tests/blocks_host_test.c`).
 - `src/audio/codec.c`: the **stock init table replayed as data** (76
   writes, from `codec_init` at ITCM 0x19f34; only R1C differs: 16-bit I2S).
   Key input registers: R03=0050 (ADC/DAC clock MCLK/2 = 6.144 MHz; 0 would
