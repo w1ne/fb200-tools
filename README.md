@@ -25,7 +25,7 @@ Its firmware is closed and frozen. This project aims to:
   See [`docs/PARITY.md`](docs/PARITY.md) and
   [`docs/ROADMAP_RESEARCH.md`](docs/ROADMAP_RESEARCH.md).
 
-## Status (v0.9)
+## Status (v0.10)
 
 Verified on a real pedal:
 

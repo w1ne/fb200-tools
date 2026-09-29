@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-29
+
+Faster, cleaner, safer and easier on the battery. Measured on a pedal: the DSP
+engine at 8 % of the CPU (was 14-15 %), no ticks in USB playback, a 30-minute
+soak without faults.
+
+### Changed
+
+- **Amp 30 % faster, bit-exact** (`tone_df1`: biquad stages in pairs, fused
+  oversampler): 21.4k -> 15.0k cycles per block on the pedal.
+- **Cab 2x faster:** the head convolver did two FFT steps per block after any short
+  audio block. It re-phases once now, and the engine passes only whole 32-frame blocks
+  (`src/audio/sai_ring.h`). 512 taps 20.9k -> 10.7k, 4096 taps 37.7k -> 27.0k cycles.
+- **Sound:** DAC and USB capture round to 16 bit (were truncated; `dither on` for
+  TPDF), the EQ runs in double (no added low-band noise), the delay line stores a
+  16-bit float format (cleaner quiet repeats), and USB playback is resampled to the
+  codec clock: no ticks (was one about every 2.5 s).
+- **Init and main-loop functions run from flash** (`COLD` marker, `src/cold.h`) to
+  keep ITCM for the audio path.
+
 ### Added
 
 - **Host fuzzing of the firmware parsers** (`tests/test_fuzz_host.py`,
