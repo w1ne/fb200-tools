@@ -157,10 +157,27 @@ stopped inside the 3 s delay. That is why its `uart.log` was empty.)
 | sector erase and page program of the settings sector F:0x82000 and of F:0xB0000 | `peripheral_log` FlexSPI `ip`: `cmd 0x20 addr 0x00082000`, `cmd 0x32 addr 0x00082000`, same for `0x000b0000` |
 | magic `FB200` at F:0x82000 and `B01` at F:0xB0000 | `memory_value` at `0x60082000`, `0x60082004`, `0x600B0000` (the NOR array, read through the FlexSPI AHB window) |
 | Bluetooth AT sequence `AT+TM`, `AT+BD..`, `AT+BM..`, `AT+CN00`, `AT+B501`, `AT+B401`, in this order | `uart_ordered`, `uart_contains "AT+B401"` |
+| the module got each command and answered as the BT201 manual says (`TM+BT201-BLE`, then `OK` for each setting) | `peripheral_log` LPUART5 `at`: `AT+TM -> TM+BT201-BLE`, `AT+BDFB200 Audio -> OK`, ... |
+| a phone connects (script, 6.72 G): classic `TS+01`, BLE `TL+03` | `peripheral_log` LPUART5 `link` |
+| the firmware parsed the module's `TS+01`: DTCM `0x2000782D` = `'1'` (the display-dot state, UI_AND_STORAGE.md section 4) | `memory_value` `0x2000782C` mask `0xFF00` = `0x3100` |
+| the phone sends "get version" over BLE (6.73 G); the firmware answers on the BLE transport and the module sends the answer to the phone | `peripheral_log` LPUART5 `air`: `phone->mcu aa 55 01 00 00 c8 cf`, `mcu->phone aa 55 38 00 01 46 42 32 30 30 00` |
 | no fidelity gap, run not stopped early | `fidelity_clean`, stop reason `max_cycles` |
 
-The Bluetooth module is not modelled: nothing answers the AT commands. The
-firmware does not wait for `OK`, so the sequence is complete anyway.
+The Bluetooth module is the core `bt201` part (system.yaml, id `bt`): a
+BT201 (Jieli KT1025A) as its V2.3 manual describes it. It answers the AT
+commands, pushes its link status (`TS+..`, `TL+..`) and passes BLE data
+through while a phone is connected. The phone is scripted in the gate:
+`stimuli` set the links (`edr_link`, `ble_link`) and `uart_injections` with
+`device: bt` is data the phone writes. The frame bytes in the gate are
+`fb200.protocol.pack_frame` output; `tests/test_labwired_gates.py` checks
+that. The console connector stays as a tap: `uart.log` has what the
+firmware sent to the module.
+
+What the stock does with the module's answers (UI_AND_STORAGE.md section 4):
+it parses `TS+nn` / `TL+nn` in its LPUART5 RX handler, and the `TS` state
+drives the display dot. It does not check `OK`. It compares the `AT+TM`
+answer with `FB200` to skip the name commands, which never matches a BT201
+(`TM+<name>`), so it sends the whole sequence at every boot.
 
 Negative control: the same run with each new expected value changed (an
 erase and a program of F:0x10000 and F:0xB1000, `FB21`, `1`, `B02`,
