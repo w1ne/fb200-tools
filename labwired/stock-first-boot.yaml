@@ -17,6 +17,7 @@
 #                   "B01" at F:0xB0000.
 #   1.40 .. 3.20 G  a fixed delay_ms(3000) before the main loop
 #   3.23 G          the main loop starts the display refresh: "P.0.A."
+#                   (steady by 3.24 G)
 #                   (preset P0A; the dp of every digit is on, see below)
 #   3.42 G          the display shows "0.8.3." (knob overlay; 83 % is MASTER's start)
 #   6.15 .. 6.70 G  Bluetooth module bring-up on LPUART5: AT+TM, AT+BD..,

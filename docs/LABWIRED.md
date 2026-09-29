@@ -80,7 +80,7 @@ Expected result:
 PASS  5/5 checks · smoke · 40000000 steps · 36.87s
 PASS  37/37 checks · stock-boot · 90000000 steps · 15.26s
 PASS  20/20 checks · stock-knobs · 3400000000 steps · 4754.33s
-PASS  12/12 checks · stock-first-boot · 6800000000 steps · 1851.40s
+PASS  12/12 checks · stock-first-boot · 6800000000 steps · 3772.25s
 ```
 
 The stock gate asserts `fidelity_clean: true`: an unmapped MMIO access or an
@@ -356,13 +356,20 @@ A failed `peripheral_log` check prints the last lines of the log.
 
 ### What the stock firmware shows
 
-In the first-boot run the `text` log has three lines:
+In the first-boot run (codec, knobs and display all attached) the `text` log
+has six lines; a failed check prints the last five:
 
 ```
-"P.0.A." at cycle 3228000001
-"0.0.?." at cycle 3408000001
+"P.0.A." at cycle 3240000001
+"?.0.A." at cycle 3408000001
 "0.8.3." at cycle 3420000001
+"0.7.7." at cycle 5820000001
+"0.8.3." at cycle 5844000001
 ```
+
+The first line (not shown) is the screen's first window at 3.228 G. Before
+the codec was modelled, `"P.0.A."` came at exactly 3228000001 and nothing
+changed after 3.42 G.
 
 - `P0A` is preset bank 0, slot A (`P<bank><slot>`, UI_AND_STORAGE.md
   section 1). 180 ms later the firmware shows `083`: the 0-100 overlay of
@@ -370,12 +377,15 @@ In the first-boot run the `text` log has three lines:
   scan reads MASTER (k15) at its start position, 83 % (see the knob
   section). Before the knobs were modelled, all knobs read mid-scale and
   this screen was `050`.
+- `077` for 24 ms at 5.82 G is not explained yet: no knob starts at 77 %
+  (starts are `8 + 5 N`), and the stimulus that turns MASTER is only in the
+  knob gate.
 - The dp is on after every digit. This is what the firmware drives, not a
   model error: the stock glyph writer (the code switch) never writes the dp
   line GPIO4_IO23; a separate routine holds it high in this mode (and blinks
   it, or clears it, in others; the tuner uses it as the sharp sign). The
   model shows a segment that is lit under every select.
-- `0.0.?.` is one 20 ms window in which the screen changed from `P0A` to
+- `?.0.A.` is one 20 ms window in which the screen changed from `P0A` to
   `083`: the two texts share the window, and some segments are lit for less
   than half of it. It is visible for 20 ms only.
 
