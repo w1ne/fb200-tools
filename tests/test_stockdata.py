@@ -51,13 +51,16 @@ def synthetic() -> sd.StockData:
              "post": seq(50, 1000 * k + 400), "gains": seq(5, 1000 * k + 500)}
             for k in range(sd.AMP_MODELS)]
     lens = [52] * 89 + [4712 - 52 * 89]
+    # every list ends with its end marker (0xFF in bits 8..15), as the stock's
+    ends = {sum(lens[:i + 1]) - 1 for i in range(len(lens))}
+    events = [(i << 16) | 0xFF00 if i in ends else i for i in range(4712)]
     return sd.StockData(
         amps=amps, amp_aa=[0.5, 0.25, 0.125, 0.0625, 0.03125],
         cab_taps=[seq(sd.CAB_TAPS, 10000 * i) for i in range(sd.CABS)],
         cab_gain=seq(sd.CABS, 7), tone={"bass": seq(160, 1), "presence": seq(160, 2),
                                         "treble": seq(160, 3),
                                         "mid": [seq(160, 100 * j) for j in range(5)]},
-        drum_events=list(range(4712)), drum_lens=lens,
+        drum_events=events, drum_lens=lens,
         drum_rhythm=list(range(40)), drum_beats=[1 + i % 9 for i in range(90)],
         factory_presets=b"".join(f"Factory {i:02}".encode().ljust(255, b"\0") + bytes([i])
                                  for i in range(20)) + b"EMPTY".ljust(256, b"\0"))
@@ -101,7 +104,7 @@ def test_firmware_reads_the_python_layout(reader):
                                             d.cab_taps[7][511]]
     assert [float(v) for v in lines[2]] == [d.cab_gain[9], d.tone["presence"][159],
                                             d.tone["mid"][4][159], d.tone["bass"][0]]
-    assert [int(v) for v in lines[3]] == [4711, d.drum_lens[89], 39, d.drum_beats[89]]
+    assert [int(v) for v in lines[3]] == [(4711 << 16) | 0xFF00, d.drum_lens[89], 39, d.drum_beats[89]]
     assert lines[4] == ["factory", "2", "Factory", "00", "EMPTY", "19"]
 
 
@@ -143,6 +146,25 @@ def test_firmware_rejects_a_bad_blob(reader, damage):
         sd.verify(bytes(blob))
 
 
+@pytest.mark.parametrize("damage", ["no_end_marker", "lens_overrun", "rhythm", "beats", "nan"])
+def test_firmware_rejects_bad_tables_behind_a_good_crc(reader, damage):
+    """stock_check() also checks the tables the drums index with (and no
+    NaN/Inf coefficient): a CRC-valid blob with bad tables must not load."""
+    d = synthetic()
+    if damage == "no_end_marker":
+        d.drum_events[51] = 7
+    elif damage == "lens_overrun":
+        d.drum_lens[89] += 1
+    elif damage == "rhythm":
+        d.drum_rhythm[3] = 90
+    elif damage == "beats":
+        d.drum_beats[10] = 0
+    else:
+        d.cab_taps[2][5] = float("nan")
+    r = read_back(reader, sd.pack(d))
+    assert r.returncode == 3 and "bad tables" in r.stderr, r.stdout + r.stderr
+
+
 def test_blob_fits_its_flash_area():
     blob = sd.pack(synthetic())
     assert len(blob) <= sd.FLASH_SIZE and len(blob) % 4 == 0
@@ -166,3 +188,48 @@ def test_formats_from_reply():
     assert sd.formats_from_reply("fwstock formats: 1 2\n") == [1, 2]
     # firmware before 0.7 prints only the usage line: it accepts version 1 only
     assert sd.formats_from_reply("usage: fwbegin|fwrec|fwstock <len> <crc32>\n") == [1]
+
+
+CHECK_FACTORY = r"""
+#include <stdio.h>
+#include "stock_host.h"
+#include "preset/preset.h"
+int main(void)
+{
+    stock_from_env();
+    if (!g_stock_factory) return 2;
+    for (unsigned i = 0; i <= STOCK_FACTORY_NAMED; i++) {
+        preset_t p;
+        memcpy(p.b, g_stock_factory->preset[i], PRESET_SIZE);
+        unsigned fixed = preset_sanitize(&p);
+        printf("%u %.20s %u\n", i, (const char *)p.b, fixed);
+    }
+    settings_t s;
+    memcpy(s.b, settings_default, SETTINGS_SIZE);
+    printf("settings %u\n", settings_sanitize(&s));
+    return 0;
+}
+"""
+
+
+def test_stock_factory_presets_pass_the_preset_checks(tmp_path):
+    """preset_check.c changes nothing in a record the stock itself made: the
+    21 factory presets of the user's stock .mr (and the stock default
+    settings) come out unchanged, so the checks only touch erased/corrupt
+    records."""
+    from stock_emu import find_stock_mr
+    mr = find_stock_mr()
+    if mr is None or shutil.which("cc") is None:
+        pytest.skip("fb200-stock.mr not found (set FB200_STOCK_MR) or no host compiler")
+    src, exe, blob = tmp_path / "check.c", tmp_path / "check", tmp_path / "stock.blob"
+    src.write_text("#include <string.h>\n" + CHECK_FACTORY)
+    subprocess.run(["cc", "-O1", "-Wall", "-Wextra", "-Werror", "-I", str(FW / "src"),
+                    "-I", str(FW / "tests"), str(src), str(FW / "src" / "preset" / "preset_check.c"),
+                    *map(str, STOCK_SRC), "-o", str(exe)], check=True)
+    blob.write_bytes(sd.build(mr.read_bytes()))
+    r = subprocess.run([str(exe)], capture_output=True, text=True, check=False,
+                       env={"FB200_STOCK_BLOB": str(blob)})
+    assert r.returncode == 0, r.stdout + r.stderr
+    rows = [ln.split() for ln in r.stdout.splitlines()]
+    assert len(rows) == 22 and rows[-1] == ["settings", "0"]
+    assert all(row[-1] == "0" for row in rows[:-1]), r.stdout

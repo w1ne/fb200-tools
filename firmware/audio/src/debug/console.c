@@ -43,6 +43,18 @@
 extern int g_bss_writable;
 
 static int streq(const char *a, const char *b);
+static void cmd_stack(void);
+
+/* Raw memory access, overridable by the host fuzz harness
+ * (tests/fuzz_host_test.c), which checks that every access the console
+ * makes lies in memory that exists. */
+#ifndef CONSOLE_RD8
+#define CONSOLE_RD8(a)      (*(volatile uint8_t *)(uintptr_t)(a))
+#define CONSOLE_RD32(a)     (*(volatile uint32_t *)(uintptr_t)(a))
+#define CONSOLE_WR8(a, v)   (*(volatile uint8_t *)(uintptr_t)(a) = (uint8_t)(v))
+#define CONSOLE_WR32(a, v)  (*(volatile uint32_t *)(uintptr_t)(a) = (uint32_t)(v))
+#define CONSOLE_CRC(a, n)   crc32_ieee((const uint8_t *)(uintptr_t)(a), (n))
+#endif
 
 static char line[96];
 static size_t line_len;
@@ -73,21 +85,36 @@ static uint32_t parse_num(const char *s, int *ok)
     return v;
 }
 
-static int mem_ok(uint32_t addr)
+/* Memory that exists (linker.ld: FlexRAM as the vendor loader sets it up)
+ * and the always-readable peripherals. A read of a hole (ITCM above 128 kB,
+ * DTCM above 0x20058000, OCRAM above 32 kB) is a bus fault. */
+static const struct { uint32_t base, end; uint8_t ram; } kMem[] = {
+    {0x00000000u, 0x00020000u, 1},   /* ITCM */
+    {0x20000000u, 0x20058000u, 1},   /* DTCM */
+    {0x20200000u, 0x20208000u, 1},   /* OCRAM */
+    {0x400F8000u, 0x400F9000u, 0},   /* SRC (always on) */
+    {0x401F4000u, 0x401F4A00u, 0},   /* OCOTP fuse shadows */
+    {0x401B8000u, 0x401C8000u, 0},   /* GPIO1-4 */
+    {0x60000000u, 0x60800000u, 0},   /* flash (read only through AHB) */
+};
+
+/* [addr, addr + len) lies inside one region (len 0: addr inside one). With
+ * ram: writable RAM only. */
+static int mem_range(uint32_t addr, uint32_t len, int ram)
 {
-    return (addr < 0x400000u) ||                       /* ITCM/DTCM */
-           (addr >= 0x20000000u && addr < 0x20300000u) ||   /* DTCM/OCRAM */
-           (addr >= 0x400F8000u && addr < 0x400F9000u) ||   /* SRC (always on) */
-           (addr >= 0x401F4000u && addr < 0x401F4A00u) ||   /* OCOTP fuse shadows */
-           (addr >= 0x401B8000u && addr < 0x401C8000u) ||   /* GPIO1-4 */
-           (addr >= 0x60000000u && addr < 0x60800000u);     /* flash */
+    for (unsigned i = 0; i < sizeof kMem / sizeof kMem[0]; i++) {
+        if (ram && !kMem[i].ram) continue;
+        if (addr >= kMem[i].base && addr < kMem[i].end && len <= kMem[i].end - addr) return 1;
+    }
+    return 0;
 }
+
 
 static void hexdump(uint32_t addr, uint32_t len)
 {
     for (uint32_t i = 0; i < len; i++) {
         if ((i & 15u) == 0) log_printf("%08x:", (unsigned)(addr + i));
-        log_printf(" %02x", *(volatile uint8_t *)(addr + i));
+        log_printf(" %02x", CONSOLE_RD8(addr + i));
         if ((i & 15u) == 15u) log_printf("\r\n");
     }
     if (len & 15u) log_printf("\r\n");
@@ -100,16 +127,16 @@ static void cmd_dumpmem(const char *a1, const char *a2)
     uint32_t len = parse_num(a2, &ok2);
     if (!ok1 || !ok2) { log_printf("usage: dumpmem <addr> <len>\r\n"); return; }
     if (len > 4096u) len = 4096u;
-    if (!mem_ok(addr) || !mem_ok(addr + len)) { log_printf("address not allowed\r\n"); return; }
+    if (!mem_range(addr, len, 0)) { log_printf("address not allowed\r\n"); return; }
     hexdump(addr, len);
 }
 
 static void cmd_src(void)
 {
     log_printf("SRC_SRSR=%08x SRC_SBMR1=%08x SRC_SBMR2=%08x\r\n",
-               (unsigned)*(volatile uint32_t *)0x400F8008u,
-               (unsigned)*(volatile uint32_t *)0x400F8004u,
-               (unsigned)*(volatile uint32_t *)0x400F801Cu);
+               (unsigned)CONSOLE_RD32(0x400F8008u),
+               (unsigned)CONSOLE_RD32(0x400F8004u),
+               (unsigned)CONSOLE_RD32(0x400F801Cu));
 }
 
 static void cmd_help(void)
@@ -131,7 +158,7 @@ static void cmd_help(void)
              "          eq <band 1-5> <30-10000 Hz> <gain -15..15 dB> [q 0.3-4]\r\n"
              "  tests : crash | hang\r\n"
 #endif
-             "  debug : stats | src | hb on|off | clocks | crumbs | crashdump | crashclear\r\n"
+             "  debug : stats | src | hb on|off | clocks | crumbs | crashdump | crashclear | stack\r\n"
              "          peek <addr> [len] | dumpmem <addr> <len> | poke <addr> <u8>\r\n"
              "          peek32 <addr> [n] | poke32 <addr> <u32> | crc <addr> <len>\r\n"
              "  i2c   : scan | dump [bus addr]\r\n"
@@ -288,12 +315,12 @@ static void cmd_peek32(const char *a1, const char *a2)
     for (uint32_t i = 0; i < n; i++) {
         uint32_t a = addr + 4u * i;
         if (!reg_access_ok(a, &name)) return;
-        if ((a < 0x40000000u || (a >= 0x60000000u && a < 0xE0000000u)) && !mem_ok(a)) {
+        if ((a < 0x40000000u || (a >= 0x60000000u && a < 0xE0000000u)) && !mem_range(a, 4, 0)) {
             log_printf("%08x: address not allowed\r\n", (unsigned)a);
             return;
         }
         if ((i & 3u) == 0u) log_printf("%s%08x:", i ? "\r\n" : "", (unsigned)a);
-        log_printf(" %08x", (unsigned)*(volatile uint32_t *)a);
+        log_printf(" %08x", (unsigned)CONSOLE_RD32(a));
     }
     log_printf("  %s\r\n", name);
 }
@@ -307,12 +334,11 @@ static void cmd_poke32(const char *a1, const char *a2)
     if (!ok1 || !ok2) { log_printf("usage: poke32 <addr> <u32>\r\n"); return; }
     if (!reg_access_ok(addr, &name)) return;
     if (addr >= 0x60000000u && addr < 0xE0000000u) { log_printf("flash: use fwbegin\r\n"); return; }
-    if (addr < 0x40000000u && !mem_ok(addr)) { log_printf("address not allowed\r\n"); return; }
-    volatile uint32_t *r = (volatile uint32_t *)addr;
-    uint32_t before = *r;
-    *r = val;
+    if (addr < 0x40000000u && !mem_range(addr, 4, 1)) { log_printf("address not allowed\r\n"); return; }
+    uint32_t before = CONSOLE_RD32(addr);
+    CONSOLE_WR32(addr, val);
     log_printf("%08x: %08x -> %08x (reads %08x)  %s\r\n", (unsigned)addr, (unsigned)before,
-               (unsigned)val, (unsigned)*r, name);
+               (unsigned)val, (unsigned)CONSOLE_RD32(addr), name);
 }
 
 static void cmd_crc(const char *a1, const char *a2)
@@ -320,12 +346,9 @@ static void cmd_crc(const char *a1, const char *a2)
     int ok1, ok2;
     uint32_t addr = parse_num(a1, &ok1);
     uint32_t len = parse_num(a2, &ok2);
-    if (!ok1 || !ok2 || !mem_ok(addr) || !mem_ok(addr + len)) {
-        log_printf("usage: crc <addr> <len>\r\n");
-        return;
-    }
-    log_printf("crc %08x %u = %08x\r\n", (unsigned)addr, (unsigned)len,
-               (unsigned)crc32_ieee((const uint8_t *)addr, len));
+    if (!ok1 || !ok2) { log_printf("usage: crc <addr> <len>\r\n"); return; }
+    if (!mem_range(addr, len, 0)) { log_printf("address not allowed\r\n"); return; }
+    log_printf("crc %08x %u = %08x\r\n", (unsigned)addr, (unsigned)len, (unsigned)CONSOLE_CRC(addr, len));
 }
 
 static void cmd_fwbegin(fw_target_t target, const char *a1, const char *a2)
@@ -450,12 +473,13 @@ static void cmd_ledpin(const char *a1, const char *a2)
 #endif
 
 #ifndef FB200_RECOVERY
+#define GAIN_DB_MAX 24   /* more is a number typo, not a level (inf gain poisons the DSP) */
 static void cmd_gain(const char *a1)
 {
     if (a1) {
         int ok;
-        long db = (long)parse_num(a1, &ok);
-        if (!ok) { log_printf("usage: gain [db]\r\n"); return; }
+        uint32_t db = parse_num(a1, &ok);
+        if (!ok || db > GAIN_DB_MAX) { log_printf("usage: gain [0-" XSTR(GAIN_DB_MAX) " dB]\r\n"); return; }
         engine_set_gain_db((float)db);
     } else {
         float db = engine_get_gain_db();
@@ -477,8 +501,9 @@ static void cmd_testgen(const char *a1, const char *a2)
     else if (streq(a1, "white")) mode = 2;
     else if (streq(a1, "impulse")) mode = 3;
     int ok = 0;
-    float freq = a2 ? (float)parse_num(a2, &ok) : 1000.0f;
-    if (!ok) freq = 1000.0f;
+    uint32_t hz = a2 ? parse_num(a2, &ok) : 1000u;
+    if (!ok || hz > 24000u) hz = 1000u;   /* up to Nyquist at 48 kHz */
+    float freq = (float)hz;
     engine_set_testgen(mode, 0.5f, freq);
     log_printf("testgen %s %d Hz\r\n", a1, (int)freq);
 }
@@ -559,7 +584,7 @@ static void cmd_peek(const char *a1, const char *a2)
     uint32_t len = 16;
     if (a2) { len = parse_num(a2, &ok); if (!ok) { log_printf("bad len\r\n"); return; } }
     if (len > 256) len = 256;
-    if (!mem_ok(addr) || !mem_ok(addr + len)) { log_printf("address not allowed\r\n"); return; }
+    if (!mem_range(addr, len, 0)) { log_printf("address not allowed\r\n"); return; }
     hexdump(addr, len);
 }
 
@@ -569,8 +594,9 @@ static void cmd_poke(const char *a1, const char *a2)
     uint32_t addr = parse_num(a1, &ok1);
     uint32_t val = parse_num(a2, &ok2);
     if (!ok1 || !ok2) { log_printf("usage: poke <addr> <val>\r\n"); return; }
-    if (!mem_ok(addr)) { log_printf("address not allowed\r\n"); return; }
-    *(volatile uint8_t *)addr = (uint8_t)val;
+    /* RAM only: a byte write to a peripheral or to the flash window faults */
+    if (!mem_range(addr, 1, 1)) { log_printf("address not allowed\r\n"); return; }
+    CONSOLE_WR8(addr, val);
     log_printf("ok %08x = %02x\r\n", (unsigned)addr, (unsigned)(val & 0xFFu));
 }
 
@@ -589,6 +615,7 @@ static void cmd_dump(const char *a1, const char *a2)
 
 static int streq(const char *a, const char *b)
 {
+    if (!a || !b) return 0;   /* a missing argument (argv[i] is NULL past argc) */
     while (*a && *a == *b) { a++; b++; }
     return *a == *b;
 }
@@ -626,10 +653,11 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "tin")) {   /* test signal into the chain input, -20 dBFS */
         cmd_testgen(argv[1], argv[2]);
         int ok = 0;
-        float f = argv[2] ? (float)parse_num(argv[2], &ok) : 1000.0f;
+        uint32_t hz = argv[2] ? parse_num(argv[2], &ok) : 1000u;
+        float f = (ok && hz <= 24000u) ? (float)hz : 1000.0f;
         int mode = streq(argv[1] ? argv[1] : "", "sine") ? 1 : streq(argv[1] ? argv[1] : "", "white") ? 2
                  : streq(argv[1] ? argv[1] : "", "impulse") ? 3 : 0;
-        engine_set_testgen(mode, 0.1f, ok ? f : 1000.0f);
+        engine_set_testgen(mode, 0.1f, f);
         engine_testgen_input(mode != 0);
     }
     else if (streq(argv[0], "cpu")) {
@@ -669,6 +697,7 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "fwinfo")) fw_info();
     else if (streq(argv[0], "fwtest")) fw_test();
     else if (streq(argv[0], "crumbs")) crumbs_print();
+    else if (streq(argv[0], "stack")) cmd_stack();
 #ifndef FB200_RECOVERY
     else if (streq(argv[0], "ui")) cmd_ui();
     else if (streq(argv[0], "preset")) {
@@ -694,11 +723,11 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "tuner")) {
         bool on = argc > 1 && streq(argv[1], "on");
         engine_set_tuner(on);
-        tuner_result_t r;
-        if (engine_tuner_poll(&r) || 1)
-            log_printf("tuner %s: valid=%d silent=%d note=%d oct=%d cents=%d freq=%d.%02d Hz\r\n",
-                       on ? "on" : "off", r.valid, r.silent, r.note, r.octave, (int)r.cents,
-                       (int)r.freq, (int)((r.freq - (int)r.freq) * 100.0f));
+        tuner_result_t r = {0};
+        (void)engine_tuner_poll(&r);   /* no new result: zeros */
+        log_printf("tuner %s: valid=%d silent=%d note=%d oct=%d cents=%d freq=%d.%02d Hz\r\n",
+                   on ? "on" : "off", r.valid, r.silent, r.note, r.octave, (int)r.cents,
+                   (int)r.freq, (int)((r.freq - (int)r.freq) * 100.0f));
     }
     else if (streq(argv[0], "prof")) engine_profile();
     else if (streq(argv[0], "cab") && argc > 2 && streq(argv[1], "long")) {
@@ -818,7 +847,41 @@ static void dispatch(char *cmd)
     else log_printf("unknown command (try help)\r\n");
 }
 
-void console_init(void) { line_len = 0; heartbeat_on = 0; }
+/* Stack high-water (`stack`): the 8 kB reserve below _estack (linker.ld) is
+ * painted at boot; the lowest word that lost the paint is the deepest use
+ * since then (interrupts included: they run on the same stack). */
+#define STACK_PAINT 0xC0DEF00Du
+#if defined(__arm__)
+extern uint32_t __stack_limit__[], _estack[];
+
+static void stack_paint(void)
+{
+    uint32_t sp;
+    __asm volatile ("mov %0, sp" : "=r" (sp));
+    /* below the caller's frame, with room for an interrupt frame */
+    for (volatile uint32_t *w = __stack_limit__; (uint32_t)(uintptr_t)w < sp - 256u; w++) *w = STACK_PAINT;
+}
+
+static void cmd_stack(void)
+{
+    const uint32_t *w = __stack_limit__;
+    while (w < _estack && *w == STACK_PAINT) w++;
+    uint32_t size = (uint32_t)((uintptr_t)_estack - (uintptr_t)__stack_limit__);
+    uint32_t used = (uint32_t)((uintptr_t)_estack - (uintptr_t)w);
+    log_printf("stack: used %u of %u bytes, free %u\r\n", (unsigned)used, (unsigned)size,
+               (unsigned)(size - used));
+}
+#else
+static void stack_paint(void) {}
+static void cmd_stack(void) { log_printf("stack: used 0 of 8192 bytes, free 8192\r\n"); }
+#endif
+
+void console_init(void)
+{
+    line_len = 0;
+    heartbeat_on = 0;
+    stack_paint();
+}
 
 void console_task(void)
 {

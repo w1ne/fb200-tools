@@ -250,16 +250,36 @@ void fw_begin(fw_target_t target, uint32_t len, uint32_t crc)
  * the new slot's cold code belongs to the new app. The audio keeps running
  * (engine_task and usb_audio_task are ITCM code). HID reports are dropped
  * (usb_hid.c). */
+/* Once the stream has ended (done or aborted), only `reset` leaves: the old
+ * app's cold code is gone, so its UI is dead while the audio still runs. If
+ * the host is not there to send it (USB unplugged for FW_GONE_MS, or no
+ * console input for FW_IDLE_RESET_MS), reset anyway: the new app starts, or
+ * recovery if the slot is invalid. The watchdog cannot do it: this loop
+ * feeds it. */
+#define FW_GONE_MS       5000u
+#define FW_IDLE_RESET_MS 120000u
+
 __attribute__((noreturn)) void fw_session(void)
 {
     static char line[16];
     unsigned n = 0;
+    uint32_t idle_since = 0, gone_since = 0;
     for (;;) {
         wdog_feed();
         tud_task();
         if (active) {
             fw_rx_task();
+            idle_since = gone_since = 0;
         } else {
+            uint32_t now = tusb_time_millis_api();
+            if (!idle_since) idle_since = now;
+            if (tud_mounted()) gone_since = 0;
+            else if (!gone_since) gone_since = now;
+            if ((gone_since && now - gone_since > FW_GONE_MS) || now - idle_since > FW_IDLE_RESET_MS) {
+                log_printf("fw: no host after the update: rebooting\r\n");
+                console_reboot();
+            }
+            if (tud_cdc_available()) idle_since = now;
             while (tud_cdc_available()) {
                 char c = (char)tud_cdc_read_char();
                 if (c != '\r' && c != '\n') {

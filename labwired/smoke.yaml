@@ -5,13 +5,16 @@
 # The UART text proves the core ran; the two memory_value assertions read
 # the registers the firmware configured, which printed text cannot fake:
 # GPIO4 GDIR bit 0 (knob LED 1 is an output) and GPIO4 DR bit 0 (DR_TOGGLE
-# flipped it from its reset value 0).
+# flipped it from its reset value 0). The firmware then multiplexes "LAb" on
+# the 14-segment display; the display model (system.yaml, id "display")
+# records the text a human sees in its `text` log.
 schema_version: "1.0"
 inputs:
   firmware: "../firmware/labwired-smoke/build/labwired-smoke.elf"
   system: "system.yaml"
 limits:
-  max_steps: 2000000
+  # The display model decides what is visible every 20 ms (12 M cycles).
+  max_steps: 40000000
 assertions:
   - uart_contains: "RT1052 SMOKE OK"
   # GPIO4_GDIR
@@ -24,4 +27,6 @@ assertions:
       address: 0x401C4000
       mask: 0x00000001
       expected_value: 0x00000001
+  # What the display shows, decoded with the font in system.yaml.
+  - peripheral_log: {peripheral: display, log: text, contains: "\"LAb\""}
   - expected_stop_reason: max_steps

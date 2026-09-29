@@ -10,6 +10,10 @@ class CommunicationError(Fb200Error):
     """A device transfer failed or timed out."""
 
 
+class NoReplyError(CommunicationError):
+    """The device did not answer a request in time (it may be busy or resetting)."""
+
+
 class ProtocolError(Fb200Error):
     """A reply frame was malformed or unexpected."""
 

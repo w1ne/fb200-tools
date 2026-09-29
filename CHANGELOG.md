@@ -7,7 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-09-29
+
+Faster, cleaner, safer and easier on the battery. Measured on a pedal: the DSP
+engine at 8 % of the CPU (was 14-15 %), no ticks in USB playback, a 30-minute
+soak without faults.
+
+### Changed
+
+- **Amp 30 % faster, bit-exact** (`tone_df1`: biquad stages in pairs, fused
+  oversampler): 21.4k -> 15.0k cycles per block on the pedal.
+- **Cab 2x faster:** the head convolver did two FFT steps per block after any short
+  audio block. It re-phases once now, and the engine passes only whole 32-frame blocks
+  (`src/audio/sai_ring.h`). 512 taps 20.9k -> 10.7k, 4096 taps 37.7k -> 27.0k cycles.
+- **Sound:** DAC and USB capture round to 16 bit (were truncated; `dither on` for
+  TPDF), the EQ runs in double (no added low-band noise), the delay line stores a
+  16-bit float format (cleaner quiet repeats), and USB playback is resampled to the
+  codec clock: no ticks (was one about every 2.5 s).
+- **Init and main-loop functions run from flash** (`COLD` marker, `src/cold.h`) to
+  keep ITCM for the audio path.
+
 ### Added
+
+- **Host fuzzing of the firmware parsers** (`tests/test_fuzz_host.py`,
+  `firmware/audio/tests/fuzz_host_test.c`): the app protocol (HID/BLE frames,
+  every command incl. IR upload, preset writes, rename, settings), the console
+  (every command's arguments), presets/settings from flash and the stock data
+  blob, under ASan/UBSan with clang (edge coverage) and gcc 14 (docker). A short
+  fixed-seed run is in the default suite; `pytest -m fuzz` runs long ones.
+- **Soak test** `tools/soak.py`: minutes of preset changes, parameter writes,
+  console commands, IR lists and audio captures on a pedal; fails on skipped
+  blocks, SAI over/underruns, new crumbs, missing replies or a low stack.
+- **Console `stack`**: high-water of the 8 kB stack reserve (painted at boot).
+  `firmware/tools/stack_usage.py` bounds the worst case from `-fstack-usage`
+  and the call graph; the image tests keep 512 B of headroom.
+
+### Fixed
+
+- **Erased or corrupt presets/settings played as they were:** a power loss
+  during a save erases a whole sector (8 presets, or the settings). An erased
+  preset played every module at 655 % (a reverb that ran away to NaN); now it
+  loads as the stock blank preset, and out-of-range fields are clamped to the
+  stock's limits, also for whole-preset writes from the app (0x97). Erased
+  settings load the stock defaults (they played at full master volume).
+- **Stock data blob:** a CRC-valid blob with bad drum tables or NaN/Inf
+  coefficients is refused (the drums walked past their event lists).
+- **Console:** `peek`/`dumpmem`/`crc` checked only the ends of a range (reads
+  of the unmapped ITCM/DTCM space, a `crc` spanning ITCM to flash: bus fault);
+  `poke` wrote into the flash window; `gain`/`testgen` took values that
+  overflow (infinite gain); commands without an argument read a NULL pointer.
+- **Update session:** after an app update the pedal resets by itself when the
+  host is gone (it stayed half alive until a power cycle).
+- **Host tools:** a pedal reset mid-command gives a clear error at once, not a
+  hang (a sub-ms HID timeout blocked forever); a busy console port says which
+  port and what to do; read-only queries retry once.
+- **BT name:** a control byte ends the name sent in AT commands.
 - **LabWired twin: knobs.** `labwired/system.yaml` models the 16 knobs as
   potentiometers behind the two 74HC4051 multiplexers (select GPIO2_IO17..19,
   ADC1 IN3/IN4). New long gate `labwired/stock-knobs.yaml`: the unmodified
@@ -42,6 +96,7 @@ pedal. The memory map now matches the chip (OCRAM is 32 kB on the RT1052).
 Verified on a pedal.
 
 ### Added
+
 - **Desktop app PoC (`app/`, `fb200-app`):** a local web UI (Starlette, 127.0.0.1) to
   edit the pedal like the vendor app - presets (list, select, rename, save), the 7
   effect blocks, delay, EQ, user IRs (import with the `process_ir` options, delete),

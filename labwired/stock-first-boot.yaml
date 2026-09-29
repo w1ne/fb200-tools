@@ -4,7 +4,8 @@
 # flash (no presets, no magics), as a board fresh from the factory, for
 # 6.8 G cycles (11.3 s of device time at 600 MHz). It needs about 30 to 34
 # min of CPU time (Apple M4) and 1.15 GB of memory at peak; on a busy Mac it
-# took 61 to 137 min of wall time. Run it by hand or nightly, not in the default loop.
+# took 61 to 137 min of wall time, and 142 min with the display model and two
+# other simulations running. Run it by hand or nightly, not in the default loop.
 # Build build/labwired/stock.elf first (docs/LABWIRED.md).
 #
 # What the firmware does in this window (measured on the twin, SysTick
@@ -15,6 +16,10 @@
 #                   0x32, status poll 0x05). Magic "FB200" at F:0x82000,
 #                   "B01" at F:0xB0000.
 #   1.40 .. 3.20 G  a fixed delay_ms(3000) before the main loop
+#   3.23 G          the main loop starts the display refresh: "P.0.A."
+#                   (steady by 3.24 G)
+#                   (preset P0A; the dp of every digit is on, see below)
+#   3.42 G          the display shows "0.8.3." (knob overlay; 83 % is MASTER's start)
 #   6.15 .. 6.70 G  Bluetooth module bring-up on LPUART5: AT+TM, AT+BD..,
 #                   AT+BM.., AT+CN00, AT+B501, AT+B401, 150 ms apart
 #   6.72 G          (script) a phone connects: EDR and BLE
@@ -36,8 +41,8 @@ limits:
   max_steps: 8000000000
   # AT+B401 goes out at about 6.70 G cycles; the phone runs at 6.72 G.
   max_cycles: 6800000000
-  # The margin is for a busy Mac.
-  wall_time_ms: 7200000
+  # The margin is for a busy Mac (a loaded run took 8512 s).
+  wall_time_ms: 14400000
 stimuli:
   # A phone pairs over classic Bluetooth (TS+01) and connects over BLE (TL+03).
   - target: { component: "bt", channel: "edr_link" }
@@ -110,6 +115,13 @@ assertions:
   # answer to the phone: fn 0x01, length 0x38, product "FB200".
   - peripheral_log: {peripheral: lpuart5, log: air, contains: "phone->mcu aa 55 01 00 00 c8 cf"}
   - peripheral_log: {peripheral: lpuart5, log: air, contains: "mcu->phone aa 55 38 00 01 46 42 32 30 30 00"}
+
+  # --- The 14-segment display (system.yaml, id "display") ---
+  # The first screen of the main loop, decoded by the display model from the
+  # GPIO3/GPIO4 multiplexing. The stock glyph writer never drives the dp
+  # line (GPIO4_IO23); another routine holds it high in this mode, so the
+  # dp shows after every digit.
+  - peripheral_log: {peripheral: display, log: text, contains: "\"P.0.A.\""}
 
   # --- No fidelity gap, and the run did not stop early ---
   - fidelity_clean: true

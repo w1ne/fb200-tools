@@ -159,7 +159,26 @@ BT201 KT1025A/B manual V2.3):
 ## 5. Flash map and storage (H; verified entries read on the pedal)
 
 No wear levelling, CRC or journal; writes are read-modify-write of a 4 KB
-sector through FlexSPI IP commands.
+sector through FlexSPI IP commands (the stock and ours alike).
+
+Power loss during a write: the sector is erased, then programmed page by
+page (about 50 ms in all). Cut in that window, the whole sector is lost:
+8 presets (a preset sector holds 8 records at a 0x200 stride), or the global
+settings, the rhythm block, the BT name, the IR names or flags, or 4 kB of an
+IR. Our firmware checks what it reads before it plays it
+(`src/preset/preset_check.c`, `stock_check()`): an erased preset loads as the
+stock blank "EMPTY" preset, out-of-range fields of a preset are clamped to the
+stock's app-write limits (a reverb decay of 655 % made the reverb run away),
+erased settings load the stock defaults (master 0), an out-of-range setting
+its default. The flash is not rewritten by these checks, so the stock app and
+firmware read the same bytes; the next save stores the checked record. No
+crash and no boot loop from any record (fuzzed: `tests/test_fuzz_host.py`).
+
+Not done: a journal or a second copy. It needs free sectors the stock never
+touches; 0x76000..0x7F000 and 0xA2000..0xAF000 look unused, but that is not
+verified against the stock firmware, and a stock firmware that used them
+would read our copy as its data. The stock format itself has no spare room
+(a record's second 0x100 bytes share the sector, so they are lost with it).
 
 | F: offset | size | contents |
 | --- | --- | --- |

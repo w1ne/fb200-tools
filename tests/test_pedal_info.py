@@ -61,3 +61,45 @@ def test_sanitize_ir_name_edges():
     assert sanitize_ir_name("\x01\x02") == "untitled"
     assert sanitize_ir_name("A" * 80) == "A" * 50
     assert sanitize_ir_name("café!") == "caf !"
+
+
+class _DropFirst(MockTransport):
+    """Loses the first request (the pedal was busy), answers the second."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.requests = 0
+
+    def write_report(self, report: bytes) -> None:
+        super().write_report(report)
+        self.requests += 1
+        if self.requests == 2:
+            self.queue(make_report(pack_frame(0x01, version_payload())))
+
+
+def test_queries_retry_once_after_no_reply(monkeypatch):
+    from fb200 import pedal
+
+    monkeypatch.setattr(pedal.FB200Device, "_request_once", _fast(pedal.FB200Device._request_once))
+    t = _DropFirst()
+    assert FB200Device(t).info().product == "FB200"
+    assert t.requests == 2
+
+
+def test_no_retry_on_a_dead_device():
+    import time
+
+    class Dead(MockTransport):
+        def write_report(self, report: bytes) -> None:
+            raise CommunicationError("HID write failed (the pedal reset or was unplugged?)")
+
+    t0 = time.monotonic()
+    with pytest.raises(CommunicationError, match="unplugged"):
+        FB200Device(Dead()).info()
+    assert time.monotonic() - t0 < 0.5
+
+
+def _fast(fn):
+    def call(self, fn_, data, expect, timeout_ms):
+        return fn(self, fn_, data, expect, min(timeout_ms, 50))
+    return call
