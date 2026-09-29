@@ -46,7 +46,7 @@ FW_SRC = ["proto/proto.c", "ui/ui.c", "ui/lightbar.c", "preset/preset_check.c",
           "dsp/stock_data.c", "crc32.c", "dsp/drums.c", "dsp/eq.c", "dsp/testgen.c",
           "dsp/math.c", "dsp/delay.c", "dsp/amp.c", "dsp/tone.c", "dsp/cab.c", "dsp/conv.c",
           "dsp/conv2.c", "dsp/gate.c", "dsp/detector.c", "dsp/comp.c", "dsp/mod.c",
-          "dsp/reverb.c", "dsp/looper.c"]
+          "dsp/reverb.c", "dsp/looper.c", "irstore/irstore.c"]
 
 def _is_clang(cc: str) -> bool:
     out = subprocess.run([cc, "--version"], capture_output=True, text=True, check=False).stdout
@@ -61,7 +61,7 @@ def build_cmds(cc: str, out: Path, rel: Path = FW, coverage: bool | None = None)
                    capture_output=True)
     dsp = rel / DSP.relative_to(FW)
     inc = ["-I", str(dsp / "Include"), "-I", str(dsp / "PrivateInclude")]
-    defs = ["-D__GNUC_PYTHON__", "-DARM_MATH_LOOPUNROLL"]
+    defs = ["-D__GNUC_PYTHON__", "-DARM_MATH_LOOPUNROLL", "-DIRSTORE_HOST_TEST"]
     cmds, objs = [], []
     for g in DSP_GROUPS:
         obj = out / f"{g}.o"
@@ -96,7 +96,8 @@ def run(exe: Path, *args: str, timeout: float = 600) -> subprocess.CompletedProc
 # One regression case per bug the fuzzer found (fuzz_host_test.c cases()).
 CASES = ["console_peek_hole", "console_crc_span", "console_poke_flash", "console_dumpmem_end",
          "console_gain_range", "console_testgen_range", "console_missing_arg", "preset_erased",
-         "preset_reverb_runaway", "proto_edit_load_checked", "settings_erased", "stock_bad_tables"]
+         "preset_reverb_runaway", "proto_edit_load_checked", "settings_erased", "stock_bad_tables",
+         "console_long_ir_looper"]
 
 
 def test_regression_cases():

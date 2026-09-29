@@ -27,9 +27,18 @@ void fw_info(void);
  * (XIP) is gone, only RAM code may run (fw_session, selfupdate.c). */
 int fw_xip_gone(void);
 void fw_session(void) __attribute__((noreturn));
-void fw_test(void);
-/* Preset/settings/IR store: RMW of one 4 KB sector in F:0x71000..0xA1800. */
-int flash_store(uint32_t offset, const void *data, uint32_t len);          /* non-destructive: WREN must set WEL */
+void fw_test(void);   /* non-destructive: WREN must set WEL */
+/* Preset/settings/IR store: RMW of one 4 KB sector (flash_rmw.c) in
+ * F:0x71000..0xA1800, or in the long IR store (irstore.h) when the chip
+ * holds it. -5 while blocked. */
+int flash_store(uint32_t offset, const void *data, uint32_t len);
 /* 1: flash_store refuses (-5), battery critical (ui/power.c) */
 void flash_store_block(int on);
+/* Flash chip: JEDEC ID (console `jedec`; 1 on success), the size port A1
+ * is configured for (FlexSPI FLSHA1CR0), the size from the ID's capacity
+ * code (0: unknown). The usable size (the smaller): flash_rmw.h
+ * flash_capacity. */
+int flash_read_id(uint8_t id[3]);
+uint32_t flash_window(void);
+uint32_t flash_chip_size(const uint8_t id[3]);
 #endif

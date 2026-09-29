@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Long IR store (M5 P2):** 64 slots of up to 4096 taps (float32, 44.1 kHz), cab
+  types 20..83, in their own flash area F:0x400000..0x502000 (above the model
+  library; two copies of the slot table, a CRC per slot). Console `irput` (binary
+  upload with CRC, the `fwbegin` pattern; one flash sector per main-loop pass),
+  `irls`, `irdel`. Host: `fb200 ir put SLOT WAV [process_ir options]`,
+  `fb200 ir ls --long`, `fb200 ir delete 20..83`; MCP `long_ir_list`,
+  `long_ir_import`, `long_ir_delete` (the app asks before an import or delete).
+  Gain: the stock user-IR rule, computed at upload. An empty or bad slot bypasses
+  the cab. The 9 stock slots and the stock app protocol are unchanged.
+  While a loop exists the looper has the long-IR memory: selecting a long IR slot
+  from the console or the host is refused, and a preset with one plays 512 taps
+  until the loop is cleared.
+- **Console `cab [<1-83>]`:** select a cab type in the edit buffer (stock, user IR or
+  long IR) without the app.
+- **Console `jedec`:** the flash chip's JEDEC ID, its size and the FlexSPI window.
+  The long IR store is off on a chip smaller than 5 MB (checked at run time).
 - **Looper** (the stock has none): mono, after the reverb, ~16 s at 22.05 kHz
   (4-bit IMA ADPCM, half-band resampling) or ~8 s with `loop hq on`. Overdub, one
   undo/redo level for loops up to half the memory, a crossfade at the loop point
@@ -23,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A selector knob (CAB) whose stored value no knob position reaches (a long IR,
+  cab 20..83) takes over at the first turn; before, it never picked up.
 - More engine control code (`engine_cab_long`, `engine_apply_settings`,
   `engine_profile`, stats) runs from flash (`COLD`): ITCM for the looper.
 

@@ -414,6 +414,23 @@ def test_set_blocks_frame_bytes(rig):
         FB200Device(hid).set_module("amp", {"bogus": 1})
 
 
+def test_long_ir_cab_refused_while_the_looper_has_the_memory(rig):
+    """The looper wins over a stored long IR (console `cab <20-83>` too):
+    set_cab refuses types 20..83 while a loop exists, writes nothing."""
+    tools, con, hid = rig
+    tools.set_cab(type=20)                         # no loop: the HID write goes out
+    assert con.sent == ["loop"] and [f[0] for f in hid.frames if f[0] == 0x83]
+    tools.looper("rec")
+    hid.frames.clear()
+    with pytest.raises(InvalidArgumentError, match="looper has the long-IR memory"):
+        tools.set_cab(type=83)
+    assert not [f for f in hid.frames if f[0] == 0x83]
+    tools.set_cab(type=12)                         # stock / user IR: fine during a loop
+    tools.looper("rec")
+    tools.looper("clear")
+    tools.set_cab(enabled=True, type=21)
+
+
 def test_pedal_info_over_hid(rig):
     tools, _, _ = rig
     assert tools.pedal_info()["firmware_version"] == "V1.0.1"

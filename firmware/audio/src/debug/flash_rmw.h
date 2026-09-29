@@ -19,12 +19,16 @@
  * 9 user IR slots): F:0x71000..0xA1800 (docs/UI_AND_STORAGE.md §5). */
 #define FLASH_STORE_BASE  0x00071000u
 #define FLASH_STORE_LIMIT 0x000A1800u
+/* The long IR store (irstore/irstore.h IRSTORE_BASE..IRSTORE_END): only on
+ * a chip that holds all of it (flash_capacity). */
+#define FLASH_IRSTORE_BASE  0x00400000u
+#define FLASH_IRSTORE_LIMIT 0x00502000u
 /* The vendor bootloader's update-flag sector: never written (the A+D
  * recovery depends on it). */
 #define FLASH_UPDATE_FLAG 0x00086000u
 
-/* Rewrite [offset, offset + len) inside one sector of the data store
- * (read-modify-write, as the stock does), then read it back.
+/* Rewrite [offset, offset + len) inside one sector of the data store or
+ * the long IR store (read-modify-write, as the stock does), then read it back.
  * 0 on success; -1 bad range, -2 erase failed, -3 program failed,
  * -4 read-back differs. */
 int flash_rmw(uint32_t offset, const void *data, uint32_t len);
@@ -41,6 +45,9 @@ int flash_read_status(uint32_t *sr);                        /* 1 ok */
 void flash_refresh(uint32_t offset, uint32_t len);          /* drop stale AHB/cache lines */
 const void *flash_map(uint32_t offset);                     /* memory-mapped read */
 uint32_t flash_now_ms(void);
+/* Usable flash bytes (the chip and the FlexSPI window), 0 unknown. Only
+ * called before the first erase, never while the flash is busy. */
+uint32_t flash_capacity(void);
 /* The audio work that must go on while the flash is busy: watchdog, USB
  * audio rings, the engine. Never reads flash, never writes it. */
 void flash_pump(void);

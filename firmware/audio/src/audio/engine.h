@@ -71,18 +71,29 @@ bool engine_needs_reapply(void);   /* after a DSP reset: apply the preset again 
 /* `cab long <taps>`: synthetic long IR in the cab (0: the preset's cab). 0 on
  * success, -2 when taps is over what this build has RAM for (long IRs off:
  * 512, engine.c ENGINE_IR_TAPS), -3 over 512 while the looper has the
- * long-IR memory, -1 on other bad taps. */
+ * long-IR memory, -4 while the IR buffer is in use (long IR upload), -1 on
+ * other bad taps. */
 int engine_cab_long(unsigned taps);
+/* The IR staging buffer (ENGINE_IR_TAPS floats) for the long IR upload
+ * (irstore.h): NULL while in use, and always with long IRs off. While
+ * borrowed, cab changes wait; release reloads the preset's cab. Main loop
+ * only. */
+float *engine_ir_borrow(void);
+void engine_ir_release(void);
 /* Looper (dsp/looper.h), after the reverb. Its memory is the delay line and
  * the long-IR tail (dsp/loop_mem.h): taken at the first record, given back
  * when the loop is cleared. Meanwhile the delay is off and long IRs play
- * 512 taps. engine_loop: a LOOPER_* action, looper_cmd's result.
+ * 512 taps: `cab long` over 512 and selecting a stored long IR (cab 20..83)
+ * from the console or the host are refused (engine_loop_has_mem); a preset
+ * that selects one plays its first 512 taps until the loop is cleared.
+ * engine_loop: a LOOPER_* action, looper_cmd's result.
  * engine_loop_poll: main loop, every pass (finishes fades, gives the
  * memory back). */
 #include "dsp/looper.h"
 int engine_loop(int action);
 void engine_loop_poll(void);
 void engine_loop_info(looper_info_t *out);
+bool engine_loop_has_mem(void);        /* the looper has the long-IR memory */
 int engine_loop_hq(int on);            /* -1 while a loop exists */
 void engine_loop_level(unsigned pct);  /* 0..100 */
 

@@ -37,7 +37,7 @@ Verified on a real pedal:
 | **Drums & tuner** | Stock drum machine (40 rhythms, played from the samples already in your pedal's flash) and stock YIN tuner |
 | **USB** | Class-compliant audio interface (record and play back, 44.1 kHz). The stock USB identity and control protocol, so `fb200 info` and IR import work. |
 | **Bluetooth** | Module link. The Bluetooth audio input runs; playback from a phone is not yet checked by ear. The app protocol is implemented and tested on the host, but not yet with the Flamma Manager phone app. |
-| **Our additions** | Bass delay up to 1 s, bass EQ (HPF, 5 bands, LPF; saved in the preset), cab IRs up to 4096 taps (`cab long` for tests), reamping over USB (`usb in`). Measured on the pedal: echo times, EQ response, CPU (engine 14% average with a 4096-tap IR). |
+| **Our additions** | Bass delay up to 1 s, bass EQ (HPF, 5 bands, LPF; saved in the preset), cab IRs up to 4096 taps in 64 long-IR slots (cab types 20-83, `fb200 ir put`), reamping over USB (`usb in`). Measured on the pedal: echo times, EQ response, CPU (engine 14% average with a 4096-tap IR). |
 | **Power** | Battery level, charger sense, status LED |
 | **Updates & recovery** | USB updates with no button combo. A resident recovery keeps the USB console after a crash or hang. Crash dumps survive a reset. |
 
@@ -176,6 +176,9 @@ fb200 info                          # product, firmware, Bluetooth and hardware 
 fb200 ir list                       # IR slots
 fb200 ir import 3 my-cab.wav        # convert and upload a WAV IR to slot 3
 fb200 ir process my-cab.wav -o out.wav --trim --taps 512   # process to a file, no pedal
+fb200 ir put 20 my-room.wav         # open firmware: a long IR (up to 4096 taps) in slot 20..83
+fb200 ir ls --long                  # the long IR slots; `fb200 ir delete 20` deletes one
+fb200 console "cab 20"              # play long slot 20 (cab type 20; `save` stores the preset)
 fb200 console [cmd ...]             # open-firmware USB console (interactive without args)
 fb200 console "factory yes"         # factory reset: presets, settings, IR list
 fb200 console "delay on 350"        # bass delay: [on|off] [time] [fb] [mix] [lowcut] [tone]
@@ -206,6 +209,13 @@ applied in this order:
 | `--minphase` | cepstral minimum phase; needs numpy: `pip install 'fb200-tools[ir]'` |
 | `--taps N` | length 1..4096 (the pedal slot holds 1024, and plays 512); a cut tail gets a half-Hann fade over the last N/8 taps |
 | `--normalize` | peak to 1.0 |
+
+`fb200 ir put SLOT WAV` (open firmware) stores a long IR: slot 20..83, up to 4096 taps
+(default 4096; trailing zeros are dropped), the same options. Select it as cab type
+SLOT (app, `set_cab`, or the preset). The pedal sets the loudness with the stock rule
+for user IRs, so a long IR plays at the level of the same IR in a stock slot. An
+empty or damaged slot bypasses the cab. The store needs a flash chip of 8 MB
+(`fb200 console jedec` shows it). Stock slots 1..9 and the stock app are unchanged.
 
 `ir process -o out.wav` writes the result as mono 32-bit float at 44.1 kHz, for any IR
 loader. From Python: `fb200.wav.process_ir(path_or_bytes, taps=512, trim=True, ...)`
@@ -242,6 +252,7 @@ claude mcp add fb200 -- fb200 mcp
 | `usb_route` | USB playback to the output (`out`), into the chain input (`in`, reamping) or summed (`mix`) |
 | `cpu_profile`, `crash_dump`, `cab_long` | CPU cycles per chain stage (`prof`); the last crash dump; a synthetic N-tap cab IR for measurements (0 = the preset's cab) |
 | `ir_list`, `ir_import`, `ir_delete` | user IR slots; import a WAV into a slot (with the `process_ir` options); delete a slot |
+| `long_ir_list`, `long_ir_import`, `long_ir_delete` | long IR slots 20..83 (up to 4096 taps, open firmware console); import overwrites the slot in flash |
 | `audio_test` | play a test signal, capture the USB audio, return RMS, peak, THD (sine) or an octave-band response; can save a WAV |
 
 `audio_test` uses the firmware test generator (`tin`, into the chain input) by default,

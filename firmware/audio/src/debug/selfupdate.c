@@ -2,7 +2,7 @@
  *
  * The flash controller stays exactly as the boot ROM and the vendor
  * bootloader configured it, so memory-mapped (AHB) reads keep working. We only
- * add four plain SPI-NOR sequences in LUT slots 12..15 and run them as IP
+ * add five plain SPI-NOR sequences in LUT slots 11..15 and run them as IP
  * commands. (The ROM FlexSPI driver's init was tried first: after it, any AHB
  * read of flash, including a speculative one, hangs the core. Seen on
  * hardware 2026-09-27.)
@@ -46,6 +46,7 @@ static const struct { uint32_t base, limit; } regions[] = {
 #define PAGE         FLASH_PAGE
 #define FW_IDLE_MS   3000u
 
+#define SEQ_RDID     11u   /* JEDEC ID (FCB convention: chip erase, never used here) */
 #define SEQ_WREN     12u
 #define SEQ_RDSR     13u
 #define SEQ_ERASE    14u
@@ -81,22 +82,33 @@ static int lut_init(void)
                    (unsigned)pads, (unsigned)bits);
         return 0;
     }
+    /* We overwrite LUT sequences SEQ_RDID..15: the AHB (XIP) read must not use them. */
+    uint32_t cr2 = FLEXSPI->FLSHCR2[0];
+    uint32_t rd = (cr2 & FLEXSPI_FLSHCR2_ARDSEQID_MASK) >> FLEXSPI_FLSHCR2_ARDSEQID_SHIFT;
+    uint32_t rn = ((cr2 & FLEXSPI_FLSHCR2_ARDSEQNUM_MASK) >> FLEXSPI_FLSHCR2_ARDSEQNUM_SHIFT) + 1u;
+    if (rd + rn > SEQ_RDID) {
+        log_printf("fw: AHB read uses LUT seq %u..%u; not touched\r\n", (unsigned)rd,
+                   (unsigned)(rd + rn - 1u));
+        return 0;
+    }
     /* 4-byte-address opcodes (0x21/0x12) work in either address mode. */
     uint8_t se = bits == 32u ? 0x21 : 0x20;
     uint8_t pp = bits == 32u ? 0x12 : 0x02;
-    const uint32_t lut[16] = {
-        [0]  = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, 0x06,
+    const uint32_t lut[20] = {
+        [0]  = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, 0x9F,
+                               kFLEXSPI_Command_READ_SDR, kFLEXSPI_1PAD, 0x03),
+        [4]  = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, 0x06,
                                kFLEXSPI_Command_STOP, kFLEXSPI_1PAD, 0),
-        [4]  = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, 0x05,
+        [8]  = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, 0x05,
                                kFLEXSPI_Command_READ_SDR, kFLEXSPI_1PAD, 0x04),
-        [8]  = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, se,
+        [12] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, se,
                                kFLEXSPI_Command_RADDR_SDR, kFLEXSPI_1PAD, bits),
-        [12] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, pp,
+        [16] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, pp,
                                kFLEXSPI_Command_RADDR_SDR, kFLEXSPI_1PAD, bits),
-        [13] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_WRITE_SDR, kFLEXSPI_1PAD, 0x04,
+        [17] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_WRITE_SDR, kFLEXSPI_1PAD, 0x04,
                                kFLEXSPI_Command_STOP, kFLEXSPI_1PAD, 0),
     };
-    FLEXSPI_UpdateLUT(FLEXSPI, SEQ_WREN * 4u, lut, 16u);
+    FLEXSPI_UpdateLUT(FLEXSPI, SEQ_RDID * 4u, lut, 20u);
     lut_ready = 1;
     return 1;
 }
@@ -170,6 +182,43 @@ void flash_refresh(uint32_t offset, uint32_t len)
     SCB_InvalidateDCache_by_Addr(__xiptext_start__, (int32_t)(__xiptext_end__ - __xiptext_start__));
 #endif
     SCB_InvalidateICache();
+}
+
+/* JEDEC ID (0x9F): manufacturer, memory type, capacity code. 1 on success. */
+int flash_read_id(uint8_t id[3])
+{
+    uint32_t w = 0;
+    if (!lut_init() || ip(SEQ_RDID, 0, kFLEXSPI_Read, &w, 3) != kStatus_Success) return 0;
+    id[0] = (uint8_t)w;
+    id[1] = (uint8_t)(w >> 8);
+    id[2] = (uint8_t)(w >> 16);
+    return 1;
+}
+
+/* The flash size port A1 is configured for (FLSHA1CR0, from the FCB): AHB
+ * reads and IP commands past it do not reach this chip. */
+uint32_t flash_window(void)
+{
+    return (FLEXSPI->FLSHCR0[0] & FLEXSPI_FLSHCR0_FLSHSZ_MASK) * 1024u;
+}
+
+uint32_t flash_chip_size(const uint8_t id[3])
+{
+    /* capacity code n = 2^n bytes (Winbond, GigaDevice, Macronix, ISSI, ...) */
+    if (id[0] == 0x00u || id[0] == 0xFFu || id[2] < 0x10u || id[2] > 0x1Fu) return 0;
+    return 1u << id[2];
+}
+
+uint32_t flash_capacity(void)
+{
+    static uint32_t cap;   /* 0: not read yet (or the read failed: try again) */
+    if (cap == 0u) {
+        uint8_t id[3];
+        uint32_t chip = flash_read_id(id) ? flash_chip_size(id) : 0u;
+        uint32_t win = flash_window();
+        cap = chip < win ? chip : win;
+    }
+    return cap;
 }
 
 void fw_info(void)
@@ -353,8 +402,9 @@ void fw_rx_task(void)
 /* Data store: rewrite part of one 4 KB sector (flash_rmw.c) inside the
  * preset/settings/IR region F:0x71000..0xA1800: presets, settings, rhythm,
  * BT name, update flag, IR names/flags and the 9 user IR slots at 0x89000 +
- * slot * 0x2800 (docs/UI_AND_STORAGE.md §5, docs/PROTOCOL.md). Not during an
- * update stream or after an app update erased the cold code. 0 on success. */
+ * slot * 0x2800 (docs/UI_AND_STORAGE.md §5, docs/PROTOCOL.md), or the long
+ * IR store (irstore.h) when the chip holds it. Not during an update stream
+ * or after an app update erased the cold code. 0 on success. */
 static int store_blocked;
 void flash_store_block(int on) { store_blocked = on; }
 

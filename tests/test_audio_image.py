@@ -85,7 +85,8 @@ def test_big_buffers_placement():
     """The budget (docs/FIRMWARE_BRINGUP.md, "Memory map"): the long-IR tail
     for ENGINE_IR_TAPS in the low DTCM, the delay line for DELAY_MS_MAX at
     44.1 kHz in the DTCM above .bss, the reverb in the ITCM above the code;
-    OCRAM holds the user IR staging, the cab, the EQ and nothing else."""
+    OCRAM holds the user IR staging, the cab, the EQ, the long IR upload
+    state (irstore.c, < 100 B) and nothing else."""
     syms, sizes = elf_symbols(), elf_sizes()
     engine_h = (FW / "src" / "audio" / "engine.h").read_text()
     taps = int(re.search(r"#define ENGINE_IR_TAPS (\d+)", engine_h).group(1))
@@ -98,7 +99,8 @@ def test_big_buffers_placement():
     assert syms["__itcm_bss_start__"] <= syms["s_rev"] < syms["__itcm_bss_end__"]
     inside = {n: z for n, (a, z) in sizes.items() if 0x20200000 <= a < 0x20300000}
     tables = {n for n in inside if syms["__ocramdata_start__"] <= sizes[n][0] < syms["__ocramdata_end__"]}
-    assert set(inside) - tables == {"s_ir", "s_eq", "s_cab"}, inside
+    assert set(inside) - tables == {"s_ir", "s_eq", "s_cab", "s_irput"}, inside
+    assert inside["s_irput"] < 100
     assert inside["s_ir"] == taps * 4
     assert "twiddleCoef_rfft_512" in tables
 
@@ -132,11 +134,12 @@ def test_hot_and_cold_placement():
                 "Default_Handler", "wdog_feed", "dcd_int_handler", "EDMA_HandleIRQ",
                 "memcpy", "crc32_ieee",
                 "fw_begin", "fw_session", "flash_store", "FLEXSPI_TransferBlocking",
+                "flash_read_id", "flash_capacity",
                 "flash_rmw", "flash_wait_idle", "flash_pump", "engine_pump",
                 "log_printf", "tud_descriptor_configuration_cb", "cdcd_xfer_cb"):
         assert syms[hot] in ITCM, hot
     for cold in ("console_task", "ui_task", "display_task", "proto_feed", "preset_write",
-                 "CLOCK_InitArmPll"):
+                 "CLOCK_InitArmPll", "irstore_put_task", "irstore_load"):
         assert syms[cold] in XIP, cold
 
 
@@ -183,6 +186,8 @@ def test_hot_path_check_catches_cold_flash_writes(tmp_path):
     bad = "\n".join(hot_path.check(out / "fb200-app.elf"))
     assert "flash write: fw_begin @" in bad and "flash write: flash_store @" in bad, bad
     assert "flash write: cdcd_xfer_cb @" in bad, bad
+    # the long IR store's path: flash_store -> flash_capacity -> flash_read_id
+    assert "flash write: flash_capacity @" in bad and "flash write: flash_read_id @" in bad, bad
     gates = dict(hot_path.GATED)
     try:
         hot_path.GATED[("tud_hid_set_report_cb", "proto_feed")] = "no_such_gate"

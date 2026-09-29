@@ -478,6 +478,10 @@ static void knobs(uint32_t now)
              * would jump the loaded model/type to the knob position) */
             int d = (int)v - (int)s, tol = kKnob[k].types ? 0 : 2;
             if (d >= -tol && d <= tol) caught[k] = true;
+            /* a stored type no position reaches (a long IR, cab 20..83):
+             * the first turn takes over */
+            if (kKnob[k].types && (s < kKnob[k].base || s >= kKnob[k].base + kKnob[k].types))
+                caught[k] = true;
         }
         if (caught[k] && v != s) {
             if (kKnob[k].field == 0xFF) { settings.b[S_MASTER] = (uint8_t)v; settings_dirty = true; proto_notify_settings(); }

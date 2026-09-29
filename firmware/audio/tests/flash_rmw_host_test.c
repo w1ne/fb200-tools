@@ -14,7 +14,7 @@ static int fails;
 #define CHECK(c, ...) do { if (!(c)) { printf("FAIL %s:%d: ", __FILE__, __LINE__); \
     printf(__VA_ARGS__); printf("\n"); fails++; } } while (0)
 
-#define FLASH_SIZE 0x00100000u
+#define FLASH_SIZE 0x00600000u   /* 6 MB: the long IR store ends at 0x502000 */
 static uint8_t flash[FLASH_SIZE];
 static uint32_t busy;                   /* status polls left until WIP clears */
 static int wel, in_pump;
@@ -75,6 +75,14 @@ const void *flash_map(uint32_t offset)
     return flash + offset;
 }
 uint32_t flash_now_ms(void) { return now_ms; }
+static uint32_t capacity = 0x01000000u;   /* 16 MB chip */
+static uint32_t capacity_calls;
+uint32_t flash_capacity(void)
+{
+    if (busy || in_pump) violations++;   /* a JEDEC read is a flash command */
+    capacity_calls++;
+    return capacity;
+}
 void flash_pump(void)
 {
     if (in_pump) violations++;
@@ -153,6 +161,45 @@ static void test_rejects(void)
     CHECK(flash_rmw(0x85FFFu, d, 1) == 0, "the byte below the update flag sector");
 }
 
+static void test_long_ir_store_range(void)
+{
+    /* the long IR store (irstore.h): F:0x400000..0x502000, only on a chip
+     * that holds all of it */
+    static const struct { uint32_t off, len; } bad[] = {
+        {0x3FFFFFu, 1}, {0x3FFFFFu, 2},           /* below the store */
+        {0x502000u, 1}, {0x501FFFu, 2},           /* past the store */
+        {0x0A1800u, 16}, {0x100000u, 16},         /* between the two stores */
+        {0x400FFFu, 2},                           /* crosses a sector */
+        {0x400000u, 0},
+    };
+    uint8_t d[16] = {1, 2, 3, 4};
+    capacity = 0x01000000u;
+    for (unsigned i = 0; i < sizeof bad / sizeof bad[0]; i++) {
+        reset_counters();
+        int r = flash_rmw(bad[i].off, d, bad[i].len);
+        CHECK(r == -1 && erases == 0, "reject %x+%u -> %d", bad[i].off, bad[i].len, r);
+    }
+    reset_counters();
+    CHECK(flash_rmw(0x400000u, d, sizeof d) == 0 && memcmp(flash + 0x400000u, d, sizeof d) == 0,
+          "first bytes of the IR store");
+    static uint8_t sec[FLASH_SECTOR];
+    memset(sec, 0x3C, sizeof sec);
+    CHECK(flash_rmw(0x501000u, sec, FLASH_SECTOR) == 0, "the last sector, whole");
+    CHECK(pumps == busy_polls && violations == 0, "pumps %u busy %u violations %u", pumps,
+          busy_polls, violations);
+    /* a 4 MB chip (or an unknown one): the store is off, the data store works */
+    capacity_calls = 0;
+    capacity = 0x00400000u;
+    reset_counters();
+    CHECK(flash_rmw(0x400000u, d, sizeof d) == -1 && erases == 0, "4 MB chip: refused");
+    capacity = 0;
+    CHECK(flash_rmw(0x480000u, d, sizeof d) == -1 && erases == 0, "unknown chip: refused");
+    CHECK(capacity_calls == 2, "capacity asked %u times", capacity_calls);
+    CHECK(flash_rmw(0x71000u, d, sizeof d) == 0 && capacity_calls == 2,
+          "the data store needs no capacity");
+    capacity = 0x01000000u;
+}
+
 static void test_failures(void)
 {
     uint8_t d[4] = {2, 4, 6, 8};   /* bit 0 clear: drop_bit shows */
@@ -181,6 +228,7 @@ int main(void)
     test_write();
     test_long_erase();
     test_rejects();
+    test_long_ir_store_range();
     test_failures();
     printf(fails ? "flash_rmw host tests FAILED\n" : "flash_rmw host tests OK\n");
     return fails ? 1 : 0;

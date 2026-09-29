@@ -17,8 +17,10 @@ import threading
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Literal
 
+from fb200 import longir
 from fb200.errors import CommunicationError, Fb200Error, InvalidArgumentError
 
 INSTRUCTIONS = """\
@@ -40,6 +42,8 @@ CHAIN_SIGNALS = {"sine": "sine", "noise": "white", "impulse": "impulse"}
 USB_ROUTE_RE = re.compile(r"route=(out|in|mix)")
 CAB_MAX_TAPS = 4096       # dsp/conv2.h CONV2_MAX_TAPS
 LOOP_ACTIONS = ("rec", "play", "dub", "stop", "undo", "clear", "tap")
+# console.c `cab <20-83>`: the looper wins over a stored long IR
+LOOPER_HAS_LONG_IR = "not available (the looper has the long-IR memory; loop clear first)"
 LOOP_RE = re.compile(r"loop (off|empty|rec|play|dub|stop): len_ms=(\d+) pos_ms=(\d+) max_ms=(\d+) "
                      r"undo_max_ms=(\d+) undo=(none|undo|redo) hq=([01]) level=(\d+) mem=([01])")
 PARAMETER_DOCS_URI = "fb200://parameter-docs"
@@ -164,6 +168,20 @@ class Pedal:
         return out
 
     @contextmanager
+    def raw_console(self):
+        """The console itself (under the lock), for a binary upload."""
+        with self.lock:
+            try:
+                if self._con is None:
+                    self._con = self._console_factory()
+                yield self._con
+            except (Fb200Error, OSError) as exc:
+                self.close()
+                if isinstance(exc, Fb200Error):
+                    raise
+                raise CommunicationError(f"console: {exc}") from exc
+
+    @contextmanager
     def device(self):
         with self.lock:
             dev = self._device_factory()
@@ -233,6 +251,7 @@ class PedalTools:
           eq [on|off] | eq hpf <20-200 Hz|0> | eq lpf <2000-20000 Hz|0> |
           eq <band 1-5> <30-10000 Hz> <gain -15..15 dB> [q 0.3-4] (into the preset) |
           cab long <taps 0-4096> (synthetic IR for measurements, 0 = the preset's cab) |
+          cab [<1-83>] (cab on with this type, into the edit buffer; 20-83 = long IRs) |
           tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>] | stock |
           loop [rec|play|dub|stop|undo|clear|tap] | loop hq on|off | loop level <0-100>
         ui: ui | uimon on|off | disp <text> | kled <0-15> on|off | power |
@@ -240,7 +259,8 @@ class PedalTools:
         bt: bt | bt send <AT+...> | btaudio
         debug: stats | src | hb on|off | clocks | crumbs | crashdump | crashclear |
           peek <addr> [len] | peek32 <addr> [n] | poke <addr> <u8> | poke32 <addr> <u32> |
-          crc <addr> <len> | scan | dump [bus addr] | fwinfo | fwtest
+          crc <addr> <len> | scan | dump [bus addr] | fwinfo | fwtest | jedec (flash chip)
+        long IRs: irls | irdel <20-83> (irput streams binary: use long_ir_import)
         danger: crash / hang (fault tests: the pedal reboots into recovery),
           reset | reboot, recovery.
         Numbers are decimal or 0x hex; no negative numbers except the `eq`
@@ -249,6 +269,8 @@ class PedalTools:
         words = command.split()
         if words and words[0] in FLASH_COMMANDS and len(words) > 1:
             raise InvalidArgumentError("flashing is not available over MCP; use `fb200 update`")
+        if words and words[0] == "irput":
+            raise InvalidArgumentError("irput streams binary data: use long_ir_import")
         return self.pedal.run(command, timeout_s)
 
     def preset(self, index: int | None = None) -> dict:
@@ -312,10 +334,22 @@ class PedalTools:
     def set_cab(self, enabled: bool | None = None, type: int | None = None,
                 p1: int | None = None, p2: int | None = None, p3: int | None = None,
                 p4: int | None = None) -> dict:
-        """Change the cab block. type 11..19 = user IR slots 1..9, lower = stock
-        cabs. p1 0..4, p2/p3 0..100, p4 0..9 (pedal clamps). Returns the
-        block read back."""
+        """Change the cab block. type 11..19 = user IR slots 1..9, 20..83 =
+        long IR slots (long_ir_list; empty = bypass), lower = stock cabs.
+        p1 0..4, p2/p3 0..100, p4 0..9 (pedal clamps). A long IR slot is
+        refused while the looper has the long-IR memory (looper clear
+        first). Returns the block read back."""
+        if type is not None and longir.FIRST <= type <= longir.LAST and self._looper_has_memory():
+            raise InvalidArgumentError(f"cab {type}: {LOOPER_HAS_LONG_IR}")
         return self._set("cab", enabled=enabled, type=type, p1=p1, p2=p2, p3=p3, p4=p4)
+
+    def _looper_has_memory(self) -> bool:
+        """The looper holds the long-IR memory (console `loop` mem=1). False
+        on firmware without the looper."""
+        try:
+            return parse_loop(self.pedal.check("loop"))["borrowed_memory"]
+        except InvalidArgumentError:          # no `loop` command
+            return False
 
     def set_comp(self, enabled: bool | None = None, type: int | None = None,
                  attack: int | None = None, threshold: int | None = None,
@@ -579,6 +613,47 @@ class PedalTools:
             ok = dev.ir_delete(slot)
         return {"slot": slot, "deleted": ok}
 
+    # ------------------------------------------------------------ long IRs (console)
+
+    def long_ir_list(self) -> dict:
+        """The long IR store (open firmware): 64 slots, cab types 20..83, up to
+        4096 taps each. Per used slot: taps, gain (the stock user-IR rule),
+        source rate, name, and ok = its data CRC checked on the pedal (a bad
+        slot plays as cab bypass). available False: the flash chip is too
+        small for the store."""
+        with self.pedal.raw_console() as con:
+            res = longir.ls(con)
+        return {"available": res["available"],
+                "slots": [{"slot": e.slot, "name": e.name, "taps": e.taps, "gain": e.gain,
+                           "rate": e.rate, "ok": e.ok} for e in res["slots"]],
+                "text": res["text"]}
+
+    def long_ir_import(self, slot: int, wav_path: str, name: str | None = None,
+                       taps: int | None = None,
+                       channel: Literal["left", "right", "sum"] = "left", trim: bool = False,
+                       lowcut: float | None = None, highcut: float | None = None,
+                       minphase: bool = False, normalize: bool = False) -> dict:
+        """Store a WAV as a long IR in slot 20..83 (OVERWRITES that slot in
+        flash: confirm with the user first). Resampled to 44.1 kHz, up to
+        `taps` (default 4096; trailing zeros dropped). Select it with set_cab
+        type = slot; the gain is the stock user-IR rule. Options as ir_import.
+        Measure the CPU with cpu_profile after selecting it."""
+        longir.check_slot(slot)
+        options = {"channel": channel, "trim": trim, "lowcut": lowcut, "highcut": highcut,
+                   "minphase": minphase, "normalize": normalize, "taps": taps}
+        samples, rate = longir.load_wav(wav_path, **options)
+        with self.pedal.raw_console() as con:
+            res = longir.put(con, slot, samples, name or Path(wav_path).stem, rate)
+        return {"slot": res.slot, "name": res.name, "taps": res.taps, "gain": res.gain,
+                "rate": rate}
+
+    def long_ir_delete(self, slot: int) -> dict:
+        """Delete long IR slot 20..83 (flash). A preset that selects it then
+        plays the cab as bypass."""
+        longir.check_slot(slot)
+        with self.pedal.raw_console() as con:
+            return {"slot": slot, "deleted": longir.delete(con, slot)}
+
     # ------------------------------------------------------------ audio
 
     def audio_test(self, signal: Literal["sine", "sweep", "noise", "impulse", "wav"] = "sine",
@@ -649,7 +724,8 @@ class PedalTools:
              "set_amp", "set_cab", "set_comp", "set_gate", "set_mod", "set_reverb", "set_delay",
              "set_eq", "set_output", "usb_route", "cab_long", "drums", "looper", "tuner", "cpu_profile",
              "crash_dump", "ir_list", "ir_import", "audio_test", "preset_list", "rename_preset",
-             "ir_delete", "settings", "parameter_docs")
+             "ir_delete", "settings", "parameter_docs", "long_ir_list", "long_ir_import",
+             "long_ir_delete")
 
 
 def _sdk():

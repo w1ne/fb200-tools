@@ -20,11 +20,14 @@ CONFIRM_TOOLS = {
     "rename_preset": "renames and stores a preset (flash)",
     "ir_import": "overwrites a user IR slot (flash)",
     "ir_delete": "deletes a user IR slot (flash)",
+    "long_ir_import": "overwrites a long IR slot (flash)",
+    "long_ir_delete": "deletes a long IR slot (flash)",
     "settings": "changes the global settings",
 }
 # Console commands that store, reset, reboot or poke memory.
 CONFIRM_CONSOLE = {
     "save": "stores the preset (flash)",
+    "irdel": "deletes a long IR slot (flash)",
     "factory": "factory reset: erases ALL presets and IRs",
     "crash": "crashes the pedal (fault test)", "hang": "hangs the pedal (fault test)",
     "reset": "resets the pedal", "reboot": "reboots the pedal",
