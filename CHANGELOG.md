@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **LabWired twin: knobs.** `labwired/system.yaml` models the 16 knobs as
+  potentiometers behind the two 74HC4051 multiplexers (select GPIO2_IO17..19,
+  ADC1 IN3/IN4). New long gate `labwired/stock-knobs.yaml`: the unmodified
+  stock firmware reads every knob into its knob table (DTCM `0x2001DED6` /
+  `0x2001DEE6`) and follows a knob turned mid-run. Needs labwired-core with
+  the `74hc4051` part.
 
 - **Reamping over USB:** console `usb in` routes the computer's USB playback into the
   effects chain input instead of the instrument (`usb mix`: summed with it; `usb out`:
