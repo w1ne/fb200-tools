@@ -225,7 +225,7 @@ static struct {
     uint32_t len, rx, last_ms;
     float *buf;
     irstore_entry_t e;
-} s IRSTORE_RAM;
+} s_irput IRSTORE_RAM;
 
 int irstore_put_begin(unsigned cab_type, unsigned taps, uint32_t crc, const char *name,
                       uint32_t rate)
@@ -241,91 +241,91 @@ int irstore_put_begin(unsigned cab_type, unsigned taps, uint32_t crc, const char
                    (unsigned long)(irstore_capacity() / 1024u), (unsigned long)(IRSTORE_END / 1024u));
         return -2;
     }
-    if (s.state != PUT_IDLE || (s.buf = irstore_buf_get()) == NULL) {
+    if (s_irput.state != PUT_IDLE || (s_irput.buf = irstore_buf_get()) == NULL) {
         log_printf("ir: busy (an upload runs, or this build has no long-IR RAM)\r\n");
         return -3;
     }
-    memset(&s.e, 0, sizeof s.e);
-    s.e.taps = (uint16_t)taps;
-    s.e.rate = rate;
-    s.e.crc = crc;
-    memcpy(s.e.name, name, irstore_name_len(name));   /* checked above; the rest is 0 */
-    s.slot = (unsigned)slot;
-    s.len = taps * 4u;
-    s.rx = 0;
-    s.sector = 0;
-    s.last_ms = irstore_now_ms();
-    s.state = PUT_RX;
+    memset(&s_irput.e, 0, sizeof s_irput.e);
+    s_irput.e.taps = (uint16_t)taps;
+    s_irput.e.rate = rate;
+    s_irput.e.crc = crc;
+    memcpy(s_irput.e.name, name, irstore_name_len(name));   /* checked above; the rest is 0 */
+    s_irput.slot = (unsigned)slot;
+    s_irput.len = taps * 4u;
+    s_irput.rx = 0;
+    s_irput.sector = 0;
+    s_irput.last_ms = irstore_now_ms();
+    s_irput.state = PUT_RX;
     log_printf("ir ready\r\n");
     return 0;
 }
 
-int irstore_put_active(void) { return s.state != PUT_IDLE; }
+int irstore_put_active(void) { return s_irput.state != PUT_IDLE; }
 
 static void put_end(void)
 {
-    s.state = PUT_IDLE;
-    s.buf = NULL;
+    s_irput.state = PUT_IDLE;
+    s_irput.buf = NULL;
     irstore_buf_put();
 }
 
 void irstore_put_task(void)
 {
     uint32_t now = irstore_now_ms();
-    if (s.state == PUT_RX) {
+    if (s_irput.state == PUT_RX) {
         uint32_t n;
-        while (s.rx < s.len && (n = irstore_rx((uint8_t *)s.buf + s.rx, s.len - s.rx)) != 0u) {
-            s.rx += n;
-            s.last_ms = now;
+        while (s_irput.rx < s_irput.len && (n = irstore_rx((uint8_t *)s_irput.buf + s_irput.rx, s_irput.len - s_irput.rx)) != 0u) {
+            s_irput.rx += n;
+            s_irput.last_ms = now;
         }
-        if (s.rx < s.len) {
-            if (now - s.last_ms > IRSTORE_IDLE_MS) {
+        if (s_irput.rx < s_irput.len) {
+            if (now - s_irput.last_ms > IRSTORE_IDLE_MS) {
                 log_printf("ir aborted at %lu/%lu bytes (nothing written)\r\n",
-                           (unsigned long)s.rx, (unsigned long)s.len);
+                           (unsigned long)s_irput.rx, (unsigned long)s_irput.len);
                 put_end();
             }
             return;
         }
-        uint32_t got = crc32_ieee((const uint8_t *)s.buf, s.len);
-        if (got != s.e.crc) {
+        uint32_t got = crc32_ieee((const uint8_t *)s_irput.buf, s_irput.len);
+        if (got != s_irput.e.crc) {
             log_printf("ir done crc=%08lx BAD (nothing written)\r\n", (unsigned long)got);
             put_end();
             return;
         }
-        for (unsigned i = s.e.taps; i < 512u; i++) s.buf[i] = 0.0f;   /* the gain reads 512 */
-        s.e.gain = irstore_gain(s.buf);
-        s.state = PUT_WRITE;
+        for (unsigned i = s_irput.e.taps; i < 512u; i++) s_irput.buf[i] = 0.0f;   /* the gain reads 512 */
+        s_irput.e.gain = irstore_gain(s_irput.buf);
+        s_irput.state = PUT_WRITE;
         return;                                         /* one flash sector per call */
     }
-    if (s.state == PUT_WRITE) {
-        uint32_t off = s.sector * IRSTORE_SECTOR;
-        uint32_t n = s.len - off < IRSTORE_SECTOR ? s.len - off : IRSTORE_SECTOR;
-        int r = irstore_flash_write(IRSTORE_DATA(s.slot) + off, (const uint8_t *)s.buf + off, n);
+    if (s_irput.state == PUT_WRITE) {
+        uint32_t off = s_irput.sector * IRSTORE_SECTOR;
+        uint32_t n = s_irput.len - off < IRSTORE_SECTOR ? s_irput.len - off : IRSTORE_SECTOR;
+        int r = irstore_flash_write(IRSTORE_DATA(s_irput.slot) + off, (const uint8_t *)s_irput.buf + off, n);
         if (r != 0) {
             log_printf("ir FAILED: flash write %d at 0x%08lx\r\n", r,
-                       (unsigned long)(IRSTORE_DATA(s.slot) + off));
+                       (unsigned long)(IRSTORE_DATA(s_irput.slot) + off));
             put_end();
             return;
         }
-        if (off + n < s.len) { s.sector++; return; }
-        uint32_t got = crc32_ieee(irstore_map(IRSTORE_DATA(s.slot)), s.len);
-        if (got != s.e.crc) {
+        if (off + n < s_irput.len) { s_irput.sector++; return; }
+        uint32_t got = crc32_ieee(irstore_map(IRSTORE_DATA(s_irput.slot)), s_irput.len);
+        if (got != s_irput.e.crc) {
             log_printf("ir FAILED: flash crc=%08lx\r\n", (unsigned long)got);
             put_end();
             return;
         }
-        s.state = PUT_TABLE;
+        s_irput.state = PUT_TABLE;
         return;
     }
-    if (s.state == PUT_TABLE) {
+    if (s_irput.state == PUT_TABLE) {
         /* the data is in flash: the buffer holds the new table now */
-        int r = irstore_write_entry(s.slot, &s.e, (uint8_t *)s.buf);
+        int r = irstore_write_entry(s_irput.slot, &s_irput.e, (uint8_t *)s_irput.buf);
         if (r != 0) {
             log_printf("ir FAILED: table write %d\r\n", r);
         } else {
-            log_printf("ir done crc=%08lx ok slot %u taps %u gain ", (unsigned long)s.e.crc,
-                       s.slot + IRSTORE_FIRST, (unsigned)s.e.taps);
-            print_gain(s.e.gain);
+            log_printf("ir done crc=%08lx ok slot %u taps %u gain ", (unsigned long)s_irput.e.crc,
+                       s_irput.slot + IRSTORE_FIRST, (unsigned)s_irput.e.taps);
+            print_gain(s_irput.e.gain);
             log_printf("\r\n");
         }
         put_end();

@@ -85,7 +85,8 @@ def test_big_buffers_placement():
     """The budget (docs/FIRMWARE_BRINGUP.md, "Memory map"): the long-IR tail
     for ENGINE_IR_TAPS in the low DTCM, the delay line for DELAY_MS_MAX at
     44.1 kHz in the DTCM above .bss, the reverb in the ITCM above the code;
-    OCRAM holds the user IR staging, the cab, the EQ and nothing else."""
+    OCRAM holds the user IR staging, the cab, the EQ, the long IR upload
+    state (irstore.c, < 100 B) and nothing else."""
     syms, sizes = elf_symbols(), elf_sizes()
     engine_h = (FW / "src" / "audio" / "engine.h").read_text()
     taps = int(re.search(r"#define ENGINE_IR_TAPS (\d+)", engine_h).group(1))
@@ -98,7 +99,8 @@ def test_big_buffers_placement():
     assert syms["__itcm_bss_start__"] <= syms["s_rev"] < syms["__itcm_bss_end__"]
     inside = {n: z for n, (a, z) in sizes.items() if 0x20200000 <= a < 0x20300000}
     tables = {n for n in inside if syms["__ocramdata_start__"] <= sizes[n][0] < syms["__ocramdata_end__"]}
-    assert set(inside) - tables == {"s_ir", "s_eq", "s_cab"}, inside
+    assert set(inside) - tables == {"s_ir", "s_eq", "s_cab", "s_irput"}, inside
+    assert inside["s_irput"] < 100
     assert inside["s_ir"] == taps * 4
     assert "twiddleCoef_rfft_512" in tables
 
