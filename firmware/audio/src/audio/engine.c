@@ -234,7 +234,7 @@ static bool s_cab_bypass;   /* user IR slot selected but empty */
  * a synthetic IR (noise, -60 dB at 4096) in the cab until the next cab
  * change; 0 goes back to the preset's cab. More than ENGINE_IR_TAPS: -2
  * (long IRs off). */
-int engine_cab_long(unsigned taps)
+COLD int engine_cab_long(unsigned taps)
 {
     if (taps == 0) {
         s_cab_type = -1;
@@ -290,7 +290,7 @@ COLD void engine_apply_preset(const preset_t *p, unsigned master)
     eq_load(&s_eq, preset_eq(p));   /* glides; unchanged stages keep going */
     s_master_target = (float)(master > 100u ? 100u : master) * 0.01f;
 }
-void engine_apply_settings(const settings_t *s)
+COLD void engine_apply_settings(const settings_t *s)
 {
     /* 0 dB: the float the stock smoother settles on from below (it stalls
      * short of 1.0), for bit parity at the default setting */
@@ -348,7 +348,7 @@ bool engine_tuner_poll(tuner_result_t *out) { return tuner_poll(&s_tuner, out) !
 drums_t *engine_drums(void) { return &s_drums; }
 struct eq_s *engine_eq(void) { return &s_eq; }
 
-void engine_get_stats(engine_stats_t *out)
+COLD void engine_get_stats(engine_stats_t *out)
 {
     *out = s_stats;
 }
@@ -374,7 +374,7 @@ bool engine_get_dither(void) { return s_outq.dither != 0; }
 void engine_set_usb_route(int route) { s_usb_route = route; }
 int engine_get_usb_route(void) { return s_usb_route; }
 
-void engine_cycles(uint32_t *avg, uint32_t *max, uint32_t *budget)
+COLD void engine_cycles(uint32_t *avg, uint32_t *max, uint32_t *budget)
 {
     *avg = s_cyc_n ? s_cyc_sum / s_cyc_n : 0;
     *max = s_cyc_max;
@@ -382,7 +382,7 @@ void engine_cycles(uint32_t *avg, uint32_t *max, uint32_t *budget)
     s_cyc_sum = s_cyc_n = s_cyc_max = 0;
 }
 
-void engine_profile(void)
+COLD void engine_profile(void)
 {
     static const char *const names[P_COUNT] = {
         "in", "tuner", "gate", "comp", "amp", "cab", "eq", "mod", "delay", "reverb", "loop",

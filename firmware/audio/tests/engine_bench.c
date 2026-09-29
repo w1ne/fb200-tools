@@ -1,4 +1,4 @@
-/* Amp (+ tone stack) and cab cost per 32-sample block, built for the
+/* Amp (+ tone stack), cab and looper cost per 32-sample block, built for the
  * Cortex-M7 with the firmware's flags and run in Unicorn by
  * tools/engine_cycles.py (instruction counts and a cycle estimate per
  * function; bit-exact old/new comparison). The Python side writes the stock
@@ -8,6 +8,7 @@
 #include "dsp/amp.h"
 #include "dsp/cab.h"
 #include "dsp/stock_data.h"
+#include "dsp/looper.h"
 
 const stock_data_t *g_stock;
 static amp_t s_amp;
@@ -46,3 +47,30 @@ void bench_cab(void) { cab_process(&s_cab, bench_buf, DSP_BLOCK); }
 
 /* a short block (a SAI hiccup on the pedal): shifts the partition phase */
 void bench_cab_n(unsigned n) { cab_process(&s_cab, bench_buf, n); }
+
+/* The looper (tools/engine_cycles.py --looper): 400 blocks of memory (the
+ * engine lends it ~1400; the cost does not depend on the size). mode bit 0:
+ * hq. Then bench_loop_cmd(LOOPER_*) as the console does, with the poll. */
+static looper_t s_loop;
+static uint8_t s_loop_mem[LOOPER_BLK_BYTES * 400];
+
+void bench_loop_setup(unsigned mode)
+{
+    looper_init(&s_loop);
+    (void)looper_set_hq(&s_loop, (int)(mode & 1u));
+    looper_attach(&s_loop, s_loop_mem, sizeof s_loop_mem, 0, 0);
+    (void)looper_cmd(&s_loop, LOOPER_REC_A);
+}
+
+void bench_loop_cmd(int action)
+{
+    (void)looper_cmd(&s_loop, action);
+    looper_poll(&s_loop);
+}
+
+/* L and R are the same buffer here: the cost is the same */
+void bench_loop(void)
+{
+    looper_process(&s_loop, bench_buf, bench_buf, DSP_BLOCK);
+    looper_poll(&s_loop);
+}

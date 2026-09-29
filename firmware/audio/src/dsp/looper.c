@@ -7,16 +7,16 @@
 
 #define FS_FULL 44100.0f
 #define SCALE 16384.0f                 /* int16 = x * SCALE: +6 dB headroom */
-#define HB_N (4 * LOOPER_HB_SIDE - 2)  /* decimator history: 34 = taps - 1 */
-#define IH_N (2 * LOOPER_HB_SIDE - 1)  /* interpolator history: 17 */
+#define HB_N (4 * LOOPER_HB_SIDE - 2)  /* decimator history: taps - 1 (26) */
+#define IH_N (2 * LOOPER_HB_SIDE - 1)  /* interpolator history (13) */
 
-/* Half-band FIR (35 taps, Kaiser beta 7): h[17] = 0.5, h[17 +- (2j+1)] =
+/* Half-band FIR (27 taps, Kaiser beta 6): h[13] = 0.5, h[13 +- (2j+1)] =
  * kHb[j], the even offsets are 0. Sum of kHb = 0.25 (unity at DC). Flat
- * (+-0.002 dB) to 8 kHz, -6 dB at 11.025 kHz, <= -70 dB from 14 kHz. */
+ * (+-0.03 dB) to 8 kHz, -6 dB at 11.025 kHz, <= -47 dB from 14 kHz and
+ * <= -64 dB from 15 kHz. */
 static const float kHb[LOOPER_HB_SIDE] = {
-    3.147821785e-01f, -9.585885661e-02f, 4.783006966e-02f, -2.565559095e-02f,
-    1.333691788e-02f, -6.326767135e-03f, 2.562961912e-03f, -7.819818642e-04f,
-    1.110685615e-04f,
+    3.132591042e-01f, -9.156855253e-02f, 4.186601721e-02f, -1.937165627e-02f,
+    7.920118734e-03f, -2.469291685e-03f, 3.642603099e-04f,
 };
 
 /* IMA ADPCM (the standard tables) */
@@ -30,37 +30,56 @@ static const int16_t kStep[89] = {
 };
 static const int8_t kIdx[8] = {-1, -1, -1, -1, 2, 4, 6, 8};
 
-/* the decoder step, shared by the encoder so both track the same state
- * (not inlined: ITCM is scarce, docs/FIRMWARE_BRINGUP.md) */
-__attribute__((noinline)) static int adpcm_step(adpcm_t *s, unsigned n)
+/* One IMA step on the packed state s = pred (low 16 bits) | idx << 16:
+ * the decoder, and the encoder after quant(), so both track the same
+ * state. Packed: it stays in registers across the call (one copy of the
+ * code for both: ITCM). */
+__attribute__((noinline)) static uint32_t step(uint32_t s, unsigned n)
 {
-    int step = kStep[s->idx];
-    int d = step >> 3;
-    if (n & 4u) d += step;
-    if (n & 2u) d += step >> 1;
-    if (n & 1u) d += step >> 2;
-    int p = s->pred + ((n & 8u) ? -d : d);
-    if (p > 32767) p = 32767;
-    else if (p < -32768) p = -32768;
-    s->pred = (int16_t)p;
-    int i = s->idx + kIdx[n & 7u];
-    s->idx = (uint8_t)(i < 0 ? 0 : i > 88 ? 88 : i);
-    return p;
+    int st = kStep[s >> 16], d = st >> 3;
+    if (n & 4u) d += st;
+    if (n & 2u) d += st >> 1;
+    if (n & 1u) d += st >> 2;
+    int p = (int16_t)s + ((n & 8u) ? -d : d);
+    p = p > 32767 ? 32767 : p < -32768 ? -32768 : p;
+    int i = (int)(s >> 16) + kIdx[n & 7u];
+    i = i < 0 ? 0 : i > 88 ? 88 : i;
+    return (uint16_t)p | (uint32_t)i << 16;
 }
 
-int looper_adpcm_dec(adpcm_t *s, unsigned nib) { return adpcm_step(s, nib & 15u); }
-
-unsigned looper_adpcm_enc(adpcm_t *s, int x)
+/* the encoder's nibble for x */
+static inline unsigned quant(uint32_t s, int x)
 {
-    int step = kStep[s->idx], d = x - s->pred;
+    int st = kStep[s >> 16], d = x - (int16_t)s;
     unsigned n = 0;
     if (d < 0) { n = 8; d = -d; }
-    if (d >= step) { n |= 4; d -= step; }
-    step >>= 1;
-    if (d >= step) { n |= 2; d -= step; }
-    step >>= 1;
-    if (d >= step) n |= 1;
-    (void)adpcm_step(s, n);
+    if (d >= st) { n |= 4; d -= st; }
+    st >>= 1;
+    if (d >= st) { n |= 2; d -= st; }
+    st >>= 1;
+    if (d >= st) n |= 1;
+    return n;
+}
+
+static inline uint32_t pack(const adpcm_t *a) { return (uint16_t)a->pred | (uint32_t)a->idx << 16; }
+
+static inline void unpack(adpcm_t *a, uint32_t s)
+{
+    a->pred = (int16_t)s;
+    a->idx = (uint8_t)(s >> 16);
+}
+
+/* the codec for the tests (flash) */
+COLD int looper_adpcm_dec(adpcm_t *a, unsigned nib)
+{
+    unpack(a, step(pack(a), nib & 15u));
+    return a->pred;
+}
+
+COLD unsigned looper_adpcm_enc(adpcm_t *a, int x)
+{
+    unsigned n = quant(pack(a), x);
+    unpack(a, step(pack(a), n));
     return n;
 }
 
@@ -76,42 +95,26 @@ static inline uint8_t *bank_blk(const looper_t *lp, unsigned bank, uint32_t b)
     return blk(lp, b + (lp->banks == 2 ? bank * lp->half : 0));
 }
 
-static inline void hdr_get(const uint8_t *p, adpcm_t *s)
+/* float -> int16, saturated (the M7: VCVT then SSAT) */
+static inline int sat16(float v)
 {
-    s->pred = (int16_t)(p[0] | p[1] << 8);
-    s->idx = p[2] > 88 ? 88 : p[2];
+#if defined(__ARM_FEATURE_SAT)
+    return __builtin_arm_ssat((int)v, 16);   /* |v| < 2^17 here: the cast is exact */
+#else
+    return v > 32767.0f ? 32767 : v < -32768.0f ? -32768 : (int)v;
+#endif
 }
 
-static inline void hdr_put(uint8_t *p, const adpcm_t *s)
-{
-    p[0] = (uint8_t)s->pred;
-    p[1] = (uint8_t)((uint16_t)s->pred >> 8);
-    p[2] = s->idx;
-    p[3] = 0;
-}
-
-static inline unsigned nib_get(const uint8_t *p, uint32_t o)
-{
-    unsigned b = p[4 + (o >> 1)];
-    return (o & 1u) ? b >> 4 : b & 15u;
-}
-
-static inline void nib_put(uint8_t *p, uint32_t o, unsigned n)
-{
-    uint8_t *b = &p[4 + (o >> 1)];
-    *b = (o & 1u) ? (uint8_t)((*b & 0x0Fu) | n << 4) : (uint8_t)((*b & 0xF0u) | n);
-}
-
-static inline float ramp(float g, float t, float step)
+static inline float ramp(float g, float t, float st)
 {
     float e = t - g;
-    return e > step ? g + step : e < -step ? g - step : t;
+    return e > st ? g + st : e < -st ? g - st : t;
 }
 
 /* REC closes: the loop is pos samples long; the first block is rewritten
  * with the crossfade (in place, the writer continues the record's
  * encoder: the tail follows the loop end in time). */
-static void close_rec(looper_t *lp)
+__attribute__((noinline)) static void close_rec(looper_t *lp)
 {
     lp->len = lp->pos;
     lp->nblk = (lp->len + LOOPER_BLK - 1u) / LOOPER_BLK;
@@ -124,107 +127,148 @@ static void close_rec(looper_t *lp)
     lp->state = LOOPER_PLAY;
 }
 
-/* k samples at the loop's rate: x in, y out (the loop, level and fades in).
- * One path for all states that run: REC is a write with no old signal. */
+/* k samples at the loop's rate: x in (read only while writing), y out (the
+ * loop, level and fades in). One path for all states that run: REC is a
+ * write with no old signal. The state lives in locals here: the nibble
+ * stores (uint8_t) would otherwise make the compiler reload it. The fades
+ * step linearly across the call (to the value a per-sample ramp reaches). */
 static void run(looper_t *lp, const float *x, float *y, unsigned k)
 {
-    const float rs = lp->ramp, lv = lp->level * (1.0f / SCALE);
+    if (lp->state == LOOPER_STOP) {
+        for (unsigned i = 0; i < k; i++) y[i] = 0.0f;
+        return;
+    }
+    const float rk = lp->ramp * (float)k, ik = 1.0f / (float)k;
+    const float lv = lp->level * (1.0f / SCALE);
+    float dg = lp->dub_g, og = lp->out_g;
+    const float dg1 = ramp(dg, lp->dub_t, rk), og1 = ramp(og, lp->out_t, rk);
+    const float ddg = (dg1 - dg) * ik, dog = (og1 - og) * ik;
+    const int dub = lp->dub_t > 0.0f || dg > 0.0f || dg1 > 0.0f;
+    int rec = lp->state == LOOPER_REC, wr = lp->writing;
+    uint32_t pos = lp->pos, xf = lp->xfade, end = rec ? lp->rec_end : lp->len;
+    uint32_t ds = pack(&lp->dec), es = pack(&lp->enc);
+    uint8_t *p = bank_blk(lp, lp->cur, pos / LOOPER_BLK);
     for (unsigned i = 0; i < k; i++) {
-        y[i] = 0.0f;
-        if (lp->state == LOOPER_STOP) continue;
-        const int rec = lp->state == LOOPER_REC;
-        uint32_t o = lp->pos % LOOPER_BLK;
-        uint8_t *p = bank_blk(lp, lp->cur, lp->pos / LOOPER_BLK);
-        int want = rec || lp->dub_t > 0.0f || lp->dub_g > 0.0f || lp->xfade;
+        uint32_t o = pos % LOOPER_BLK;
+        int want = rec || dub || xf;
+        dg += ddg;
+        og += dog;
         if (o == 0) {
-            if (!rec) hdr_get(p, &lp->dec);
-            if (lp->writing && want) hdr_put(p, &lp->enc);
-            else lp->writing = 0;
+            p = bank_blk(lp, lp->cur, pos / LOOPER_BLK);
+            if (!rec) ds = (uint16_t)(p[0] | p[1] << 8) | (uint32_t)(p[2] > 88 ? 88 : p[2]) << 16;
+            if (wr && want) {
+                p[0] = (uint8_t)es;
+                p[1] = (uint8_t)(es >> 8);
+                p[2] = (uint8_t)(es >> 16);
+                p[3] = 0;
+            } else {
+                wr = 0;
+            }
         }
-        if (!lp->writing && want) {           /* starts here: from the old stream's state */
-            lp->writing = 1;
-            lp->enc = lp->dec;
+        if (!wr && want) {                    /* starts here: from the old stream's state */
+            wr = 1;
+            es = ds;
         }
-        float old = rec ? 0.0f : (float)looper_adpcm_dec(&lp->dec, nib_get(p, o));
+        uint8_t *b = &p[4 + (o >> 1)];
+        float old = 0.0f;
+        if (!rec) {
+            ds = step(ds, (o & 1u) ? *b >> 4 : *b & 15u);
+            old = (float)(int16_t)ds;
+        }
         float out = old;
-        if (lp->writing) {
+        if (wr) {
             float gi = 1.0f, go = 0.0f;        /* REC */
-            if (lp->xfade) {                   /* the closing crossfade */
-                go = (float)(LOOPER_BLK - lp->xfade) * (1.0f / LOOPER_BLK);
+            if (xf) {                          /* the closing crossfade */
+                go = (float)(LOOPER_BLK - xf) * (1.0f / LOOPER_BLK);
                 gi = 1.0f - go;
                 out = old * go;                /* the tail is heard live on this pass */
-                lp->xfade--;
+                xf--;
             } else if (!rec) {
-                gi = lp->dub_g;
+                gi = dg;
                 go = 1.0f - (1.0f - LOOPER_FB) * gi;
             }
             float v = old * go + x[i] * SCALE * gi;
-            int q = v > 32767.0f ? 32767 : v < -32768.0f ? -32768 : (int)v;
-            nib_put(p, o, looper_adpcm_enc(&lp->enc, q));
+            unsigned nb = quant(es, sat16(v));
+            es = step(es, nb);
+            *b = (o & 1u) ? (uint8_t)((*b & 0x0Fu) | nb << 4) : (uint8_t)((*b & 0xF0u) | nb);
         }
-        lp->dub_g = ramp(lp->dub_g, lp->dub_t, rs);
-        lp->out_g = ramp(lp->out_g, lp->out_t, rs);
-        y[i] = out * lp->out_g * lv;
-        if (++lp->pos >= (rec ? lp->rec_end : lp->len)) {
-            if (rec) {
+        y[i] = out * og * lv;
+        if (++pos >= end) {
+            if (rec) {                         /* the loop closes: reload the state */
+                lp->pos = pos;
+                unpack(&lp->enc, es);
                 close_rec(lp);
+                rec = 0;
+                wr = 1;
+                xf = lp->xfade;
+                end = lp->len;
             } else {
-                lp->pos = 0;
                 lp->passes++;
             }
+            pos = 0;
         }
     }
+    lp->pos = pos;
+    lp->xfade = xf;
+    lp->writing = (uint8_t)wr;
+    lp->dub_g = dg1;
+    lp->out_g = og1;
+    unpack(&lp->dec, ds);
+    unpack(&lp->enc, es);
 }
 
-/* 2:1 half-band decimation in place: x[0..n) -> x[0..n/2) */
-static void decimate(looper_t *lp, float *x, unsigned n)
+/* sum_j kHb[j] * (c[-(2j+1)] + c[2j+1]): the half-band's side taps around
+ * c (the decimator); hbi: the same taps at c[-j], c[j + 1] (the
+ * interpolator's odd phase). Two chains: FP latency. */
+static inline float hb(const float *c)
 {
-    float w[HB_N + DSP_BLOCK];
-    memcpy(w, lp->dh, sizeof lp->dh);
-    memcpy(w + HB_N, x, n * sizeof x[0]);
-    for (unsigned m = 0; m < n / 2u; m++) {
-        const float *c = w + 2u * m + 1u + HB_N / 2u;   /* centre */
-        float a = 0.5f * c[0];
-        for (unsigned j = 0; j < LOOPER_HB_SIDE; j++)
-            a += kHb[j] * (c[-(int)(2u * j + 1u)] + c[2u * j + 1u]);
-        x[m] = a;
-    }
-    memcpy(lp->dh, w + n, sizeof lp->dh);
+    float a = kHb[0] * (c[-1] + c[1]) + kHb[2] * (c[-5] + c[5]) + kHb[4] * (c[-9] + c[9]) +
+              kHb[6] * (c[-13] + c[13]);
+    float b = kHb[1] * (c[-3] + c[3]) + kHb[3] * (c[-7] + c[7]) + kHb[5] * (c[-11] + c[11]);
+    return a + b;
 }
 
-/* 1:2 half-band interpolation: y[0..k) -> out[0..2k) */
-static void interpolate(looper_t *lp, const float *y, float *out, unsigned k)
+static inline float hbi(const float *c)
 {
-    float v[IH_N + DSP_BLOCK / 2];
-    memcpy(v, lp->ih, sizeof lp->ih);
-    memcpy(v + IH_N, y, k * sizeof y[0]);
-    for (unsigned m = 0; m < k; m++) {
-        const float *c = v + m + LOOPER_HB_SIDE - 1u;
-        float a = 0.0f;
-        for (unsigned j = 0; j < LOOPER_HB_SIDE; j++) a += kHb[j] * (c[-(int)j] + c[j + 1u]);
-        out[2u * m] = c[0];
-        out[2u * m + 1u] = 2.0f * a;
-    }
-    memcpy(lp->ih, v + k, sizeof lp->ih);
+    float a = kHb[0] * (c[0] + c[1]) + kHb[2] * (c[-2] + c[3]) + kHb[4] * (c[-4] + c[5]) +
+              kHb[6] * (c[-6] + c[7]);
+    float b = kHb[1] * (c[-1] + c[2]) + kHb[3] * (c[-3] + c[4]) + kHb[5] * (c[-5] + c[6]);
+    return a + b;
 }
 
 void looper_process(looper_t *lp, float *l, float *r, unsigned n)
 {
-    if (lp->state <= LOOPER_EMPTY) return;
-    float x[DSP_BLOCK], y[DSP_BLOCK / 2], o[DSP_BLOCK];
-    if (n != DSP_BLOCK) return;          /* the engine's whole blocks only */
-    for (unsigned i = 0; i < n; i++) x[i] = 0.5f * (l[i] + r[i]);
+    if (lp->state <= LOOPER_EMPTY || n != DSP_BLOCK) return;   /* the engine's whole blocks */
+    float *w = lp->dw;                   /* [history HB_N | this block] at 44.1 kHz */
+    for (unsigned i = 0; i < DSP_BLOCK; i++) w[HB_N + i] = 0.5f * (l[i] + r[i]);
+    float x[DSP_BLOCK / 2], y[DSP_BLOCK];
     if (lp->hq) {
-        run(lp, x, o, n);
+        run(lp, w + HB_N, y, DSP_BLOCK);
+        for (unsigned i = 0; i < DSP_BLOCK; i++) {
+            l[i] += y[i];
+            r[i] += y[i];
+        }
     } else {
-        decimate(lp, x, n);
-        run(lp, x, y, n / 2u);
-        interpolate(lp, y, o, n / 2u);
+        /* 2:1 half-band, only while something is recorded (the history
+         * always moves on, so a dub starts from a clean filter) */
+        if (lp->state == LOOPER_REC || lp->dub_t > 0.0f || lp->dub_g > 0.0f || lp->xfade)
+            for (unsigned m = 0; m < DSP_BLOCK / 2; m++) {
+                const float *c = w + 2u * m + 1u + HB_N / 2u;
+                x[m] = 0.5f * c[0] + hb(c);
+            }
+        float *v = lp->iw;               /* [history IH_N | this block] at 22.05 kHz */
+        run(lp, x, v + IH_N, DSP_BLOCK / 2);
+        for (unsigned m = 0; m < DSP_BLOCK / 2; m++) {   /* 1:2 half-band */
+            const float *c = v + m + LOOPER_HB_SIDE - 1u;
+            float a = c[0], b = 2.0f * hbi(c);
+            l[2u * m] += a;
+            r[2u * m] += a;
+            l[2u * m + 1u] += b;
+            r[2u * m + 1u] += b;
+        }
+        for (unsigned i = 0; i < IH_N; i++) v[i] = v[DSP_BLOCK / 2 + i];
     }
-    for (unsigned i = 0; i < n; i++) {
-        l[i] += o[i];
-        r[i] += o[i];
-    }
+    for (unsigned i = 0; i < HB_N; i++) w[i] = w[DSP_BLOCK + i];
 }
 
 /* ------------------------------------------------------------ control */

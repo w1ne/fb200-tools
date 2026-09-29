@@ -10,8 +10,8 @@
  *
  * Format: 4-bit IMA ADPCM in blocks of LOOPER_BLK samples, each with a
  * header (predictor, step index), so every block decodes on its own. At
- * 22.05 kHz (default: the input decimated by 2 with a 35-tap half-band FIR,
- * flat to 8 kHz, -70 dB from 14 kHz; the output interpolated back with the
+ * 22.05 kHz (default: the input decimated by 2 with a 27-tap half-band FIR,
+ * flat to 8 kHz, <= -47 dB from 14 kHz, <= -64 dB from 15 kHz; the output interpolated back with the
  * same filter) or at 44.1 kHz ("hq": half the time). Values are int16 at
  * x 16384: +6 dB of headroom over full scale.
  *
@@ -31,13 +31,14 @@
  * for a fade finish in looper_poll. */
 #include <stddef.h>
 #include <stdint.h>
+#include "dsp.h"
 
 #define LOOPER_BLK        256                   /* samples per ADPCM block */
 #define LOOPER_BLK_BYTES  (4 + LOOPER_BLK / 2)  /* header + nibbles */
 #define LOOPER_FB         0.95f                 /* old layers per dubbed pass */
 #define LOOPER_RAMP_MS    5
 #define LOOPER_MIN_BLKS   2                     /* shortest loop: 2 blocks (~23 ms) */
-#define LOOPER_HB_SIDE    9                     /* half-band side taps (35-tap FIR) */
+#define LOOPER_HB_SIDE    7                     /* half-band side taps (27-tap FIR) */
 
 enum {
     LOOPER_OFF,     /* no memory (the delay and long IRs have it) */
@@ -79,8 +80,10 @@ typedef struct {
     uint32_t passes;              /* loop wraps (display) */
     float dub_g, dub_t, out_g, out_t, ramp, level;
     adpcm_t dec, enc;
-    float dh[2 * LOOPER_HB_SIDE * 2 - 2];   /* decimator input history (34) */
-    float ih[2 * LOOPER_HB_SIDE - 1];       /* interpolator history (17) */
+    /* half-band filters: [history | this block] (26 + 32 at 44.1 kHz,
+     * 13 + 16 at 22.05 kHz) */
+    float dw[4 * LOOPER_HB_SIDE - 2 + DSP_BLOCK];
+    float iw[2 * LOOPER_HB_SIDE - 1 + DSP_BLOCK / 2];
 } looper_t;
 
 typedef struct {
