@@ -25,7 +25,8 @@ has no FB200 special cases.
 ## 2. Get the LabWired CLI
 
 The i.MX RT parts and the `peripheral_log` and `fidelity_clean` assertions
-are on core `main` (PRs #1254 and #1255) and are not released yet. Until the
+are on core `main` (PRs #1254 and #1255) and are not released yet. The
+Bluetooth module (`bt201`) needs core PR #1274. Until the
 next core release, build the CLI from `main`:
 
 ```bash
