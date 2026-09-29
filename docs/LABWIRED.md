@@ -151,7 +151,7 @@ stock code and in our firmware (`firmware/audio/src/ui/controls.c`):
 
 Knob `kN` is mux channel `N mod 8`; the panel names come from the measured
 table in `UI_AND_STORAGE.md`. Each knob starts at a distinct position,
-`10 + 5 N` % (`position` is in %, 0 = fully left), so a gate can tell every
+`8 + 5 N` % (never 50 %, the old fixed mid-scale level) (`position` is in %, 0 = fully left), so a gate can tell every
 knob apart. Turn a knob in a test script with a stimulus on its id, for
 example `target: { component: "knob_k15_master", channel: "position" }`.
 
@@ -200,8 +200,8 @@ and all 16 slots with the value of the knob that the table above puts
 there. The expected value of a knob at P % is
 `4095 - round(trunc(3300 P / 100) mV * 4095 / 3300)`: potentiometer and
 ADC arithmetic, not bytes of the vendor image. At 3.30 G cycles a stimulus
-turns MASTER (k15) from 85 % to 20 %; at 3.40 G its slot must hold
-`0xCCC` (20 %), not `0x266` (85 %).
+turns MASTER (k15) from 83 % to 20 %; at 3.40 G its slot must hold
+`0xCCC` (20 %), not `0x2B8` (83 %).
 
 Negative controls (same 3.4 G-cycle run):
 

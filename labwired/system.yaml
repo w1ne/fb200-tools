@@ -49,24 +49,25 @@ external_devices:
     config: { channel: 4, s0_pin: "GPIO_B1_01", s1_pin: "GPIO_B1_02", s2_pin: "GPIO_B1_03" }
   # Knob kN = mux channel N mod 8, panel names from the measured table.
   # Linear pots across 3.3 V; `position` is in % (0 = fully left). The
-  # start positions are distinct (10 + 5 N %) so a gate can tell every knob
-  # apart; the pedal's real positions are whatever the user left them at.
-  - { id: "knob_k0_thresh", type: "potentiometer", connection: "knob_mux_a", config: { channel: 0, position: 10 } }
-  - { id: "knob_k1_comp_level", type: "potentiometer", connection: "knob_mux_a", config: { channel: 1, position: 15 } }
-  - { id: "knob_k2_amp", type: "potentiometer", connection: "knob_mux_a", config: { channel: 2, position: 20 } }
-  - { id: "knob_k3_gate", type: "potentiometer", connection: "knob_mux_a", config: { channel: 3, position: 25 } }
-  - { id: "knob_k4_bass", type: "potentiometer", connection: "knob_mux_a", config: { channel: 4, position: 30 } }
-  - { id: "knob_k5_gain", type: "potentiometer", connection: "knob_mux_a", config: { channel: 5, position: 35 } }
-  - { id: "knob_k6_mid", type: "potentiometer", connection: "knob_mux_a", config: { channel: 6, position: 40 } }
-  - { id: "knob_k7_treble", type: "potentiometer", connection: "knob_mux_a", config: { channel: 7, position: 45 } }
-  - { id: "knob_k8_rate", type: "potentiometer", connection: "knob_mux_b", config: { channel: 0, position: 50 } }
-  - { id: "knob_k9_mod", type: "potentiometer", connection: "knob_mux_b", config: { channel: 1, position: 55 } }
-  - { id: "knob_k10_vol", type: "potentiometer", connection: "knob_mux_b", config: { channel: 2, position: 60 } }
-  - { id: "knob_k11_mix", type: "potentiometer", connection: "knob_mux_b", config: { channel: 3, position: 65 } }
-  - { id: "knob_k12_reverb", type: "potentiometer", connection: "knob_mux_b", config: { channel: 4, position: 70 } }
-  - { id: "knob_k13_cab", type: "potentiometer", connection: "knob_mux_b", config: { channel: 5, position: 75 } }
-  - { id: "knob_k14_rev_level", type: "potentiometer", connection: "knob_mux_b", config: { channel: 6, position: 80 } }
-  - { id: "knob_k15_master", type: "potentiometer", connection: "knob_mux_b", config: { channel: 7, position: 85 } }
+  # start positions are distinct (8 + 5 N %) so a gate can tell every knob
+  # apart, and none is 50 % (the old fixed mid-scale level). The pedal's
+  # real positions are whatever the user left them at.
+  - { id: "knob_k0_thresh", type: "potentiometer", connection: "knob_mux_a", config: { channel: 0, position: 8 } }
+  - { id: "knob_k1_comp_level", type: "potentiometer", connection: "knob_mux_a", config: { channel: 1, position: 13 } }
+  - { id: "knob_k2_amp", type: "potentiometer", connection: "knob_mux_a", config: { channel: 2, position: 18 } }
+  - { id: "knob_k3_gate", type: "potentiometer", connection: "knob_mux_a", config: { channel: 3, position: 23 } }
+  - { id: "knob_k4_bass", type: "potentiometer", connection: "knob_mux_a", config: { channel: 4, position: 28 } }
+  - { id: "knob_k5_gain", type: "potentiometer", connection: "knob_mux_a", config: { channel: 5, position: 33 } }
+  - { id: "knob_k6_mid", type: "potentiometer", connection: "knob_mux_a", config: { channel: 6, position: 38 } }
+  - { id: "knob_k7_treble", type: "potentiometer", connection: "knob_mux_a", config: { channel: 7, position: 43 } }
+  - { id: "knob_k8_rate", type: "potentiometer", connection: "knob_mux_b", config: { channel: 0, position: 48 } }
+  - { id: "knob_k9_mod", type: "potentiometer", connection: "knob_mux_b", config: { channel: 1, position: 53 } }
+  - { id: "knob_k10_vol", type: "potentiometer", connection: "knob_mux_b", config: { channel: 2, position: 58 } }
+  - { id: "knob_k11_mix", type: "potentiometer", connection: "knob_mux_b", config: { channel: 3, position: 63 } }
+  - { id: "knob_k12_reverb", type: "potentiometer", connection: "knob_mux_b", config: { channel: 4, position: 68 } }
+  - { id: "knob_k13_cab", type: "potentiometer", connection: "knob_mux_b", config: { channel: 5, position: 73 } }
+  - { id: "knob_k14_rev_level", type: "potentiometer", connection: "knob_mux_b", config: { channel: 6, position: 78 } }
+  - { id: "knob_k15_master", type: "potentiometer", connection: "knob_mux_b", config: { channel: 7, position: 83 } }
 peripherals:
   - id: "adc1"
     type: "imxrt_adc"

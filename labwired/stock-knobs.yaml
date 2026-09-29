@@ -17,15 +17,15 @@
 #     in two tables in DTCM: 0x2001DED6 + 2 i (mux A) and 0x2001DEE6 + 2 i
 #     (mux B).
 #
-# Each knob kN starts at a distinct position, 10 + 5 N % (system.yaml), so
+# Each knob kN starts at a distinct position, 8 + 5 N % (system.yaml), so
 # every slot has its own expected value. Expected value of a knob at P %:
 #   mV = trunc(3300 * P / 100); counts = round(mV * 4095 / 3300);
 #   slot value = 4095 - counts.
 # These are datasheet and divider facts, not bytes of the vendor image.
 #
-# At 3.30 G cycles a stimulus turns MASTER (k15) from 85 % to 20 %. The
+# At 3.30 G cycles a stimulus turns MASTER (k15) from 83 % to 20 %. The
 # scanner reads it again within 80 ms (48 M cycles), so at 3.40 G its slot
-# must hold the new value 0xCCC, not the start value 0x266.
+# must hold the new value 0xCCC, not the start value 0x2B8.
 schema_version: "1.2"
 inputs:
   firmware: "../build/labwired/stock.elf"
@@ -47,40 +47,40 @@ assertions:
   - memory_value: { address: 0x401BC004, mask: 0x000E0000, expected_value: 0x000E0000 }
 
   # --- Mux A (ADC1 IN3): slot i holds knob k0+((i + 1) mod 8) ---
-  # slot 0: k1 COMP_LEVEL at 15 %
-  - memory_value: { address: 0x2001DED6, size: 2, expected_value: 0xd99 }
-  # slot 1: k2 AMP at 20 %
-  - memory_value: { address: 0x2001DED8, size: 2, expected_value: 0xccc }
-  # slot 2: k3 GATE at 25 %
-  - memory_value: { address: 0x2001DEDA, size: 2, expected_value: 0xbff }
-  # slot 3: k4 BASS at 30 %
-  - memory_value: { address: 0x2001DEDC, size: 2, expected_value: 0xb32 }
-  # slot 4: k5 GAIN at 35 %
-  - memory_value: { address: 0x2001DEDE, size: 2, expected_value: 0xa66 }
-  # slot 5: k6 MID at 40 %
-  - memory_value: { address: 0x2001DEE0, size: 2, expected_value: 0x999 }
-  # slot 6: k7 TREBLE at 45 %
-  - memory_value: { address: 0x2001DEE2, size: 2, expected_value: 0x8cc }
-  # slot 7: k0 THRESH at 10 %
-  - memory_value: { address: 0x2001DEE4, size: 2, expected_value: 0xe65 }
+  # slot 0: k1 COMP_LEVEL at 13 %
+  - memory_value: { address: 0x2001DED6, size: 2, expected_value: 0xdeb }
+  # slot 1: k2 AMP at 18 %
+  - memory_value: { address: 0x2001DED8, size: 2, expected_value: 0xd1e }
+  # slot 2: k3 GATE at 23 %
+  - memory_value: { address: 0x2001DEDA, size: 2, expected_value: 0xc51 }
+  # slot 3: k4 BASS at 28 %
+  - memory_value: { address: 0x2001DEDC, size: 2, expected_value: 0xb84 }
+  # slot 4: k5 GAIN at 33 %
+  - memory_value: { address: 0x2001DEDE, size: 2, expected_value: 0xab8 }
+  # slot 5: k6 MID at 38 %
+  - memory_value: { address: 0x2001DEE0, size: 2, expected_value: 0x9eb }
+  # slot 6: k7 TREBLE at 43 %
+  - memory_value: { address: 0x2001DEE2, size: 2, expected_value: 0x91e }
+  # slot 7: k0 THRESH at 8 %
+  - memory_value: { address: 0x2001DEE4, size: 2, expected_value: 0xeb7 }
 
   # --- Mux B (ADC1 IN4): slot i holds knob k8+((i + 1) mod 8) ---
-  # slot 0: k9 MOD at 55 %
-  - memory_value: { address: 0x2001DEE6, size: 2, expected_value: 0x733 }
-  # slot 1: k10 VOL at 60 %
-  - memory_value: { address: 0x2001DEE8, size: 2, expected_value: 0x666 }
-  # slot 2: k11 MIX at 65 %
-  - memory_value: { address: 0x2001DEEA, size: 2, expected_value: 0x599 }
-  # slot 3: k12 REVERB at 70 %
-  - memory_value: { address: 0x2001DEEC, size: 2, expected_value: 0x4cc }
-  # slot 4: k13 CAB at 75 %
-  - memory_value: { address: 0x2001DEEE, size: 2, expected_value: 0x400 }
-  # slot 5: k14 REV_LEVEL at 80 %
-  - memory_value: { address: 0x2001DEF0, size: 2, expected_value: 0x333 }
-  # slot 6: k15 MASTER at 20 % (turned from 85 %: start value would be 0x266)
+  # slot 0: k9 MOD at 53 %
+  - memory_value: { address: 0x2001DEE6, size: 2, expected_value: 0x785 }
+  # slot 1: k10 VOL at 58 %
+  - memory_value: { address: 0x2001DEE8, size: 2, expected_value: 0x6b8 }
+  # slot 2: k11 MIX at 63 %
+  - memory_value: { address: 0x2001DEEA, size: 2, expected_value: 0x5eb }
+  # slot 3: k12 REVERB at 68 %
+  - memory_value: { address: 0x2001DEEC, size: 2, expected_value: 0x51e }
+  # slot 4: k13 CAB at 73 %
+  - memory_value: { address: 0x2001DEEE, size: 2, expected_value: 0x452 }
+  # slot 5: k14 REV_LEVEL at 78 %
+  - memory_value: { address: 0x2001DEF0, size: 2, expected_value: 0x385 }
+  # slot 6: k15 MASTER at 20 % (turned from 83 %: start value would be 0x2b8)
   - memory_value: { address: 0x2001DEF2, size: 2, expected_value: 0xccc }
-  # slot 7: k8 RATE at 50 %
-  - memory_value: { address: 0x2001DEF4, size: 2, expected_value: 0x7ff }
+  # slot 7: k8 RATE at 48 %
+  - memory_value: { address: 0x2001DEF4, size: 2, expected_value: 0x851 }
 
   # --- No fidelity gap, and the run did not stop early ---
   - fidelity_clean: true
