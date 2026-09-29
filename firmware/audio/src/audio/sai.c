@@ -8,6 +8,7 @@
  * TX_BCLK = GPIO_AD_B1_14, TX_SYNC = GPIO_AD_B1_15, all ALT3, pad config
  * 0x10B0 (same value the stock uses). */
 #include "fsl_clock.h"
+#include "cold.h"
 #include "fsl_common.h"
 #include "fsl_dmamux.h"
 #include "fsl_edma.h"
@@ -15,6 +16,7 @@
 #include "fsl_sai.h"
 #include "fsl_sai_edma.h"
 #include "audio/sai.h"
+#include "audio/sai_ring.h"
 #include "audio/audio_config.h"
 
 #define SAI_BASE SAI1
@@ -33,11 +35,10 @@ static int16_t s_rx_buf[2][SAI_BLOCK_FRAMES * 2];
 static int16_t s_tx_buf[2][SAI_BLOCK_FRAMES * 2];
 static uint8_t s_rx_idx, s_tx_idx;
 
-#define RING_FRAMES 512
-static int16_t s_rx_ring[RING_FRAMES * 2];
-static uint32_t s_rx_head, s_rx_tail;
-static int16_t s_tx_ring[RING_FRAMES * 2];
-static uint32_t s_tx_head, s_tx_tail;
+/* Whole 32-frame blocks only (audio/sai_ring.h): an RX block that does not
+ * fit is dropped whole (ovf counts blocks), an empty TX ring plays a whole
+ * block of silence (unf counts frames). */
+static sai_ring_t s_rxr, s_txr;
 static volatile uint32_t s_rx_blocks, s_tx_blocks, s_over, s_under;
 
 static void sai_clock_init(void)
@@ -87,17 +88,7 @@ static void rx_done(I2S_Type *base, sai_edma_handle_t *handle, status_t status,
     (void)handle;
     (void)userData;
     (void)status;
-    const int16_t *buf = s_rx_buf[s_rx_idx];
-    for (size_t i = 0; i < SAI_BLOCK_FRAMES; i++) {
-        uint32_t next = (s_rx_head + 1u) % RING_FRAMES;
-        if (next == s_rx_tail) {
-            s_over++;
-            break;
-        }
-        s_rx_ring[s_rx_head * 2 + 0] = buf[i * 2 + 0];
-        s_rx_ring[s_rx_head * 2 + 1] = buf[i * 2 + 1];
-        s_rx_head = next;
-    }
+    if (!sai_ring_put(&s_rxr, s_rx_buf[s_rx_idx], SAI_BLOCK_FRAMES)) s_over++;
     s_rx_blocks++;
     sai_transfer_t xfer = {
         .data = (uint8_t *)s_rx_buf[s_rx_idx],
@@ -114,16 +105,9 @@ static void tx_done(I2S_Type *base, sai_edma_handle_t *handle, status_t status,
     (void)userData;
     (void)status;
     int16_t *buf = s_tx_buf[s_tx_idx];
-    for (size_t i = 0; i < SAI_BLOCK_FRAMES; i++) {
-        if (s_tx_tail == s_tx_head) {
-            buf[i * 2 + 0] = 0;
-            buf[i * 2 + 1] = 0;
-            s_under++;
-        } else {
-            buf[i * 2 + 0] = s_tx_ring[s_tx_tail * 2 + 0];
-            buf[i * 2 + 1] = s_tx_ring[s_tx_tail * 2 + 1];
-            s_tx_tail = (s_tx_tail + 1u) % RING_FRAMES;
-        }
+    if (!sai_ring_get(&s_txr, buf, SAI_BLOCK_FRAMES)) {
+        for (size_t i = 0; i < SAI_BLOCK_FRAMES * 2; i++) buf[i] = 0;
+        s_under += SAI_BLOCK_FRAMES;
     }
     s_tx_blocks++;
     sai_transfer_t xfer = {
@@ -134,7 +118,7 @@ static void tx_done(I2S_Type *base, sai_edma_handle_t *handle, status_t status,
     (void)SAI_TransferSendEDMA(base, &s_tx, &xfer);
 }
 
-void sai_audio_init(void)
+COLD void sai_audio_init(void)
 {
     sai_clock_init();
     sai_pads();
@@ -192,44 +176,31 @@ void sai_audio_init(void)
     SAI_RxEnable(SAI_BASE, true);
 }
 
-size_t sai_pull(int16_t *dst, size_t frames)
+bool sai_pull_block(int16_t *dst)
 {
-    size_t n = 0;
-    while (n < frames && s_rx_tail != s_rx_head) {
-        dst[n * 2 + 0] = s_rx_ring[s_rx_tail * 2 + 0];
-        dst[n * 2 + 1] = s_rx_ring[s_rx_tail * 2 + 1];
-        s_rx_tail = (s_rx_tail + 1u) % RING_FRAMES;
-        n++;
-    }
-    return n;
+    return sai_ring_get(&s_rxr, dst, SAI_BLOCK_FRAMES) != 0;
 }
 
-size_t sai_push(const int16_t *src, size_t frames)
+bool sai_push_block(const int16_t *src, uint32_t max_fill)
 {
-    size_t n = 0;
-    while (n < frames) {
-        uint32_t next = (s_tx_head + 1u) % RING_FRAMES;
-        if (next == s_tx_tail) {
-            break;
-        }
-        s_tx_ring[s_tx_head * 2 + 0] = src[n * 2 + 0];
-        s_tx_ring[s_tx_head * 2 + 1] = src[n * 2 + 1];
-        s_tx_head = next;
-        n++;
-    }
-    return n;
+    return sai_ring_put_bounded(&s_txr, src, SAI_BLOCK_FRAMES, max_fill) != 0;
+}
+
+uint32_t sai_rx_fill(void)
+{
+    return sai_ring_fill(&s_rxr);
 }
 
 uint32_t sai_tx_fill(void)
 {
-    return (s_tx_head + RING_FRAMES - s_tx_tail) % RING_FRAMES;
+    return sai_ring_fill(&s_txr);
 }
 
 void sai_stats(uint32_t *rx_fill, uint32_t *tx_fill, uint32_t *rx_blocks,
                uint32_t *tx_blocks, uint32_t *over, uint32_t *under)
 {
-    *rx_fill = (s_rx_head + RING_FRAMES - s_rx_tail) % RING_FRAMES;
-    *tx_fill = (s_tx_head + RING_FRAMES - s_tx_tail) % RING_FRAMES;
+    *rx_fill = sai_ring_fill(&s_rxr);
+    *tx_fill = sai_ring_fill(&s_txr);
     *rx_blocks = s_rx_blocks;
     *tx_blocks = s_tx_blocks;
     *over = s_over;

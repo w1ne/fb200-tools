@@ -1,4 +1,5 @@
 #include <string.h>
+#include "cold.h"
 #include "conv2.h"
 
 /* Tail timing (frame f = the 256 samples being filled now, in[cur]):
@@ -167,6 +168,23 @@ void conv2_reset(conv2_t *c)
     if (c->load == CONV2_LOAD_HEAD) head_swap(c);   /* its tail is live, y is 0 */
 }
 
+COLD void conv2_detach_tail(conv2_t *c)
+{
+    if (c->load == CONV2_LOAD_HEAD) head_swap(c);   /* its head is staged: live now */
+    c->load = CONV2_LOAD_IDLE;               /* a load still in its FFTs: dropped */
+    c->parts = 0;
+    c->t = NULL;
+    tail_clear(c);                           /* t NULL: the frame counters only */
+}
+
+COLD void conv2_attach_tail(conv2_t *c, conv2_tail_t *tail)
+{
+    conv2_detach_tail(c);
+    c->t = tail;
+    (void)arm_rfft_fast_init_512_f32(&c->fft);   /* conv2_init(c, NULL) skipped it */
+    tail_clear(c);
+}
+
 int conv2_set_ir(conv2_t *c, const float *ir, size_t taps)
 {
     if (taps == 0 || taps > (c->t ? (size_t)CONV2_MAX_TAPS : (size_t)CONV2_HEAD_TAPS)) return -1;
@@ -212,16 +230,29 @@ void conv2_process(conv2_t *c, const float *in, float *out, size_t n)
     }
     if (c->load == CONV2_LOAD_FFT && n && c->slice != 0 && c->slice != CONV2_SLICES - 1)
         load_step(c);
+    /* The head runs on whole chunks (up to DSP_BLOCK), not split at frame
+     * edges: a split costs the head a second FFT + MAC step (conv.c
+     * rephase). Only a staged head IR (CONV2_LOAD_HEAD, it goes live at the
+     * frame edge in advance) needs the split. The tail's input is copied
+     * before the head writes in place. */
     while (n) {
-        size_t m = CONV2_B - c->pos < n ? CONV2_B - c->pos : n;
-        const float *y = c->t->y + c->pos;
-        arm_copy_f32(in, c->t->in[c->cur] + c->pos, (uint32_t)m);   /* before in place */
-        conv_process(&c->head, in, out, m);
-        for (size_t i = 0; i < m; i++) out[i] += y[i];
-        c->n += (uint32_t)m;
-        advance(c, m);                       /* may rewrite y at the frame end */
-        in += m;
-        out += m;
-        n -= m;
+        size_t b = n < DSP_BLOCK ? n : DSP_BLOCK;
+        int split = c->load == CONV2_LOAD_HEAD;
+        float x[DSP_BLOCK];
+        arm_copy_f32(in, x, (uint32_t)b);
+        if (!split) conv_process(&c->head, in, out, b);
+        for (size_t done = 0; done < b;) {
+            size_t m = CONV2_B - c->pos < b - done ? CONV2_B - c->pos : b - done;
+            const float *y = c->t->y + c->pos;
+            arm_copy_f32(x + done, c->t->in[c->cur] + c->pos, (uint32_t)m);
+            if (split) conv_process(&c->head, x + done, out + done, m);
+            for (size_t i = 0; i < m; i++) out[done + i] += y[i];
+            c->n += (uint32_t)m;
+            advance(c, m);                   /* may rewrite y, swap the head */
+            done += m;
+        }
+        in += b;
+        out += b;
+        n -= b;
     }
 }

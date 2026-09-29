@@ -71,7 +71,7 @@ TUSB_DEFS := \
   -DI2C_RETRY_TIMES=100000 \
   -DARM_MATH_LOOPUNROLL
 CFLAGS    := $(CPUFLAGS) -O2 -g3 -ffreestanding -fno-builtin -fno-common \
-             -ffunction-sections -fdata-sections \
+             -ffunction-sections -fdata-sections -fstack-usage \
              -fno-stack-protector -fno-unwind-tables -fno-asynchronous-unwind-tables \
              -Wall -Wextra -Wno-unused-parameter -std=gnu11 \
              $(if $(filter recovery,$(VARIANT)),-DFB200_RECOVERY) \
@@ -81,18 +81,18 @@ LDFLAGS   := $(CPUFLAGS) -nostdlib -Wl,--gc-sections -L $(TARGET) -T linker.ld \
 
 SRC_C := \
   src/startup.c src/vectors.c src/main.c src/memfuncs.c \
-  src/system_clock.c src/usb_descriptors.c src/compat/stubs.c src/led.c src/crc32.c \
+  src/system_clock.c src/usb_descriptors.c src/compat/stubs.c src/led.c src/crc32.c src/cpu_idle.c src/cpu_power.c \
   src/dsp/dsp.c src/dsp/math.c src/dsp/gain.c src/dsp/testgen.c \
   src/dsp/conv.c src/dsp/conv2.c src/dsp/biquad.c src/dsp/detector.c src/dsp/gate.c src/dsp/comp.c \
   src/dsp/mod.c src/dsp/reverb.c src/dsp/delay.c src/dsp/eq.c \
-  src/dsp/drums.c src/dsp/tuner.c \
+  src/dsp/drums.c src/dsp/tuner.c src/dsp/looper.c src/dsp/loop_mem.c \
   src/dsp/amp.c src/dsp/tone.c src/dsp/cab.c src/dsp/stock_data.c \
   src/debug/log_fmt.c src/debug/cdc_log.c src/debug/console.c \
-  src/debug/selfupdate.c src/debug/recovery.c src/debug/regs.c \
+  src/debug/selfupdate.c src/debug/flash_rmw.c src/debug/recovery.c src/debug/regs.c \
   src/audio/i2c_probe.c \
   src/audio/usb_audio.c src/audio/engine.c src/audio/frontend.c src/audio/bt_audio.c \
-  src/ui/pads.c src/ui/display.c src/ui/controls.c src/ui/power.c \
-  src/ui/ui.c src/ui/lightbar.c src/ui/rgb.c src/preset/preset.c src/bt/bt.c src/audio/codec.c \
+  src/ui/pads.c src/ui/display.c src/ui/controls.c src/ui/power.c src/ui/power_logic.c \
+  src/ui/ui.c src/ui/lightbar.c src/ui/rgb.c src/preset/preset.c src/preset/preset_check.c src/bt/bt.c src/audio/codec.c \
   src/proto/proto.c src/proto/proto_port.c src/usb_hid.c \
   src/irstore/irstore.c src/irstore/irstore_port.c \
   src/audio/sai.c src/audio/drift.c \
@@ -126,7 +126,7 @@ SRC_C := \
 # The recovery image is a resident launcher: it must stay below ITCM 0x1F000
 # (the copier), so it carries none of the audio/DSP/LED code.
 ifeq ($(VARIANT),recovery)
-SRC_C := $(filter-out src/led.c src/dsp/% src/audio/engine.c \
+SRC_C := $(filter-out src/led.c src/cpu_idle.c src/cpu_power.c src/dsp/% src/audio/engine.c \
                     src/audio/usb_audio.c src/audio/codec.c src/audio/sai.c \
                     src/audio/drift.c src/audio/frontend.c src/audio/bt_audio.c src/ui/% src/preset/% src/bt/% src/proto/% \
                     src/irstore/% \
@@ -157,7 +157,8 @@ $(STOCK_OBJS) $(TARGET)/$(DSP_SRC)/FilteringFunctions/FilteringFunctions.c.o: \
 #    usb_audio_task, or through a driver callback is here;
 #  - flash writes: nothing that runs while the flash is busy or after an app
 #    update has erased this very code is here: the flash write path
-#    (selfupdate.c: fw_begin, fw_rx_task, flash_store, the update session)
+#    (selfupdate.c: fw_begin, fw_rx_task, flash_store, the update session;
+#    flash_rmw.c and the audio pump it runs while the flash is busy)
 #    and what it reaches (tud_task and the USB class drivers, the CDC log,
 #    the USB descriptors, fsl_flexspi.c).
 # Every other file stays in ITCM. The main loop (main.c), boot (startup.c),
@@ -165,9 +166,10 @@ $(STOCK_OBJS) $(TARGET)/$(DSP_SRC)/FilteringFunctions/FilteringFunctions.c.o: \
 # Recovery has no XIP code: it runs everything from ITCM.
 COLD_SRC := \
   src/debug/console.c src/debug/regs.c \
-  src/led.c \
-  src/ui/ui.c src/ui/display.c src/ui/controls.c src/ui/power.c src/ui/lightbar.c \
-  src/preset/preset.c src/proto/proto.c src/irstore/irstore.c src/irstore/irstore_port.c \
+  src/led.c src/cpu_power.c \
+  src/ui/ui.c src/ui/display.c src/ui/controls.c src/ui/power.c src/ui/power_logic.c src/ui/lightbar.c \
+  src/preset/preset.c src/preset/preset_check.c src/proto/proto.c \
+  src/irstore/irstore.c src/irstore/irstore_port.c \
   src/audio/i2c_probe.c src/audio/frontend.c src/dsp/stock_data.c \
   $(BOARD_DIR)/board/clock_config.c \
   $(BOARD_DIR)/board/pin_mux.c \

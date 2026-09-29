@@ -1,6 +1,7 @@
 #include <string.h>
 #include "ui/lightbar.h"
 #include "ui/rgb.h"
+#include "dsp/looper.h"
 
 /* First LED of each footswitch's ring, A..D: switch s is LEDs 10*s..10*s+9,
  * as the stock addresses them (0x19414; rhythm ring A = switch A at 0x68ca).
@@ -21,6 +22,9 @@ static const uint32_t kLive[4] = {0x800080, 0xFF6400, 0xFF0000, 0x00FF00};
 static uint32_t save_ms, beat_ms, shown_ms;
 static bool saving;
 static uint8_t shown[RGB_COUNT][3];
+static unsigned global_pct = 100u;   /* ui/power.c: brightness, 0 = dark */
+
+void lightbar_set_level(unsigned pct) { global_pct = pct > 100u ? 100u : pct; }
 
 uint32_t lightbar_colour(unsigned index, unsigned level)
 {
@@ -75,6 +79,14 @@ void lightbar_rings(uint32_t now_ms, const lightbar_in_t *in, uint32_t ring[4])
         if (in->playing) ring[3] = RED;
         break;
     }
+    case LB_LOOPER: {
+        static const uint32_t kLoop[] = {[LOOPER_REC] = RED, [LOOPER_PLAY] = 0x00FF00,
+                                         [LOOPER_DUB] = 0xFF6400, [LOOPER_STOP] = 0};
+        bool playing = in->loop == LOOPER_PLAY || in->loop == LOOPER_DUB;
+        if (in->loop <= LOOPER_STOP) ring[0] = playing && in->loop_top ? 0xFFFFFF : kLoop[in->loop];
+        if (in->loop >= LOOPER_PLAY) ring[1] = 0x0000FF;
+        break;
+    }
     }
 }
 
@@ -87,6 +99,11 @@ void lightbar_task(uint32_t now_ms, const lightbar_in_t *in)
         /* stock 0x17d54 stores each byte >> 2: 25 % of full scale at most */
         uint8_t r = (uint8_t)(ring[s] >> 18), g = (uint8_t)((ring[s] >> 10) & 0x3Fu),
                 b = (uint8_t)((ring[s] >> 2) & 0x3Fu);
+        if (global_pct < 100u) {
+            r = (uint8_t)(r * global_pct / 100u);
+            g = (uint8_t)(g * global_pct / 100u);
+            b = (uint8_t)(b * global_pct / 100u);
+        }
         for (int i = kRingFirst[s]; i < kRingFirst[s] + 10; i++) {
             frame[i][0] = r;
             frame[i][1] = g;

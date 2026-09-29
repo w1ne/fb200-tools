@@ -17,6 +17,7 @@ from fb200.mcp_server import (
     build_server,
     parse_delay,
     parse_eq,
+    parse_loop,
     parse_profile,
 )
 from fb200.pedal import MODULES, PRESET_SIZE, FB200Device
@@ -39,7 +40,34 @@ class FakeConsole:
         self.delay = {"on": "off", "time": 500, "fb": 30, "mix": 25, "lowcut": 0, "tone": 100}
         self.eq = {"on": False, "hpf": 0.0, "lpf": 0.0,
                    "bands": [[f, 0.0, 1.0] for f in (40.0, 100.0, 250.0, 800.0, 3000.0)]}
+        self.loop = {"state": "off", "hq": 0, "level": 100}
         self.closed = False
+
+    def loop_cmd(self, args: list[str]) -> str:
+        # console.c cmd_loop (the state machine reduced to what the tool sends)
+        lp = self.loop
+        err = ""
+        if args and args[0] in ("rec", "play", "dub", "stop", "undo", "clear", "tap"):
+            nxt = {("off", "rec"): "rec", ("rec", "rec"): "play", ("rec", "play"): "play",
+                   ("play", "dub"): "dub", ("dub", "play"): "play", ("play", "stop"): "stop",
+                   ("stop", "play"): "play", ("play", "clear"): "off", ("stop", "clear"): "off",
+                   ("off", "tap"): "rec", ("rec", "tap"): "play"}.get((lp["state"], args[0]))
+            if nxt is None:
+                err = f"loop {args[0]}: not allowed now\r\n"
+            else:
+                lp["state"] = nxt
+        elif len(args) > 1 and args[0] == "hq":
+            if lp["state"] != "off":
+                return "loop hq: not allowed while a loop exists (loop clear first)"
+            lp["hq"] = int(args[1] == "on")
+        elif len(args) > 1 and args[0] == "level":
+            lp["level"] = int(args[1])
+        elif args:
+            return "usage: loop [rec|play|dub|stop|undo|clear|tap] | loop hq on|off | loop level <0-100>"
+        max_ms = 8196 if lp["hq"] else 16393
+        return (err + f"loop {lp['state']}: len_ms=0 pos_ms=0 max_ms={max_ms} "
+                f"undo_max_ms={max_ms // 2} undo=none hq={lp['hq']} level={lp['level']} "
+                f"mem={int(lp['state'] != 'off')}")
 
     def eq_line(self) -> str:
         # console.c cmd_eq, with its clamps
@@ -119,6 +147,8 @@ class FakeConsole:
             return f"engine: gain={self.gain} dB mute=0 drops=0"
         if w[0] == "drums":
             return "drums on rhythm 7 bpm 120 level 60 samples 99 patterns yes"
+        if w[0] == "loop":
+            return self.loop_cmd(w[1:])
         if w[0] == "tuner":
             return f"tuner {w[1]}: valid=1 silent=0 note=4 oct=1 cents=-3 freq=41.20 Hz"
         if w[0] == "crashdump":
@@ -298,6 +328,36 @@ def test_drums_tuner_prof_crash(rig):
     assert con.sent == ["crashdump", "crashclear"]
 
 
+def test_looper_state_and_actions(rig):
+    tools, con, _ = rig
+    st = tools.looper()
+    assert con.sent == ["loop"]
+    assert st["state"] == "off" and st["max_ms"] == 16393 and not st["borrowed_memory"]
+    st = tools.looper(hq=True, level=80, action="rec")
+    assert con.sent[1:] == ["loop hq on", "loop level 80", "loop rec"]
+    assert st["state"] == "rec" and st["hq"] and st["level"] == 80 and st["borrowed_memory"]
+    assert tools.looper("tap")["state"] == "play"
+    with pytest.raises(InvalidArgumentError, match="not allowed"):
+        tools.looper(hq=False)                     # a loop exists
+    with pytest.raises(InvalidArgumentError, match="not allowed"):
+        tools.looper("rec")                        # clear first
+    assert tools.looper("clear")["state"] == "off"
+    with pytest.raises(InvalidArgumentError):
+        tools.looper(level=101)
+    with pytest.raises(InvalidArgumentError):
+        tools.looper("record")                     # type: ignore[arg-type]
+
+
+def test_parse_loop_firmware_text():
+    st = parse_loop("loop dub: len_ms=4210 pos_ms=1234 max_ms=16393 undo_max_ms=8196 undo=redo "
+                    "hq=0 level=100 mem=1")
+    assert st == {"state": "dub", "len_ms": 4210, "pos_ms": 1234, "max_ms": 16393,
+                  "undo_max_ms": 8196, "undo": "redo", "hq": False, "level": 100,
+                  "borrowed_memory": True}
+    with pytest.raises(CommunicationError):
+        parse_loop("loop what")
+
+
 def test_usage_reply_is_an_error(rig):
     tools, _, _ = rig
     with pytest.raises(InvalidArgumentError, match="usage"):
@@ -352,6 +412,23 @@ def test_set_blocks_frame_bytes(rig):
     assert gate[1:] == struct.pack("<3H", 1, 0, 30)
     with pytest.raises(InvalidArgumentError):
         FB200Device(hid).set_module("amp", {"bogus": 1})
+
+
+def test_long_ir_cab_refused_while_the_looper_has_the_memory(rig):
+    """The looper wins over a stored long IR (console `cab <20-83>` too):
+    set_cab refuses types 20..83 while a loop exists, writes nothing."""
+    tools, con, hid = rig
+    tools.set_cab(type=20)                         # no loop: the HID write goes out
+    assert con.sent == ["loop"] and [f[0] for f in hid.frames if f[0] == 0x83]
+    tools.looper("rec")
+    hid.frames.clear()
+    with pytest.raises(InvalidArgumentError, match="looper has the long-IR memory"):
+        tools.set_cab(type=83)
+    assert not [f for f in hid.frames if f[0] == 0x83]
+    tools.set_cab(type=12)                         # stock / user IR: fine during a loop
+    tools.looper("rec")
+    tools.looper("clear")
+    tools.set_cab(enabled=True, type=21)
 
 
 def test_pedal_info_over_hid(rig):
@@ -526,3 +603,33 @@ def test_server_call_and_tool_error(rig):
     assert rig[1].sent[-1] == "delay on 250"
     with pytest.raises(_sdk()[1], match="fb200 update"):   # the client sees isError
         asyncio.run(server.call_tool("console", {"command": "fwbegin 1 2"}))
+
+
+def test_busy_console_port_is_a_clear_tool_error():
+    pytest.importorskip("mcp")
+    """Another program holds the console: the tool says which port and what to do,
+    and the next call works once the port is free."""
+    pty = pytest.importorskip("pty")
+    import os
+
+    from fb200.console import Console
+
+    master, slave = pty.openpty()
+    port = os.ttyname(slave)
+    holder = Console(port)
+    try:
+        tools = PedalTools(Pedal(port))
+        with pytest.raises(CommunicationError, match=f"{port} is busy.*Close it and retry"):
+            tools.pedal.run("stats", timeout=0.2)
+        server = build_server(tools)
+        with pytest.raises(Exception, match="is busy"):
+            asyncio.run(server.call_tool("pedal_status", {}))
+        holder.close()
+        holder = None
+        assert tools.pedal.run("stats", timeout=0.2) == ""     # opens now (no pedal answers)
+        tools.pedal.close()
+    finally:
+        if holder is not None:
+            holder.close()
+        os.close(master)
+        os.close(slave)

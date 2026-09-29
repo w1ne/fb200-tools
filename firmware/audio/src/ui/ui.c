@@ -8,6 +8,7 @@
 #include "proto/proto.h"
 #include "dsp/stock_data.h"
 #include "debug/recovery.h"
+#include "ui/power.h"
 
 enum { SW_A, SW_B, SW_C, SW_D };
 enum { M_GATE, M_COMP, M_AMP, M_CAB, M_MOD, M_REV, M_NONE };
@@ -69,6 +70,11 @@ static uint32_t overlay_until, revision, settings_dirty_ms;
 static bool settings_dirty;
 static bool ui_log;
 static bool tuner_mode, rhythm_mode;
+/* Looper mode (ours; hold D, then C long, like the stock's tuner and rhythm
+ * chords): A = the looper switch, B = stop/play, hold B = clear. */
+static bool looper_mode;
+static bool loop_acted;     /* this press of A already acted (rec, close, punch out, play) */
+static int loop_shown = -1; /* looper state on the display */
 static bool rhythm_dirty, rhythm_notify;   /* unsaved drum settings; send BA when saved */
 static uint8_t rhythm_b1;                  /* rhythm block byte 1 (meaning unknown), kept */
 static bool modifier_used;   /* A held while a knob turned: A is a modifier */
@@ -97,9 +103,19 @@ static void show_rhythm(void)
     display_text(t);
 }
 
+static void show_loop(void)
+{
+    looper_info_t in;
+    engine_loop_info(&in);
+    static const char *const kText[] = {"LP-", "LP-", "rEC", "PLY", "odb", "StP"};
+    loop_shown = in.state;
+    display_text(kText[in.state <= LOOPER_STOP ? in.state : 0]);
+}
+
 static void show_preset(void)
 {
     if (rhythm_mode) { show_rhythm(); return; }
+    if (looper_mode) { show_loop(); return; }
     char t[4] = {stomp ? 'L' : 'P', (char)('0' + view_bank), "AbCd"[slot], 0};
     /* notifications for front-panel changes are sent by the callers: remote
      * (app) changes are answered by the protocol itself */
@@ -112,6 +128,7 @@ static void load(unsigned b, unsigned s)
     slot = s & 3u;
     browsing = false;
     preset_read(bank * 4u + slot, &edit);
+    unsigned fixed = preset_sanitize(&edit);   /* erased/corrupt flash plays safe values */
     for (int k = 0; k < KNOB_COUNT; k++) caught[k] = (kKnob[k].field == 0xFF);   /* master is global */
     settings.b[S_BANK] = (uint8_t)bank;
     settings.b[S_SLOT] = (uint8_t)slot;
@@ -123,6 +140,8 @@ static void load(unsigned b, unsigned s)
     memcpy(name, edit.b, 20);
     name[20] = 0;
     log_printf("preset %u%c \"%s\"\r\n", bank, "AbCd"[slot], name);
+    if (fixed) log_printf("preset %u%c: %s\r\n", bank, "AbCd"[slot],
+                          fixed == PRESET_SIZE ? "erased in flash, playing it blank" : "out-of-range fields clamped");
 }
 
 /* Stock rhythm settings at F:0x81000: on, -, rhythm, level, bpm (u16 LE).
@@ -174,6 +193,9 @@ void ui_init(void)
 {
     rhythm_settings_load();
     settings_read(&settings);
+    unsigned fixed = settings_sanitize(&settings);
+    if (fixed) log_printf("settings: %s\r\n", fixed == SETTINGS_SIZE ? "erased in flash, stock defaults"
+                                                               : "out-of-range fields reset");
     stomp = settings.b[S_STOMP] == 1;
     load(settings.b[S_BANK], settings.b[S_SLOT]);
     settings_dirty = false;
@@ -238,6 +260,67 @@ static void rhythm_single(int sw)
     proto_notify_rhythm();                       /* stock: BA on every button */
 }
 
+/* Looper mode (ours). A acts when pressed (the loop points follow the
+ * foot): empty = record, recording = close and play, dubbing = back to
+ * play, stopped = play from the start. While playing, A released = dub (a
+ * press that is held is the undo). Hold A = undo / redo the last dub; tap B
+ * = stop / play; hold B = clear (the delay and long IRs come back). */
+static void loop_overlay(const char *t)
+{
+    display_text(t);
+    overlay_until = s_now + 1000u;
+}
+
+static void loop_press(void)
+{
+    looper_info_t in;
+    engine_loop_info(&in);
+    loop_acted = in.state != LOOPER_PLAY;
+    if (loop_acted) (void)engine_loop(LOOPER_TAP);
+    show_loop();
+}
+
+static void loop_single(int sw)
+{
+    looper_info_t in;
+    engine_loop_info(&in);
+    if (sw == SW_A) {
+        if (!loop_acted && in.state == LOOPER_PLAY) (void)engine_loop(LOOPER_DUB_A);
+    } else if (sw == SW_B) {
+        if (in.state == LOOPER_PLAY || in.state == LOOPER_DUB) (void)engine_loop(LOOPER_STOP_A);
+        else if (in.state == LOOPER_STOP) (void)engine_loop(LOOPER_PLAY_A);
+    }
+    loop_acted = false;
+    if (!overlay_until) show_loop();
+}
+
+static void loop_long(int sw)
+{
+    looper_info_t in;
+    engine_loop_info(&in);
+    if (sw == SW_A) {
+        if (engine_loop(LOOPER_UNDO_A) == 0) loop_overlay(in.undo == 2 ? "rdo" : "Und");
+        else loop_overlay("no ");
+    } else if (in.state > LOOPER_EMPTY) {
+        (void)engine_loop(LOOPER_CLEAR_A);
+        loop_overlay("CLr");
+    }
+    loop_acted = false;
+}
+
+static void set_looper(bool on)
+{
+    looper_mode = on;
+    if (on && rhythm_mode) {                    /* one of the two */
+        rhythm_mode = false;
+        settings.b[S_RHYTHM] = 0;
+        proto_notify_rhythm_mode();
+    }
+    loop_acted = false;
+    show_preset();
+    log_printf("looper mode %s\r\n", on ? "on" : "off");
+}
+
 static void set_tuner(bool on)
 {
     tuner_mode = on;
@@ -255,6 +338,7 @@ static void action_single(int sw)
         return;
     }
     if (rhythm_mode) { rhythm_single(sw); return; }
+    if (looper_mode) { loop_single(sw); return; }
     if (!stomp) { load(view_bank, (unsigned)sw); proto_notify_preset(); return; }
     static const int kStomp[4] = {M_REV, M_MOD, M_AMP, M_COMP};   /* A B C D */
     toggle_module(kStomp[sw]);
@@ -262,7 +346,7 @@ static void action_single(int sw)
 
 static void action_chord(uint8_t mask)
 {
-    if (tuner_mode || rhythm_mode) return;   /* stock: chords only in preset/live mode */
+    if (tuner_mode || rhythm_mode || looper_mode) return;   /* stock: chords only in preset/live mode */
     if (mask == ((1u << SW_C) | (1u << SW_D)) || mask == ((1u << SW_A) | (1u << SW_B))) {
         view_bank = (view_bank + (mask & (1u << SW_D) ? 1u : 9u)) % 10u;
         browsing = true;
@@ -283,12 +367,15 @@ static void footswitches(uint32_t now)
     int sw;
     fsw_event_t ev;
     while ((ev = fsw_event(&sw)) != FSW_NONE) {
+        power_activity();   /* wakes the panel from standby */
         if (ui_log)
             log_printf("fsw %c %s\r\n", "ABCD"[sw],
                        ev == FSW_PRESS ? "press" : ev == FSW_RELEASE ? "release" : "long");
         if (ev == FSW_PRESS) {
+            bool alone = down_mask == 0;
             down_mask |= (uint8_t)(1u << sw);
             peak_mask |= (uint8_t)(1u << sw);
+            if (looper_mode && !tuner_mode && alone && sw == SW_A) loop_press();
         } else if (ev == FSW_LONG) {
             if (sw == SW_A && (down_mask & (1u << SW_B))) {          /* stock: B held + A long */
                 long_used = true;
@@ -298,9 +385,18 @@ static void footswitches(uint32_t now)
                 long_used = true;
                 rhythm_mode = !rhythm_mode;
                 settings.b[S_RHYTHM] = rhythm_mode;
+                if (rhythm_mode) looper_mode = false;   /* one of the two */
                 proto_notify_rhythm_mode();
                 show_preset();
-            } else if (peak_mask == (1u << sw) && !rhythm_mode && !tuner_mode && !modifier_used) {
+            } else if (sw == SW_C && (down_mask & (1u << SW_D))) {   /* ours: D held + C long */
+                long_used = true;
+                set_looper(!looper_mode);
+            } else if (looper_mode && !tuner_mode && peak_mask == (1u << sw) &&
+                       (sw == SW_A || sw == SW_B)) {
+                long_used = true;
+                loop_long(sw);
+            } else if (peak_mask == (1u << sw) && !rhythm_mode && !tuner_mode && !looper_mode &&
+                       !modifier_used) {
                 /* stock: hold any switch 1 s = save to that slot of the
                  * shown bank, in preset and live mode */
                 long_used = true;
@@ -345,10 +441,11 @@ static void knobs(uint32_t now)
 {
     for (int k = 0; k < KNOB_COUNT; k++) {
         if (!knob_changed(k)) continue;
+        power_activity();
         uint16_t v = knob_units(k), s = stored(k);
         if (ui_log) log_printf("knob k%d = %u (raw %u, stored %u%s)\r\n", k, v,
                                (unsigned)knob_value(k), s, caught[k] ? "" : ", not caught");
-        bool a_held = fsw_down(SW_A);
+        bool a_held = fsw_down(SW_A) && !looper_mode;   /* looper mode: A is the looper's */
         if ((rhythm_mode || a_held) && (k == 14 || k == 8 || (a_held && k == 9))) {
             /* Drum controls (better than stock, which needs the app), acting
              * at once: in rhythm mode, or with footswitch A held as a
@@ -404,7 +501,7 @@ static void knobs(uint32_t now)
     /* name shown and the knob stopped: switch to its value */
     if (shown_knob >= 0 && name_until && (int32_t)(now - name_until) >= 0) {
         name_until = 0;
-        if ((rhythm_mode || fsw_down(SW_A)) && (shown_knob == 14 || shown_knob == 8 || shown_knob == 9)) {
+        if ((rhythm_mode || (fsw_down(SW_A) && !looper_mode)) && (shown_knob == 14 || shown_knob == 8 || shown_knob == 9)) {
             drums_t *d = engine_drums();
             show_value(shown_knob, shown_knob == 14 ? d->level : shown_knob == 9 ? d->rhythm + 1u : d->bpm, true);
         } else {
@@ -431,7 +528,8 @@ static void leds(uint32_t now)
 static void light_rings(uint32_t now)
 {
     lightbar_in_t in = {
-        .mode = tuner_mode ? LB_TUNER : rhythm_mode ? LB_RHYTHM : stomp ? LB_LIVE : LB_PRESET,
+        .mode = tuner_mode ? LB_TUNER : rhythm_mode ? LB_RHYTHM : looper_mode ? LB_LOOPER
+              : stomp ? LB_LIVE : LB_PRESET,
         .slot = (uint8_t)slot,
         .colour = settings.b[S_LIGHT_COLOUR + slot],
         .level = settings.b[S_LIGHT_LEVEL + slot],
@@ -445,6 +543,11 @@ static void light_rings(uint32_t now)
         in.on = (uint8_t)(fsw_down(SW_A) << SW_A | fsw_down(SW_B) << SW_B);
         in.playing = d->on;
         in.bpm = d->bpm;
+    } else if (in.mode == LB_LOOPER) {
+        looper_info_t li;
+        engine_loop_info(&li);
+        in.loop = (uint8_t)li.state;
+        in.loop_top = li.pos_ms < 100u;          /* the loop start: a flash */
     }
     lightbar_task(now, &in);
 }
@@ -471,6 +574,12 @@ void ui_task(uint32_t now_ms)
     s_now = now_ms;
     if (tuner_mode) show_tuner();
     footswitches(now_ms);
+    engine_loop_poll();                          /* looper fades; memory back when cleared */
+    if (looper_mode && !tuner_mode && !overlay_until) {
+        looper_info_t li;
+        engine_loop_info(&li);
+        if (li.state != loop_shown) show_loop();   /* closed when full, cleared, stopped */
+    }
     knobs(now_ms);
     leds(now_ms);
     light_rings(now_ms);
@@ -518,12 +627,6 @@ void ui_flush_settings(void)
     }
 }
 
-/* Stock default settings (0x20004E00, written by its factory reset). */
-static const uint8_t kSettingsDefault[SETTINGS_SIZE] = {
-    'B', '1', [S_BT] = 1, [0x19] = 1, [S_IN_GAIN] = 13, 13, 13, 13, 13,
-    [0x28] = 100, 100, 100, 100, [S_TUNER_CAL] = 5, [S_TUNER_MUTE] = 1,
-};
-
 /* The stock factory reset (0x18fe0): the 40 presets (20 factory presets, 20
  * "EMPTY"), the default settings and the default rhythm block; preset 1A is
  * loaded. Unlike the stock we keep the master volume (the stock default is
@@ -544,7 +647,7 @@ int ui_factory_reset(void)
         if (preset_write(i, &p) != 0) return -2;
     }
     settings_t def;
-    memcpy(def.b, kSettingsDefault, SETTINGS_SIZE);
+    memcpy(def.b, settings_default, SETTINGS_SIZE);   /* preset_check.c */
     memcpy(def.b + 2, settings.b + 2, 20);
     def.b[S_MASTER] = settings.b[S_MASTER];
     bool bt_off = settings.b[S_BT] == 0;
@@ -578,6 +681,7 @@ void ui_edit_write(unsigned off, const void *src, unsigned n)
 void ui_edit_load(const preset_t *p)
 {
     edit = *p;
+    (void)preset_sanitize(&edit);   /* app 0x97 [0xFF]: a whole record, unchecked by the stock */
     revision++;
 }
 
@@ -587,10 +691,12 @@ settings_t *ui_settings(void) { return &settings; }
  * at once, as on the stock. */
 void ui_settings_changed(void)
 {
+    (void)settings_sanitize(&settings);   /* app B0/B7/B8/C9 write fields unchecked */
     bool st = settings.b[S_STOMP] == 1, rh = settings.b[S_RHYTHM] == 1;
     bool redraw = st != stomp || rh != rhythm_mode;
     stomp = st;
     rhythm_mode = rh;
+    if (rh) looper_mode = false;
     if ((settings.b[S_TUNER] == 1) != tuner_mode) set_tuner(!tuner_mode);
     else if (redraw && !tuner_mode) show_preset();
     settings_dirty = true;

@@ -4,12 +4,16 @@
  * rule and the engine's IR staging buffer. */
 #include "irstore/irstore.h"
 #include "debug/selfupdate.h"
+#include "debug/flash_rmw.h"
 #include "audio/engine.h"
 #include "audio/usb_audio.h"
 #include "dsp/cab.h"
 #include "tusb.h"
 
 #define FLASH_AHB 0x60000000u
+/* flash_rmw accepts the store's range (and flash_store is its only writer) */
+_Static_assert(IRSTORE_BASE == FLASH_IRSTORE_BASE && IRSTORE_END == FLASH_IRSTORE_LIMIT,
+               "flash_rmw.h FLASH_IRSTORE_*");
 
 const uint8_t *irstore_map(uint32_t off) { return (const uint8_t *)(FLASH_AHB + off); }
 

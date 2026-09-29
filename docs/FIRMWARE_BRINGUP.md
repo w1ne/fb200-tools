@@ -108,16 +108,16 @@ every build):
 | Region | Range | Contents | Free |
 |---|---|---|---|
 | ITCM | `0x00000..0x00400` | vectors | - |
-| ITCM | `0x00400..0x13C4C` | hot code + flash write path (`.blob`) | - |
-| ITCM | `0x13C50..0x1F390` | reverb state `s_rev` (`.itcm_bss`) | 3.1 kB |
-| DTCM low | `0x20000000..0x20018000` | long-IR tail, 4096 taps (`.dtcm_lo`) | 2.5 kB |
+| ITCM | `0x00400..0x14610` | hot code + flash write path (`.blob`) | - |
+| ITCM | `0x14610..0x1FD50` | reverb state `s_rev` (`.itcm_bss`) | 0.7 kB |
+| DTCM low | `0x20000000..0x200181CC` | looper state (0.4 kB), long-IR tail, 4096 taps (`.dtcm_lo`) | 2.1 kB |
 | DTCM | `0x20018A00..0x20018B44` | crash dump (survives a warm reset) | - |
 | DTCM | `0x20018B44..0x20040608` | CMSIS tables (`.dtcmdata`), `.bss` | - |
 | DTCM | `0x20040608..0x20055E98` | delay line, 1 s at 44.1 kHz (`.dtcm_hi`) | 0.4 kB |
 | DTCM | `0x20056000..0x20058000` | stack reserve 8 kB (measured high-water < 512 B) | ~7.5 kB |
 | OCRAM | `0x20200000..0x20207708` | rfft tables (`.ocramdata`), cab head `s_cab`, IR staging `s_ir` (4096 taps), EQ (`.ocram`) | 2.2 kB |
-| Flash | `0x60041000..0x6004B780` | cold code (`.xiptext`) | - |
-| Flash | `..0x6004E100` of `..0x60061000` | + table load images | 75.8 kB |
+| Flash | `0x60041000..0x6004ED00` | cold code (`.xiptext`) | - |
+| Flash | `..0x60051680` of `..0x60061000` | + table load images | 62.4 kB |
 
 - **OCRAM:** in the stock image the vendor loader unpacks 0x5AA0 bytes of
   stock data to OCRAM `0x20200000` (load table entry 3). Our images do not:
@@ -148,6 +148,10 @@ every build):
 - The RAM-bound sizes are one define each: `ENGINE_IR_TAPS`
   (`src/audio/engine.h`; 4096; 512 = long IRs off) and `DELAY_MS_MAX`
   (`src/dsp/delay.h`; 1000 ms).
+- **The looper borrows** the delay line and the long-IR tail (184 kB) from its
+  first record until clear (`src/dsp/loop_mem.h`, [PARITY.md
+  M8](PARITY.md#m8-looper)): one owner at a time. Its loop length follows
+  both sizes (1412 ADPCM blocks of 132 B: 16.4 s at 22.05 kHz).
 
 ### Hot and cold code (audio app)
 
@@ -174,6 +178,19 @@ from flash (XIP):
   buffers, the whole I-cache and the D-cache lines of the XIP code are
   invalidated (a speculative fetch during the busy time may have cached
   garbage).
+- **Audio while the flash is busy:** a sector erase keeps the flash busy
+  for tens of ms (an audio block is 0.73 ms) and blocks the main loop. The
+  busy wait (`flash_wait_idle`, `src/debug/flash_rmw.c`) runs the audio
+  pump `flash_pump` between status polls: `wdog_feed`, then
+  `engine_pump` (`usb_audio_task` + `engine_task`). The pump never reads
+  flash: its call graph is checked for flash addresses, and the drums,
+  whose samples stay in flash (0x600D0000), advance silently while it runs
+  (`drums_t.no_flash`), so they neither play garbage nor leave stale cache
+  lines. Not `tud_task`: the USB audio endpoints run in the USB ISR
+  (`audiod_xfer_isr`), and a flash write can itself run inside `tud_task`
+  (HID report -> `proto_feed`). Every write path uses it: `flash_store`
+  (presets, settings, rhythm, IRs, BT name), the `fwbegin`/`fwrec`/`fwstock`
+  erase and page programs.
 - **Cold (flash, linker `.xiptext`):** the files in `COLD_SRC`
   (`firmware/audio/Makefile`): console, UI and display, preset storage
   (the policy; the write itself is `flash_store`), protocol, clock and pin
@@ -182,10 +199,12 @@ from flash (XIP):
   executable), I-cache and D-cache on (`CCR` 0x00070200), FlexSPI AHB
   cacheable and prefetching (`AHBCR` 0x78, RX buffer 3 256 B, prefetch).
 - **Rules:** `firmware/tools/hot_path.py` follows direct calls, tail calls,
-  veneers and callback addresses from both root sets and fails if a hot
-  function is outside ITCM, if a flash-write function is in flash, or if
-  either reads cold const data; `tests/test_audio_image.py` runs it, with
-  negative controls.
+  veneers and callback addresses from its root sets and fails if a hot
+  function is outside ITCM, if a flash-write function is in flash, if
+  either reads cold const data, if the audio pump (`flash_pump`) reaches
+  code outside ITCM or loads any flash address, or if a flash wait
+  (`flash_rmw`, `fw_begin`, `fw_rx_task`) no longer reaches the pump;
+  `tests/test_audio_image.py` runs it, with negative controls.
 - **Load:** `.xiptext` is the first part of the slot data blob (flash
   0x60041000: `.xiptext`, `.ocramdata`, `.dtcmdata`; the slot header
   carries its length and CRC, recovery checks it). `stage2_main` refuses a

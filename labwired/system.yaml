@@ -6,9 +6,10 @@
 #
 # FLAMMA FB200 (Mooer-based bass multi-effects pedal) main board, NXP
 # MIMXRT1052DVL6B (SoC marking; docs/UI_AND_STORAGE.md, HARDWARE.md,
-# AUDIO_PATH.md). Pin and part facts below come from those documents; the
-# parts themselves are phase 2 (NAU88L21 codec, 3-digit 14-segment LED display,
-# 2x 74HC4051 knob multiplexers, BT201-style Bluetooth module, 40 WS2812 LEDs).
+# AUDIO_PATH.md). Pin and part facts below come from those documents. Parts
+# modelled: NAU88L21 codec, 2x 74HC4051 knob multiplexers with 16 knobs,
+# 3-digit 14-segment LED display. Not yet: BT201-style Bluetooth module, 40
+# WS2812 LEDs (their FlexIO2 frame is checked, not the LEDs).
 #
 #   - boot image: vendor self-loading block 0 at FlexSPI 0x60010000; model
 #     library (block 1) at flash offset 0xD0000
@@ -17,28 +18,129 @@
 #   - USB1: device 34DB:800F (USB Audio + vendor HID interface 3)
 #   - Bluetooth module on LPUART5 (B1_12 TX / B1_13 RX, 115200 8N1)
 #   - display: 3-digit 14-segment LEDs multiplexed by GPIO4_IO16..30 (segments,
-#     active high) and GPIO4_IO31 / GPIO3_IO18 / GPIO3_IO21 (digit selects)
+#     active high) and GPIO4_IO31 / GPIO3_IO18 / GPIO3_IO21 (digit selects),
+#     see external_devices
 #   - 16 knob LEDs GPIO4_IO0..15 (active low); 40 WS2812 on FlexIO2 D02
-#   - footswitches A..D below; knobs through 74HC4051 (select GPIO2_IO17..19)
-#     into ADC1 IN3/IN4
+#   - footswitches A..D below; 16 knobs through two 74HC4051 (select
+#     GPIO2_IO17..19) into ADC1 IN3/IN4, see external_devices
 #
-# Board-level analog inputs (static until the parts exist):
+# Board-level analog inputs that no part models yet (static levels):
 #   - ADC1 IN7 (AD_B1_02): supply monitor. The stock app treats < 2950/4095 as
 #     a power failure (saves settings and flips the B1_10/B1_15 latch) and
 #     > 3050/4095 as healthy; 2.8 V here.
 #   - ADC1 IN9 (AD_B1_04): battery. The stock app waits at boot until it reads
 #     >= 2870/4095 (or GPIO1_IO19, charger sense, is high); 2.5 V here.
-#   - ADC1 IN3/IN4: knob mux outputs, mid-scale.
 
 name: "fb200"
 chip: "chip/mimxrt1052.yaml"
-external_devices: []
+external_devices:
+  # 3-digit 14-segment LED display (docs/UI_AND_STORAGE.md section 1), a
+  # generic core part (segment-display-mux). Segments GPIO4_IO16..30 (pads
+  # GPIO_EMC_16..30), digit selects GPIO4_IO31 / GPIO3_IO18 / GPIO3_IO21
+  # (pads GPIO_EMC_31/32/35), leftmost digit first, all active high.
+  #
+  # Segment names, one per pin IO16..IO30: a..f outer, g1/g2 middle bar,
+  # j/m the two centre verticals (which one is upper is not known), n the
+  # one diagonal ('R' only), dp. No glyph lights IO19, IO27 or IO29.
+  #
+  # Glyphs: the stock font (code switch at ITCM 0x16574, 25 glyphs: 0-9, O,
+  # A, b, C, d, P, L, -, dp, blank, E, F, G, I, R) as the open firmware
+  # copied it (firmware/audio/src/ui/display.c), plus the open firmware's
+  # extra letters. Characters with the same pattern decode to the first
+  # one: 'O' shows as '0', 'S' as '5', 'B' as 'b', 'D' as 'd'.
+  - id: "display"
+    type: "segment-display-mux"
+    connection: "gpio4"
+    config:
+      segment_pins: [GPIO_EMC_16, GPIO_EMC_17, GPIO_EMC_18, GPIO_EMC_19,
+                     GPIO_EMC_20, GPIO_EMC_21, GPIO_EMC_22, GPIO_EMC_23,
+                     GPIO_EMC_24, GPIO_EMC_25, GPIO_EMC_26, GPIO_EMC_27,
+                     GPIO_EMC_28, GPIO_EMC_29, GPIO_EMC_30]
+      segment_names: [e, n, j, io19, g2, d, c, dp, b, a, g1, io27, m, io29, f]
+      digit_pins: [GPIO_EMC_31, GPIO_EMC_32, GPIO_EMC_35]
+      segment_active_high: true
+      digit_active_high: true
+      font: none
+      glyphs:
+        "0": [a, b, c, d, e, f]
+        "1": [b, c]
+        "2": [a, b, d, e, g1, g2]
+        "3": [a, b, c, d, g1, g2]
+        "4": [b, c, f, g1, g2]
+        "5": [a, c, d, f, g1, g2]
+        "6": [a, c, d, e, f, g1, g2]
+        "7": [a, b, c]
+        "8": [a, b, c, d, e, f, g1, g2]
+        "9": [a, b, c, d, f, g1, g2]
+        "A": [a, b, c, e, f, g1, g2]
+        "b": [c, d, e, f, g1, g2]
+        "C": [a, d, e, f]
+        "d": [b, c, d, e, g1, g2]
+        "E": [a, d, e, f, g1, g2]
+        "F": [a, e, f, g1]
+        "G": [a, c, d, e, f, g2]
+        "H": [b, c, e, f, g1, g2]
+        "I": [a, d, j, m]
+        "L": [d, e, f]
+        "P": [a, b, e, f, g1, g2]
+        "R": [a, b, e, f, g1, g2, n]
+        "n": [c, e, g1, g2]
+        "o": [c, d, e, g1, g2]
+        "r": [e, g1]
+        "t": [d, e, f, g1, g2]
+        "U": [b, c, d, e, f]
+        "u": [c, d, e]
+        "Y": [b, c, d, f, g1, g2]
+        "-": [g1, g2]
+  # NAU88L21 codec: CSB strapped high, so I2C address 0x54 (AUDIO_PATH.md).
+  - id: "codec"
+    type: "nau88l21"
+    connection: "lpi2c1"
+    config:
+      i2c_address: 0x54
+  # --- Knobs: 16 potentiometers through two 74HC4051 muxes ---
+  # docs/UI_AND_STORAGE.md section 2: select S0..S2 = GPIO2_IO17..19 (pads
+  # GPIO_B1_01..03), shared by both muxes; mux A Z -> ADC1 IN3 (AD_B0_14,
+  # k0..k7 on Y0..Y7), mux B Z -> ADC1 IN4 (AD_B0_15, k8..k15). The stock
+  # scanner (ITCM 0x1b538) sets S2 S1 S0 = channel and converts at once; it
+  # drives no enable pin, so E is tied to GND (no e_pin). The muxes are
+  # declared before the knobs that name them.
+  - id: "knob_mux_a"
+    type: "74hc4051"
+    connection: "adc1"
+    config: { channel: 3, s0_pin: "GPIO_B1_01", s1_pin: "GPIO_B1_02", s2_pin: "GPIO_B1_03" }
+  - id: "knob_mux_b"
+    type: "74hc4051"
+    connection: "adc1"
+    config: { channel: 4, s0_pin: "GPIO_B1_01", s1_pin: "GPIO_B1_02", s2_pin: "GPIO_B1_03" }
+  # Knob kN = mux channel N mod 8, panel names from the measured table.
+  # Linear pots across 3.3 V; `position` is in % (0 = fully left). The
+  # start positions are distinct (8 + 5 N %) so a gate can tell every knob
+  # apart, and none is 50 % (the old fixed mid-scale level). The pedal's
+  # real positions are whatever the user left them at.
+  - { id: "knob_k0_thresh", type: "potentiometer", connection: "knob_mux_a", config: { channel: 0, position: 8 } }
+  - { id: "knob_k1_comp_level", type: "potentiometer", connection: "knob_mux_a", config: { channel: 1, position: 13 } }
+  - { id: "knob_k2_amp", type: "potentiometer", connection: "knob_mux_a", config: { channel: 2, position: 18 } }
+  - { id: "knob_k3_gate", type: "potentiometer", connection: "knob_mux_a", config: { channel: 3, position: 23 } }
+  - { id: "knob_k4_bass", type: "potentiometer", connection: "knob_mux_a", config: { channel: 4, position: 28 } }
+  - { id: "knob_k5_gain", type: "potentiometer", connection: "knob_mux_a", config: { channel: 5, position: 33 } }
+  - { id: "knob_k6_mid", type: "potentiometer", connection: "knob_mux_a", config: { channel: 6, position: 38 } }
+  - { id: "knob_k7_treble", type: "potentiometer", connection: "knob_mux_a", config: { channel: 7, position: 43 } }
+  - { id: "knob_k8_rate", type: "potentiometer", connection: "knob_mux_b", config: { channel: 0, position: 48 } }
+  - { id: "knob_k9_mod", type: "potentiometer", connection: "knob_mux_b", config: { channel: 1, position: 53 } }
+  - { id: "knob_k10_vol", type: "potentiometer", connection: "knob_mux_b", config: { channel: 2, position: 58 } }
+  - { id: "knob_k11_mix", type: "potentiometer", connection: "knob_mux_b", config: { channel: 3, position: 63 } }
+  - { id: "knob_k12_reverb", type: "potentiometer", connection: "knob_mux_b", config: { channel: 4, position: 68 } }
+  - { id: "knob_k13_cab", type: "potentiometer", connection: "knob_mux_b", config: { channel: 5, position: 73 } }
+  - { id: "knob_k14_rev_level", type: "potentiometer", connection: "knob_mux_b", config: { channel: 6, position: 78 } }
+  - { id: "knob_k15_master", type: "potentiometer", connection: "knob_mux_b", config: { channel: 7, position: 83 } }
 peripherals:
   - id: "adc1"
     type: "imxrt_adc"
     base_address: 0
     config:
-      input_mv: { 3: 1650, 4: 1650, 7: 2800, 9: 2500 }
+      # IN3/IN4 (knobs) are driven by the muxes in external_devices.
+      input_mv: { 7: 2800, 9: 2500 }
   # FlexIO2 functional clock as the stock image programs the CCM
   # (CSCMR2.FLEXIO2_CLK_SEL = PLL3 480 MHz, CS1CDR PRED /5, PODF /2).
   - id: "flexio2"

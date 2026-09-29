@@ -97,8 +97,9 @@ and every app failure, stays on USB.
   without a clean reset (WDOG1, 8 s, fed by the app main loop).
 - Console: `crumbs`, `recovery`, `boot` (recovery), `crash`/`hang` (app
   tests), `fwinfo`, `fwtest`, `fwbegin` (app slot), `fwrec` (recovery),
-  `fwstock` (stock data), `stock` (app: stock data status).
-- Flash writes use plain SPI-NOR commands in FlexSPI LUT slots 12-15 as IP
+  `fwstock` (stock data), `stock` (app: stock data status), `stack` (the
+  high-water of the 8 kB stack reserve, painted at boot).
+- Flash writes use plain SPI-NOR commands in FlexSPI LUT slots 11-15 (11: JEDEC ID) as IP
   commands; the boot configuration is left alone, so memory-mapped reads keep
   working.
 - Host: `firmware/tools/pack_images.py` -> `fb200-recovery.bin`,
@@ -126,7 +127,37 @@ PC; `recovery` -> recovery; `boot` -> app.
 - **WDOG1 WRSR** as the hang signal: its timeout flag survives later
   software resets and kept recovery from launching a good app.
 
-## 5. Practical notes
+## 5. Reliability
+
+- **Watchdog** (WDOG1, 8 s): armed by recovery just before it starts the app;
+  the app feeds it once per main-loop pass and in every long wait: the flash
+  busy-wait (`flash_wait_idle` runs `flash_pump`), each erased sector of an
+  update, each preset of a factory reset, the update session. Every other
+  loop is bounded (I2C: `I2C_RETRY_TIMES`; the CDC log drops rather than
+  waits). So an app hang ends in recovery ("hang/watchdog"). Recovery itself
+  runs without the watchdog: a hang there (only I2C `scan`/`dump` or a
+  FlexSPI command could) needs a power cycle, which boots recovery again.
+- **App update session**: after an app update erased the old app's cold code,
+  only `reset` leaves the session. If the host is gone (USB unplugged for 5 s,
+  or no console input for 2 min after the stream), the pedal resets by itself:
+  the new app starts, or recovery if the slot is invalid.
+- **Stack**: 8 kB below `_estack`. `firmware/tools/stack_usage.py` bounds the
+  worst case from gcc's `-fstack-usage` frames and the call graph (main loop +
+  two nested interrupts, each with a 108-byte exception frame);
+  `tests/test_audio_image.py` fails below 512 B of headroom. v0.9.1: bound
+  6.9 kB (app; the deepest chains are the cab's user-IR gain FFT, 4 kB of
+  locals, and a factory reset from the app that re-enters `tud_task`),
+  1.4 kB (recovery). `stack` shows the measured high-water.
+- **Untrusted input** (app protocol over HID/BLE, console lines, presets and
+  settings from flash, the stock data blob) is fuzzed on the host under
+  ASan/UBSan: `tests/test_fuzz_host.py` (smoke in the default suite;
+  `pytest -m fuzz` for long runs, and a gcc 14 build in docker).
+- **Soak** on a pedal: `tools/soak.py --minutes 30` cycles presets, parameter
+  writes, console commands, the IR list and audio captures, and fails on new
+  skipped blocks, SAI over/underruns, a new crumb, a missing reply or a low
+  stack (CSV + log).
+
+## 6. Practical notes
 
 - After flashing, the updater's exit jumps straight into the image; no power
   cycle is needed.

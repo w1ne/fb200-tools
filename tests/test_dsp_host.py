@@ -88,6 +88,7 @@ def test_conv2_suite():
     assert result.returncode == 0, result.stdout + result.stderr
     assert "conv2 host tests OK" in result.stdout
     assert "conv2 4096 taps, odd blocks" in result.stdout
+    assert "conv2 4096 taps,  8-sample block then" in result.stdout
 
 
 def test_amp_cab_suite():
@@ -96,8 +97,10 @@ def test_amp_cab_suite():
     test_stock_dsp_parity.py (needs the vendor .mr)."""
     out = _build_dir() / "amp_cab_host_test"
     mods = [FW / "src" / "dsp" / f for f in ("amp.c", "tone.c", "cab.c", "conv2.c", "conv.c")] + STOCK_SRC
+    # -ffp-contract=off as the firmware's amp/tone and FilteringFunctions: the
+    # tone_df1 check is bit for bit against CMSIS df1
     subprocess.run(
-        ["cc", "-O2", "-Wall", "-Wextra", "-I", str(FW / "src"),
+        ["cc", "-O2", "-ffp-contract=off", "-Wall", "-Wextra", "-I", str(FW / "src"),
          str(FW / "tests" / "amp_cab_host_test.c"), *map(str, mods), *cmsis_dsp_args(),
          "-lm", "-o", str(out)],
         check=True,
@@ -107,6 +110,28 @@ def test_amp_cab_suite():
     assert "amp cab host tests OK" in result.stdout
     assert "cab fir: max err" in result.stdout
     assert "cab long IR: swaps at" in result.stdout
+    assert "tone_df1 bit-identical to CMSIS df1" in result.stdout
+
+
+def test_whole_blocks_suite():
+    """SAI rings (audio/sai_ring.h): the engine gets whole 32-frame blocks
+    only, through odd input chunks, overruns and main-loop stalls; the DAC
+    stays on the ADC block grid, the latency comes back after a stall, and
+    the cab runs one FFT step per block (no re-phase)."""
+    out = _build_dir() / "blocks_host_test"
+    mods = [FW / "src" / "dsp" / f for f in ("cab.c", "conv2.c", "conv.c")] + STOCK_SRC
+    subprocess.run(
+        ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-I", str(FW / "src"),
+         str(FW / "tests" / "blocks_host_test.c"), *map(str, mods), *cmsis_dsp_args(),
+         "-lm", "-o", str(out)],
+        check=True,
+    )
+    result = subprocess.run([str(out)], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    print(result.stdout)
+    assert "blocks host tests OK" in result.stdout
+    for name in ("edma blocks", "odd chunks", "tiny chunks"):
+        assert f"{name}: " in result.stdout
 
 
 def test_eq_suite():
@@ -114,8 +139,8 @@ def test_eq_suite():
     no clicks on a change, stable at the extremes."""
     out = _build_dir() / "eq_host_test"
     subprocess.run(
-        # -ffp-contract=off: the pedal's biquad loop (CMSIS FilteringFunctions)
-        # has no FMA; the same numbers on every host (clang on arm64 fuses)
+        # -ffp-contract=off: the same numbers on every host (clang on arm64
+        # fuses); the EQ runs in double, FMA or not is far below its tolerances
         ["cc", "-O2", "-ffp-contract=off", "-Wall", "-Wextra", "-Werror", "-I", str(FW / "src"),
          str(FW / "tests" / "eq_host_test.c"), str(FW / "src" / "dsp" / "eq.c"),
          *cmsis_dsp_args(), "-lm", "-o", str(out)],
@@ -144,17 +169,21 @@ def test_fx_suite():
 
 
 def test_engine_drift_suite():
+    """Host playback resampler (audio/drift.c drift_rs): no repeated or dropped
+    frame at +-500 ppm, no step in a sine, fallbacks; the `usb in|mix` input."""
     out = _build_dir() / "engine_host_test"
     subprocess.run(
-        ["cc", "-O2", "-Wall", "-Wextra", "-I", str(FW / "src"),
+        ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-I", str(FW / "src"),
          str(FW / "tests" / "engine_host_test.c"),
-         str(FW / "src" / "audio" / "drift.c"), "-o", str(out)],
+         str(FW / "src" / "audio" / "drift.c"), "-lm", "-o", str(out)],
         check=True,
     )
     result = subprocess.run([str(out)], capture_output=True, text=True,
                             check=False)
     assert result.returncode == 0, result.stdout + result.stderr
+    print(result.stdout)
     assert "drift host tests OK" in result.stdout
+    assert "drift_rs  +500 ppm: inserts 0 drops 0" in result.stdout
 
 
 def test_led_pattern_suite():
@@ -182,3 +211,18 @@ def test_memfuncs_suite():
     result = subprocess.run([str(out)], capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "memfuncs host tests OK" in result.stdout
+
+
+def test_outq_suite():
+    """16-bit output stage (dsp/outq.h): rounding beats the v0.9.1 truncation on
+    a low-level sine, dither moves the harmonics into noise, 0 stays 0."""
+    out = _build_dir() / "outq_host_test"
+    subprocess.run(
+        ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-I", str(FW / "src"),
+         str(FW / "tests" / "outq_host_test.c"), "-lm", "-o", str(out)],
+        check=True,
+    )
+    result = subprocess.run([str(out)], capture_output=True, text=True, check=False)
+    print(result.stdout)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "outq host tests OK" in result.stdout

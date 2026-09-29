@@ -20,13 +20,14 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Literal
 
+from fb200 import longir
 from fb200.errors import CommunicationError, Fb200Error, InvalidArgumentError
 
 INSTRUCTIONS = """\
 Tools for the FLAMMA FB200 bass pedal with the open firmware, on USB.
 Effect edits change the live edit buffer of the current preset; `save_preset`
 stores it (also the delay and the EQ). Chain: in -> gate -> comp -> amp -> cab
--> eq -> mod -> delay -> reverb -> master -> USB capture / DAC (USB playback:
+-> eq -> mod -> delay -> reverb -> looper -> master -> USB capture / DAC (USB playback:
 to the DAC, or with `usb_route` "in" into the chain input instead of the
 instrument - reamping). To hear a change, run `audio_test` (default: the
 firmware test signal into the chain input, captured over USB audio) before
@@ -40,7 +41,23 @@ ERROR_MARKERS = ("usage:", "unknown command", "bad ", "not allowed", "not availa
 CHAIN_SIGNALS = {"sine": "sine", "noise": "white", "impulse": "impulse"}
 USB_ROUTE_RE = re.compile(r"route=(out|in|mix)")
 CAB_MAX_TAPS = 4096       # dsp/conv2.h CONV2_MAX_TAPS
+LOOP_ACTIONS = ("rec", "play", "dub", "stop", "undo", "clear", "tap")
+# console.c `cab <20-83>`: the looper wins over a stored long IR
+LOOPER_HAS_LONG_IR = "not available (the looper has the long-IR memory; loop clear first)"
+LOOP_RE = re.compile(r"loop (off|empty|rec|play|dub|stop): len_ms=(\d+) pos_ms=(\d+) max_ms=(\d+) "
+                     r"undo_max_ms=(\d+) undo=(none|undo|redo) hq=([01]) level=(\d+) mem=([01])")
 PARAMETER_DOCS_URI = "fb200://parameter-docs"
+
+
+def parse_loop(text: str) -> dict:
+    """Parse the `loop` console state line (console.c cmd_loop)."""
+    m = LOOP_RE.search(text)
+    if m is None:
+        raise CommunicationError(f"unexpected loop reply: {text!r}")
+    return {"state": m.group(1), "len_ms": int(m.group(2)), "pos_ms": int(m.group(3)),
+            "max_ms": int(m.group(4)), "undo_max_ms": int(m.group(5)), "undo": m.group(6),
+            "hq": m.group(7) == "1", "level": int(m.group(8)),
+            "borrowed_memory": m.group(9) == "1"}
 
 
 def _num_pairs(text: str) -> dict[str, int]:
@@ -235,7 +252,8 @@ class PedalTools:
           eq <band 1-5> <30-10000 Hz> <gain -15..15 dB> [q 0.3-4] (into the preset) |
           cab long <taps 0-4096> (synthetic IR for measurements, 0 = the preset's cab) |
           cab [<1-83>] (cab on with this type, into the edit buffer; 20-83 = long IRs) |
-          tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>] | stock
+          tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>] | stock |
+          loop [rec|play|dub|stop|undo|clear|tap] | loop hq on|off | loop level <0-100>
         ui: ui | uimon on|off | disp <text> | kled <0-15> on|off | power |
           rgb 0xRRGGBB [led] | factory [yes] (resets ALL presets)
         bt: bt | bt send <AT+...> | btaudio
@@ -317,9 +335,21 @@ class PedalTools:
                 p1: int | None = None, p2: int | None = None, p3: int | None = None,
                 p4: int | None = None) -> dict:
         """Change the cab block. type 11..19 = user IR slots 1..9, 20..83 =
-        long IR slots (long_ir_list; empty = bypass), lower = stock cabs. p1 0..4, p2/p3 0..100, p4 0..9 (pedal clamps). Returns the
-        block read back."""
+        long IR slots (long_ir_list; empty = bypass), lower = stock cabs.
+        p1 0..4, p2/p3 0..100, p4 0..9 (pedal clamps). A long IR slot is
+        refused while the looper has the long-IR memory (looper clear
+        first). Returns the block read back."""
+        if type is not None and longir.FIRST <= type <= longir.LAST and self._looper_has_memory():
+            raise InvalidArgumentError(f"cab {type}: {LOOPER_HAS_LONG_IR}")
         return self._set("cab", enabled=enabled, type=type, p1=p1, p2=p2, p3=p3, p4=p4)
+
+    def _looper_has_memory(self) -> bool:
+        """The looper holds the long-IR memory (console `loop` mem=1). False
+        on firmware without the looper."""
+        try:
+            return parse_loop(self.pedal.check("loop"))["borrowed_memory"]
+        except InvalidArgumentError:          # no `loop` command
+            return False
 
     def set_comp(self, enabled: bool | None = None, type: int | None = None,
                  attack: int | None = None, threshold: int | None = None,
@@ -480,6 +510,37 @@ class PedalTools:
         out["text"] = text
         return out
 
+    def looper(self, action: Literal["rec", "play", "dub", "stop", "undo", "clear", "tap"]
+               | None = None, hq: bool | None = None, level: int | None = None) -> dict:
+        """The looper (console `loop`): mono, after the reverb (records the
+        processed sound), before the master volume. Actions: rec (start the
+        first record; while recording: close the loop and play), play (close
+        a record, end a dub, or restart from stop), dub (overdub from play),
+        stop, undo (the last dub; again = redo; only for loops up to
+        undo_max_ms), clear, tap (the footswitch cycle rec -> play -> dub ->
+        play). hq: record at 44.1 kHz (half the time) instead of 22.05 kHz,
+        only with no loop. level 0..100: loop playback level. No arguments:
+        the state. While a loop exists (borrowed_memory) the delay is off
+        and long IRs play 512 taps: `clear` gives the memory back. The loop
+        runs in real time: record by playing (or `audio_test`), then close."""
+        if action is not None and action not in LOOP_ACTIONS:
+            raise InvalidArgumentError(f"action must be one of {', '.join(LOOP_ACTIONS)}")
+        if level is not None and not 0 <= level <= 100:
+            raise InvalidArgumentError("level must be 0..100")
+        cmds = []
+        if hq is not None:
+            cmds.append(f"loop hq {'on' if hq else 'off'}")
+        if level is not None:
+            cmds.append(f"loop level {level}")
+        if action is not None:
+            cmds.append(f"loop {action}")
+        text = ""
+        for cmd in cmds or ["loop"]:
+            text = self.pedal.check(cmd)
+        out = parse_loop(text)
+        out["text"] = text
+        return out
+
     def tuner(self, on: bool = True) -> dict:
         """Tuner on (with one reading: note, octave, cents, frequency) or off."""
         text = self.pedal.check("tuner on" if on else "tuner off")
@@ -560,8 +621,6 @@ class PedalTools:
         source rate, name, and ok = its data CRC checked on the pedal (a bad
         slot plays as cab bypass). available False: the flash chip is too
         small for the store."""
-        from fb200 import longir
-
         with self.pedal.raw_console() as con:
             res = longir.ls(con)
         return {"available": res["available"],
@@ -579,8 +638,6 @@ class PedalTools:
         `taps` (default 4096; trailing zeros dropped). Select it with set_cab
         type = slot; the gain is the stock user-IR rule. Options as ir_import.
         Measure the CPU with cpu_profile after selecting it."""
-        from fb200 import longir
-
         longir.check_slot(slot)
         options = {"channel": channel, "trim": trim, "lowcut": lowcut, "highcut": highcut,
                    "minphase": minphase, "normalize": normalize, "taps": taps}
@@ -593,8 +650,6 @@ class PedalTools:
     def long_ir_delete(self, slot: int) -> dict:
         """Delete long IR slot 20..83 (flash). A preset that selects it then
         plays the cab as bypass."""
-        from fb200 import longir
-
         longir.check_slot(slot)
         with self.pedal.raw_console() as con:
             return {"slot": slot, "deleted": longir.delete(con, slot)}
@@ -667,7 +722,7 @@ class PedalTools:
 
     TOOLS = ("pedal_status", "pedal_info", "console", "preset", "save_preset", "get_effects",
              "set_amp", "set_cab", "set_comp", "set_gate", "set_mod", "set_reverb", "set_delay",
-             "set_eq", "set_output", "usb_route", "cab_long", "drums", "tuner", "cpu_profile",
+             "set_eq", "set_output", "usb_route", "cab_long", "drums", "looper", "tuner", "cpu_profile",
              "crash_dump", "ir_list", "ir_import", "audio_test", "preset_list", "rename_preset",
              "ir_delete", "settings", "parameter_docs", "long_ir_list", "long_ir_import",
              "long_ir_delete")

@@ -21,6 +21,7 @@
 #include "audio/engine.h"
 #include "led.h"
 #include "selfupdate.h"
+#include "flash_rmw.h"
 #include "recovery.h"
 #include "regs.h"
 #ifndef FB200_RECOVERY
@@ -36,6 +37,7 @@
 #include "dsp/eq.h"
 #include "proto/proto.h"
 #include "irstore/irstore.h"
+#include "cpu_power.h"
 #endif
 
 #define STR_(x) #x
@@ -44,6 +46,18 @@
 extern int g_bss_writable;
 
 static int streq(const char *a, const char *b);
+static void cmd_stack(void);
+
+/* Raw memory access, overridable by the host fuzz harness
+ * (tests/fuzz_host_test.c), which checks that every access the console
+ * makes lies in memory that exists. */
+#ifndef CONSOLE_RD8
+#define CONSOLE_RD8(a)      (*(volatile uint8_t *)(uintptr_t)(a))
+#define CONSOLE_RD32(a)     (*(volatile uint32_t *)(uintptr_t)(a))
+#define CONSOLE_WR8(a, v)   (*(volatile uint8_t *)(uintptr_t)(a) = (uint8_t)(v))
+#define CONSOLE_WR32(a, v)  (*(volatile uint32_t *)(uintptr_t)(a) = (uint32_t)(v))
+#define CONSOLE_CRC(a, n)   crc32_ieee((const uint8_t *)(uintptr_t)(a), (n))
+#endif
 
 static char line[96];
 static size_t line_len;
@@ -74,21 +88,36 @@ static uint32_t parse_num(const char *s, int *ok)
     return v;
 }
 
-static int mem_ok(uint32_t addr)
+/* Memory that exists (linker.ld: FlexRAM as the vendor loader sets it up)
+ * and the always-readable peripherals. A read of a hole (ITCM above 128 kB,
+ * DTCM above 0x20058000, OCRAM above 32 kB) is a bus fault. */
+static const struct { uint32_t base, end; uint8_t ram; } kMem[] = {
+    {0x00000000u, 0x00020000u, 1},   /* ITCM */
+    {0x20000000u, 0x20058000u, 1},   /* DTCM */
+    {0x20200000u, 0x20208000u, 1},   /* OCRAM */
+    {0x400F8000u, 0x400F9000u, 0},   /* SRC (always on) */
+    {0x401F4000u, 0x401F4A00u, 0},   /* OCOTP fuse shadows */
+    {0x401B8000u, 0x401C8000u, 0},   /* GPIO1-4 */
+    {0x60000000u, 0x60800000u, 0},   /* flash (read only through AHB) */
+};
+
+/* [addr, addr + len) lies inside one region (len 0: addr inside one). With
+ * ram: writable RAM only. */
+static int mem_range(uint32_t addr, uint32_t len, int ram)
 {
-    return (addr < 0x400000u) ||                       /* ITCM/DTCM */
-           (addr >= 0x20000000u && addr < 0x20300000u) ||   /* DTCM/OCRAM */
-           (addr >= 0x400F8000u && addr < 0x400F9000u) ||   /* SRC (always on) */
-           (addr >= 0x401F4000u && addr < 0x401F4A00u) ||   /* OCOTP fuse shadows */
-           (addr >= 0x401B8000u && addr < 0x401C8000u) ||   /* GPIO1-4 */
-           (addr >= 0x60000000u && addr < 0x60800000u);     /* flash */
+    for (unsigned i = 0; i < sizeof kMem / sizeof kMem[0]; i++) {
+        if (ram && !kMem[i].ram) continue;
+        if (addr >= kMem[i].base && addr < kMem[i].end && len <= kMem[i].end - addr) return 1;
+    }
+    return 0;
 }
+
 
 static void hexdump(uint32_t addr, uint32_t len)
 {
     for (uint32_t i = 0; i < len; i++) {
         if ((i & 15u) == 0) log_printf("%08x:", (unsigned)(addr + i));
-        log_printf(" %02x", *(volatile uint8_t *)(addr + i));
+        log_printf(" %02x", CONSOLE_RD8(addr + i));
         if ((i & 15u) == 15u) log_printf("\r\n");
     }
     if (len & 15u) log_printf("\r\n");
@@ -101,16 +130,16 @@ static void cmd_dumpmem(const char *a1, const char *a2)
     uint32_t len = parse_num(a2, &ok2);
     if (!ok1 || !ok2) { log_printf("usage: dumpmem <addr> <len>\r\n"); return; }
     if (len > 4096u) len = 4096u;
-    if (!mem_ok(addr) || !mem_ok(addr + len)) { log_printf("address not allowed\r\n"); return; }
+    if (!mem_range(addr, len, 0)) { log_printf("address not allowed\r\n"); return; }
     hexdump(addr, len);
 }
 
 static void cmd_src(void)
 {
     log_printf("SRC_SRSR=%08x SRC_SBMR1=%08x SRC_SBMR2=%08x\r\n",
-               (unsigned)*(volatile uint32_t *)0x400F8008u,
-               (unsigned)*(volatile uint32_t *)0x400F8004u,
-               (unsigned)*(volatile uint32_t *)0x400F801Cu);
+               (unsigned)CONSOLE_RD32(0x400F8008u),
+               (unsigned)CONSOLE_RD32(0x400F8004u),
+               (unsigned)CONSOLE_RD32(0x400F801Cu));
 }
 
 static void cmd_help(void)
@@ -120,19 +149,21 @@ static void cmd_help(void)
              "  audio : usb [out|in|mix] | sai | codec | creg <reg> [val] | gain [db] | mute [on|off]\r\n"
              "          testgen off|sine|white|impulse [freq] | tin <same> (into the chain, -20 dBFS)\r\n"
              "          usb in = reamping: host playback into the chain (mix: + instrument, out: default)\r\n"
-             "          meters on|off | x | cpu | prof | cab long <0-" XSTR(ENGINE_IR_TAPS) ">\r\n"
+             "          meters on|off | x | cpu | prof | cab long <0-" XSTR(ENGINE_IR_TAPS) "> | dither [on|off]\r\n"
              "          cab [<1-83>] (on, type: 1-10 stock, 11-19 user IR, 20-83 long IR)\r\n"
              "  led   : led on|off|scan | ledpin <gpio> <pin>\r\n"
-             "  ui    : ui | uimon on|off | disp <text> | kled <0-15> on|off | power\r\n"
+             "  ui    : ui | uimon on|off | disp <text> | kled <0-15> on|off\r\n"
+             "  power : power [sleep on|off | clock 600|528|396 | led 100|66|33 | idle <min> | log <s>]\r\n"
              "          preset [0-39] | save | factory [yes] | rgb 0xRRGGBB [led] | rgb cfg 0xIIS0S1\r\n"
              "  bt    : bt | bt send <AT+...> | btaudio\r\n"
              "  music : stock | tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>]\r\n"
+             "  loop  : loop [rec|play|dub|stop|undo|clear|tap] | loop hq on|off | loop level <0-100>\r\n"
              "  delay : delay [on|off] [time " XSTR(DELAY_MS_MIN) "-" XSTR(DELAY_MS_MAX) " ms] [fb 0-100] [mix 0-100] [lowcut 0-100] [tone 0-100]\r\n"
              "  eq    : eq [on|off] | eq hpf <20-200 Hz|0> | eq lpf <2000-20000 Hz|0>\r\n"
              "          eq <band 1-5> <30-10000 Hz> <gain -15..15 dB> [q 0.3-4]\r\n"
              "  tests : crash | hang\r\n"
 #endif
-             "  debug : stats | src | hb on|off | clocks | crumbs | crashdump | crashclear\r\n"
+             "  debug : stats | src | hb on|off | clocks | crumbs | crashdump | crashclear | stack\r\n"
              "          peek <addr> [len] | dumpmem <addr> <len> | poke <addr> <u8>\r\n"
              "          peek32 <addr> [n] | poke32 <addr> <u32> | crc <addr> <len>\r\n"
              "  i2c   : scan | dump [bus addr]\r\n"
@@ -195,6 +226,50 @@ static void cmd_delay(int argc, char **argv)
     log_printf("delay %s%s: time %u ms fb %u mix %u lowcut %u (%d Hz) tone %u%s\r\n",
                en ? "on" : "off", marked ? "" : " (stock preset, never plays)",
                v[0], v[1], v[2], v[3], (int)hz, v[4], v[4] >= 100u ? " (off)" : "");
+}
+
+/* loop [rec|play|dub|stop|undo|clear|tap] | loop hq on|off | loop level
+ * <0-100>: the looper (dsp/looper.h), then its state. `rec` takes the delay
+ * line and the long-IR memory (delay off, long IRs 512 taps) until `clear`. */
+static void cmd_loop(int argc, char **argv)
+{
+    static const char *const kAct[] = {"tap", "rec", "play", "dub", "stop", "undo", "clear"};
+    static const char *const kState[] = {"off", "empty", "rec", "play", "dub", "stop"};
+    static const char *const kUndo[] = {"none", "undo", "redo"};
+    int r = 0;
+    if (argc > 1) {
+        int a = -1;
+        for (int i = 0; i < 7; i++) if (streq(argv[1], kAct[i])) a = i;
+        if (a >= 0) {
+            r = engine_loop(a);
+        } else if (streq(argv[1], "hq") && argc > 2 && (streq(argv[2], "on") || streq(argv[2], "off"))) {
+            if (engine_loop_hq(streq(argv[2], "on")) != 0) {
+                log_printf("loop hq: not allowed while a loop exists (loop clear first)\r\n");
+                return;
+            }
+        } else if (streq(argv[1], "level") && argc > 2) {
+            int ok;
+            uint32_t n = parse_num(argv[2], &ok);
+            if (!ok || n > 100u) {
+                log_printf("usage: loop level <0-100>\r\n");
+                return;
+            }
+            engine_loop_level(n);
+        } else {
+            log_printf("usage: loop [rec|play|dub|stop|undo|clear|tap] | loop hq on|off | loop level <0-100>\r\n");
+            return;
+        }
+    }
+    looper_info_t in;
+    engine_loop_info(&in);
+    if (r != 0) {
+        log_printf("loop %s: not allowed %s\r\n", argv[1],
+                   r == -2 ? "with no loop (loop rec first)" : "now");
+    }
+    log_printf("loop %s: len_ms=%u pos_ms=%u max_ms=%u undo_max_ms=%u undo=%s hq=%d level=%u "
+               "mem=%d\r\n", kState[in.state <= LOOPER_STOP ? in.state : 0], in.len_ms, in.pos_ms,
+               in.max_ms, in.undo_max_ms, kUndo[in.undo], in.hq, in.level,
+               in.state != LOOPER_OFF);
 }
 
 /* Signed decimal: "-4.5", "3", "0.71". */
@@ -293,12 +368,12 @@ static void cmd_peek32(const char *a1, const char *a2)
     for (uint32_t i = 0; i < n; i++) {
         uint32_t a = addr + 4u * i;
         if (!reg_access_ok(a, &name)) return;
-        if ((a < 0x40000000u || (a >= 0x60000000u && a < 0xE0000000u)) && !mem_ok(a)) {
+        if ((a < 0x40000000u || (a >= 0x60000000u && a < 0xE0000000u)) && !mem_range(a, 4, 0)) {
             log_printf("%08x: address not allowed\r\n", (unsigned)a);
             return;
         }
         if ((i & 3u) == 0u) log_printf("%s%08x:", i ? "\r\n" : "", (unsigned)a);
-        log_printf(" %08x", (unsigned)*(volatile uint32_t *)a);
+        log_printf(" %08x", (unsigned)CONSOLE_RD32(a));
     }
     log_printf("  %s\r\n", name);
 }
@@ -312,12 +387,11 @@ static void cmd_poke32(const char *a1, const char *a2)
     if (!ok1 || !ok2) { log_printf("usage: poke32 <addr> <u32>\r\n"); return; }
     if (!reg_access_ok(addr, &name)) return;
     if (addr >= 0x60000000u && addr < 0xE0000000u) { log_printf("flash: use fwbegin\r\n"); return; }
-    if (addr < 0x40000000u && !mem_ok(addr)) { log_printf("address not allowed\r\n"); return; }
-    volatile uint32_t *r = (volatile uint32_t *)addr;
-    uint32_t before = *r;
-    *r = val;
+    if (addr < 0x40000000u && !mem_range(addr, 4, 1)) { log_printf("address not allowed\r\n"); return; }
+    uint32_t before = CONSOLE_RD32(addr);
+    CONSOLE_WR32(addr, val);
     log_printf("%08x: %08x -> %08x (reads %08x)  %s\r\n", (unsigned)addr, (unsigned)before,
-               (unsigned)val, (unsigned)*r, name);
+               (unsigned)val, (unsigned)CONSOLE_RD32(addr), name);
 }
 
 static void cmd_crc(const char *a1, const char *a2)
@@ -325,12 +399,9 @@ static void cmd_crc(const char *a1, const char *a2)
     int ok1, ok2;
     uint32_t addr = parse_num(a1, &ok1);
     uint32_t len = parse_num(a2, &ok2);
-    if (!ok1 || !ok2 || !mem_ok(addr) || !mem_ok(addr + len)) {
-        log_printf("usage: crc <addr> <len>\r\n");
-        return;
-    }
-    log_printf("crc %08x %u = %08x\r\n", (unsigned)addr, (unsigned)len,
-               (unsigned)crc32_ieee((const uint8_t *)addr, len));
+    if (!ok1 || !ok2) { log_printf("usage: crc <addr> <len>\r\n"); return; }
+    if (!mem_range(addr, len, 0)) { log_printf("address not allowed\r\n"); return; }
+    log_printf("crc %08x %u = %08x\r\n", (unsigned)addr, (unsigned)len, (unsigned)CONSOLE_CRC(addr, len));
 }
 
 static void cmd_fwbegin(fw_target_t target, const char *a1, const char *a2)
@@ -508,12 +579,13 @@ static void cmd_ledpin(const char *a1, const char *a2)
 #endif
 
 #ifndef FB200_RECOVERY
+#define GAIN_DB_MAX 24   /* more is a number typo, not a level (inf gain poisons the DSP) */
 static void cmd_gain(const char *a1)
 {
     if (a1) {
         int ok;
-        long db = (long)parse_num(a1, &ok);
-        if (!ok) { log_printf("usage: gain [db]\r\n"); return; }
+        uint32_t db = parse_num(a1, &ok);
+        if (!ok || db > GAIN_DB_MAX) { log_printf("usage: gain [0-" XSTR(GAIN_DB_MAX) " dB]\r\n"); return; }
         engine_set_gain_db((float)db);
     } else {
         float db = engine_get_gain_db();
@@ -535,8 +607,9 @@ static void cmd_testgen(const char *a1, const char *a2)
     else if (streq(a1, "white")) mode = 2;
     else if (streq(a1, "impulse")) mode = 3;
     int ok = 0;
-    float freq = a2 ? (float)parse_num(a2, &ok) : 1000.0f;
-    if (!ok) freq = 1000.0f;
+    uint32_t hz = a2 ? parse_num(a2, &ok) : 1000u;
+    if (!ok || hz > 24000u) hz = 1000u;   /* up to Nyquist at 48 kHz */
+    float freq = (float)hz;
     engine_set_testgen(mode, 0.5f, freq);
     log_printf("testgen %s %d Hz\r\n", a1, (int)freq);
 }
@@ -617,7 +690,7 @@ static void cmd_peek(const char *a1, const char *a2)
     uint32_t len = 16;
     if (a2) { len = parse_num(a2, &ok); if (!ok) { log_printf("bad len\r\n"); return; } }
     if (len > 256) len = 256;
-    if (!mem_ok(addr) || !mem_ok(addr + len)) { log_printf("address not allowed\r\n"); return; }
+    if (!mem_range(addr, len, 0)) { log_printf("address not allowed\r\n"); return; }
     hexdump(addr, len);
 }
 
@@ -627,8 +700,9 @@ static void cmd_poke(const char *a1, const char *a2)
     uint32_t addr = parse_num(a1, &ok1);
     uint32_t val = parse_num(a2, &ok2);
     if (!ok1 || !ok2) { log_printf("usage: poke <addr> <val>\r\n"); return; }
-    if (!mem_ok(addr)) { log_printf("address not allowed\r\n"); return; }
-    *(volatile uint8_t *)addr = (uint8_t)val;
+    /* RAM only: a byte write to a peripheral or to the flash window faults */
+    if (!mem_range(addr, 1, 1)) { log_printf("address not allowed\r\n"); return; }
+    CONSOLE_WR8(addr, val);
     log_printf("ok %08x = %02x\r\n", (unsigned)addr, (unsigned)(val & 0xFFu));
 }
 
@@ -647,6 +721,7 @@ static void cmd_dump(const char *a1, const char *a2)
 
 static int streq(const char *a, const char *b)
 {
+    if (!a || !b) return 0;   /* a missing argument (argv[i] is NULL past argc) */
     while (*a && *a == *b) { a++; b++; }
     return *a == *b;
 }
@@ -684,10 +759,11 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "tin")) {   /* test signal into the chain input, -20 dBFS */
         cmd_testgen(argv[1], argv[2]);
         int ok = 0;
-        float f = argv[2] ? (float)parse_num(argv[2], &ok) : 1000.0f;
+        uint32_t hz = argv[2] ? parse_num(argv[2], &ok) : 1000u;
+        float f = (ok && hz <= 24000u) ? (float)hz : 1000.0f;
         int mode = streq(argv[1] ? argv[1] : "", "sine") ? 1 : streq(argv[1] ? argv[1] : "", "white") ? 2
                  : streq(argv[1] ? argv[1] : "", "impulse") ? 3 : 0;
-        engine_set_testgen(mode, 0.1f, ok ? f : 1000.0f);
+        engine_set_testgen(mode, 0.1f, f);
         engine_testgen_input(mode != 0);
     }
     else if (streq(argv[0], "cpu")) {
@@ -696,8 +772,17 @@ static void dispatch(char *cmd)
         log_printf("cpu: engine block avg %lu max %lu cycles of %lu (%lu%% / %lu%%)\r\n",
                    (unsigned long)avg, (unsigned long)max, (unsigned long)budget,
                    (unsigned long)(100u * avg / budget), (unsigned long)(100u * max / budget));
+        uint32_t busy, wakes;
+        cpu_busy(&busy, &wakes);   /* since the last `cpu` */
+        log_printf("cpu: loop busy %lu.%lu%% (sleep %s, %lu wakes/s, core %u MHz)\r\n",
+                   (unsigned long)(busy / 10u), (unsigned long)(busy % 10u),
+                   cpu_sleep_enabled() ? "on" : "off", (unsigned long)wakes, cpu_clock_mhz());
     }
     else if (streq(argv[0], "mute") || streq(argv[0], "m")) cmd_mute(argv[1]);
+    else if (streq(argv[0], "dither")) {   /* TPDF dither on the 16-bit DAC/USB output (dsp/outq.h) */
+        if (argv[1]) engine_set_dither(streq(argv[1], "on"));
+        log_printf("dither %s\r\n", engine_get_dither() ? "on" : "off");
+    }
     else if (streq(argv[0], "meters")) cmd_meters(argv[1]);
     else if (streq(argv[0], "x")) cmd_x();
     else if (streq(argv[0], "led")) cmd_led(argv[1], argv[2]);
@@ -719,6 +804,7 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "fwtest")) fw_test();
     else if (streq(argv[0], "jedec")) cmd_jedec();
     else if (streq(argv[0], "crumbs")) crumbs_print();
+    else if (streq(argv[0], "stack")) cmd_stack();
 #ifndef FB200_RECOVERY
     else if (streq(argv[0], "ui")) cmd_ui();
     else if (streq(argv[0], "preset")) {
@@ -744,13 +830,14 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "tuner")) {
         bool on = argc > 1 && streq(argv[1], "on");
         engine_set_tuner(on);
-        tuner_result_t r;
-        if (engine_tuner_poll(&r) || 1)
-            log_printf("tuner %s: valid=%d silent=%d note=%d oct=%d cents=%d freq=%d.%02d Hz\r\n",
-                       on ? "on" : "off", r.valid, r.silent, r.note, r.octave, (int)r.cents,
-                       (int)r.freq, (int)((r.freq - (int)r.freq) * 100.0f));
+        tuner_result_t r = {0};
+        (void)engine_tuner_poll(&r);   /* no new result: zeros */
+        log_printf("tuner %s: valid=%d silent=%d note=%d oct=%d cents=%d freq=%d.%02d Hz\r\n",
+                   on ? "on" : "off", r.valid, r.silent, r.note, r.octave, (int)r.cents,
+                   (int)r.freq, (int)((r.freq - (int)r.freq) * 100.0f));
     }
     else if (streq(argv[0], "prof")) engine_profile();
+    else if (streq(argv[0], "loop")) cmd_loop(argc, argv);
     else if (streq(argv[0], "irput")) cmd_irput(argc, argv);
     else if (streq(argv[0], "irls")) irstore_print_list();
     else if (streq(argv[0], "irdel")) cmd_irdel(argv[1]);
@@ -758,6 +845,12 @@ static void dispatch(char *cmd)
         /* cab [<1-83>]: the edit buffer's cab on, with this type (save: `save`) */
         int ok = 1;
         uint32_t t = argc > 1 ? parse_num(argv[1], &ok) : 0u;
+        if (argc > 1 && ok && irstore_slot_of(t) >= 0 && engine_loop_has_mem()) {
+            /* the looper wins: its loop is in the long-IR memory */
+            log_printf("cab %lu: not available (the looper has the long-IR memory; loop clear first)\r\n",
+                       (unsigned long)t);
+            return;
+        }
         if (argc > 1 && ok && t >= 1u && t <= IRSTORE_LAST) {
             uint8_t b[4] = {1, 0, (uint8_t)t, 0};
             ui_edit_write(P_CAB_EN, b, sizeof b);
@@ -775,7 +868,8 @@ static void dispatch(char *cmd)
         int r = ok ? engine_cab_long(n) : -1;
         log_printf("cab long %lu: %s\r\n", (unsigned long)n,
                    r == 0 ? "ok" : r == -2 ? "not available (long IRs need more RAM; max " XSTR(ENGINE_IR_TAPS) ")"
-                                 : r == -3 ? "busy (IR upload)" : "bad taps");
+                   : r == -3 ? "not available (the looper has the long-IR memory; max 512 until loop clear)"
+                   : r == -4 ? "busy (IR upload)" : "bad taps");
     }
     else if (streq(argv[0], "stock")) {
         int r = stock_check((const void *)STOCK_FLASH, STOCK_FLASH_SIZE);
@@ -826,12 +920,7 @@ static void dispatch(char *cmd)
             }
         }
     }
-    else if (streq(argv[0], "power")) {
-        const power_state_t *p = power_state();
-        log_printf("power: battery=%u (level %u) supply=%u%s charging=%u\r\n",
-                   (unsigned)p->battery_raw, (unsigned)p->level, (unsigned)p->supply_raw,
-                   p->supply_low ? " LOW" : "", (unsigned)p->charging);
-    }
+    else if (streq(argv[0], "power")) power_console(argc, argv);
     else if (streq(argv[0], "uimon")) {
         ui_set_log(argc > 1 && streq(argv[1], "on"));
         log_printf("ui monitor %s\r\n", (argc > 1 && streq(argv[1], "on")) ? "on" : "off");
@@ -891,7 +980,41 @@ static void dispatch(char *cmd)
     else log_printf("unknown command (try help)\r\n");
 }
 
-void console_init(void) { line_len = 0; heartbeat_on = 0; }
+/* Stack high-water (`stack`): the 8 kB reserve below _estack (linker.ld) is
+ * painted at boot; the lowest word that lost the paint is the deepest use
+ * since then (interrupts included: they run on the same stack). */
+#define STACK_PAINT 0xC0DEF00Du
+#if defined(__arm__)
+extern uint32_t __stack_limit__[], _estack[];
+
+static void stack_paint(void)
+{
+    uint32_t sp;
+    __asm volatile ("mov %0, sp" : "=r" (sp));
+    /* below the caller's frame, with room for an interrupt frame */
+    for (volatile uint32_t *w = __stack_limit__; (uint32_t)(uintptr_t)w < sp - 256u; w++) *w = STACK_PAINT;
+}
+
+static void cmd_stack(void)
+{
+    const uint32_t *w = __stack_limit__;
+    while (w < _estack && *w == STACK_PAINT) w++;
+    uint32_t size = (uint32_t)((uintptr_t)_estack - (uintptr_t)__stack_limit__);
+    uint32_t used = (uint32_t)((uintptr_t)_estack - (uintptr_t)w);
+    log_printf("stack: used %u of %u bytes, free %u\r\n", (unsigned)used, (unsigned)size,
+               (unsigned)(size - used));
+}
+#else
+static void stack_paint(void) {}
+static void cmd_stack(void) { log_printf("stack: used 0 of 8192 bytes, free 8192\r\n"); }
+#endif
+
+void console_init(void)
+{
+    line_len = 0;
+    heartbeat_on = 0;
+    stack_paint();
+}
 
 void console_task(void)
 {

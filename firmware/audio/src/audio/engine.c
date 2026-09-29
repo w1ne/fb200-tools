@@ -1,13 +1,15 @@
 /* Audio engine: codec ADC -> DSP chain -> codec DAC, with the USB path as
  * capture (processed signal) and monitor (host playback mixed into the DAC).
  *
- * Drift: the host playback ring is elastic - when it starves the last frame
- * is repeated, when it stays overfull the tail is advanced, so long-term
- * latency stays bounded. Both are counted in engine_stats_t.
+ * Drift: the host playback is resampled to the codec clock (audio/drift.h
+ * drift_rs, a PI loop on the ring fill). Only when that fails (ring dry or
+ * far overfull) a frame repeats or frames drop; both are counted in
+ * engine_stats_t.
  *
  * The DSP chain is currently a gain node plus an optional test generator;
  * the real chain (EQ, amp sim, ...) lands in later milestones. */
 #include <string.h>
+#include "cold.h"
 #include "audio/engine.h"
 #include "debug/cdc_log.h"
 #include "audio/audio_config.h"
@@ -33,6 +35,9 @@
 #include "dsp/reverb.h"
 #include "dsp/delay.h"
 #include "dsp/eq.h"
+#include "dsp/looper.h"
+#include "dsp/loop_mem.h"
+#include "dsp/outq.h"
 #include "preset/preset.h"
 #include "irstore/irstore.h"
 #include "fsl_sai.h"
@@ -47,48 +52,6 @@
 #define RING_FRAMES 512
 #define MAX_RING_FILL (RING_FRAMES - ENGINE_FRAMES)
 #define FAULT_MUTE_MS 100u
-/* DAC latency bound. At start-up the RX ring overflows before the engine
- * runs; draining that backlog filled the TX ring (511 frames = 10.6 ms) and,
- * with equal rates, it stayed full. Above the target, skip a block. */
-#define TX_TARGET_FILL (2u * SAI_BLOCK_FRAMES + ENGINE_FRAMES)
-
-/* ---- pure drift helpers (host-tested) ---- */
-
-size_t engine_drift_fill(const int16_t *ring, uint32_t cap, uint32_t *tail,
-                         uint32_t head, int16_t *out, size_t frames,
-                         int16_t last[2], uint32_t *inserts)
-{
-    size_t n = 0;
-    while (n < frames) {
-        if (*tail == head) {
-            out[n * 2 + 0] = last[0];
-            out[n * 2 + 1] = last[1];
-            (*inserts)++;
-        } else {
-            last[0] = ring[*tail * 2 + 0];
-            last[1] = ring[*tail * 2 + 1];
-            out[n * 2 + 0] = last[0];
-            out[n * 2 + 1] = last[1];
-            *tail = (*tail + 1u) % cap;
-        }
-        n++;
-    }
-    return n;
-}
-
-uint32_t engine_drift_trim(uint32_t cap, uint32_t head, uint32_t *tail,
-                           uint32_t max_fill, uint32_t *drops)
-{
-    uint32_t fill = (head + cap - *tail) % cap;
-    uint32_t dropped = 0;
-    while (fill > max_fill) {
-        *tail = (*tail + 1u) % cap;
-        dropped++;
-        fill--;
-    }
-    *drops += dropped;
-    return dropped;
-}
 
 volatile float g_meter_peak[2];
 
@@ -119,12 +82,15 @@ static cab_t s_cab __attribute__((section(".ocram")));
 #define ENGINE_LONG_IR (ENGINE_IR_TAPS > CAB_TAPS)
 _Static_assert(ENGINE_IR_TAPS >= CAB_TAPS && ENGINE_IR_TAPS <= CAB_MAX_TAPS, "ENGINE_IR_TAPS");
 _Static_assert(AUDIO_FS <= DELAY_FS_MAX, "the delay line is sized for DELAY_FS_MAX");
+_Static_assert(SAI_BLOCK_FRAMES == ENGINE_FRAMES, "sai_pull_block moves one engine block");
 #if ENGINE_LONG_IR
 /* long IRs (M5): 96 kB, in the low DTCM (linker.ld .dtcm_lo) */
 static conv2_tail_t s_cab_tail __attribute__((section(".dtcm_lo")));
 #define CAB_INIT(c) cab_init_long((c), &s_cab_tail)
+#define CAB_TAIL (&s_cab_tail)
 #else
 #define CAB_INIT(c) cab_init(c)
+#define CAB_TAIL NULL
 #endif
 static gate_t s_gate;
 static comp_t s_comp;
@@ -142,6 +108,11 @@ static bool s_dly_en;
  * (_dcd_data) up by 2 kB and DTCM overflows. The EQ touches ~70 words of it
  * per block. */
 static eq_t s_eq __attribute__((section(".ocram")));
+/* The looper (dsp/looper.h): its state (~0.3 kB) in the low DTCM's spare;
+ * its loop in the delay line and the long-IR tail while s_lmem.owned
+ * (dsp/loop_mem.h). */
+static looper_t s_loop __attribute__((section(".dtcm_lo")));
+static loop_mem_t s_lmem __attribute__((section(".dtcm_lo")));
 static bool s_amp_en, s_cab_en, s_gate_en, s_comp_en, s_mod_en, s_rev_en;
 static int s_amp_model = -1, s_cab_type = -1;
 static float s_master = 1.0f, s_master_target = 1.0f;
@@ -153,19 +124,25 @@ static bool s_testgen_in;               /* testgen feeds the chain input */
 static int s_usb_route;                 /* ENGINE_USB_OUT / _IN / _MIX */
 static uint32_t s_cyc_max, s_cyc_sum, s_cyc_n;   /* DWT cycles per block */
 /* `prof`: DWT cycles per chain stage, summed over blocks (engine_profile) */
-enum { P_IN, P_TUNER, P_GATE, P_COMP, P_AMP, P_CAB, P_EQ, P_MOD, P_DELAY, P_REVERB, P_MIX,
-       P_DRUMS, P_USB_IN, P_OUT, P_COUNT };
+enum { P_IN, P_TUNER, P_GATE, P_COMP, P_AMP, P_CAB, P_EQ, P_MOD, P_DELAY, P_REVERB, P_LOOP,
+       P_MIX, P_DRUMS, P_USB_IN, P_OUT, P_COUNT };
 static uint32_t s_prof[P_COUNT], s_prof_n, s_prof_t;
 #define PROF(stage) do { uint32_t now_ = DWT->CYCCNT; s_prof[stage] += now_ - s_prof_t; \
                          s_prof_t = now_; } while (0)
 static uint32_t s_drop_tx_blocks;
 static uint32_t s_meter_last_ms;
+static bool s_ready;          /* engine_init done: engine_pump may run */
+static drift_rs_t s_rs;       /* host playback resampler (audio/drift.h) */
+static outq_t s_outq;         /* DAC float -> int16: rounding, optional dither (dsp/outq.h) */
+static float s_in_peak;       /* chain input |L + R| peak, for the idle timer (ui/power.c) */
 
-void engine_init(void)
+COLD void engine_init(void)
 {
     usb_audio_init();
     sai_audio_init();
     gain_init(&s_gain, 1.0f);
+    outq_init(&s_outq, 0x2545F491u);
+    drift_rs_init(&s_rs, (float)AUDIO_FS);
     testgen_init(&s_testgen, (float)AUDIO_FS);
     memset(&s_stats, 0, sizeof(s_stats));
     g_meter_peak[0] = g_meter_peak[1] = 0.0f;
@@ -189,9 +166,21 @@ void engine_init(void)
     reverb_init(&s_rev, (float)AUDIO_FS);
     delay_init(&s_dly, (float)AUDIO_FS, s_dly_line);
     eq_init(&s_eq, (float)AUDIO_FS);
+    looper_init(&s_loop);
+    s_lmem = (loop_mem_t){&s_loop, &s_dly, s_dly_line, &s_cab, CAB_TAIL, 0};
     static drums_data_t rhythms;
     if (g_stock) drums_data_from_stock(&rhythms, g_stock);
     drums_init(&s_drums, (const void *)DRUMS_BANK_ADDR, g_stock ? &rhythms : NULL);  /* NULL: silent */
+    s_ready = true;
+}
+
+void engine_pump(void)
+{
+    if (!s_ready) return;
+    s_drums.no_flash = 1;
+    usb_audio_task();
+    engine_task();
+    s_drums.no_flash = 0;
 }
 
 void engine_set_tuner(bool on) { s_tuner_on = on; }
@@ -203,12 +192,15 @@ static volatile bool s_reapply;
 void engine_dsp_reset(void)
 {
     amp_init(&s_amp, (float)AUDIO_FS);
-    CAB_INIT(&s_cab);
+    /* the looper keeps its loop: the delay line and the tail stay its own
+     * (loop_mem_give clears them) */
+    if (s_lmem.owned) cab_init_long(&s_cab, NULL);
+    else CAB_INIT(&s_cab);
     gate_init(&s_gate, (float)AUDIO_FS);
     comp_init(&s_comp, (float)AUDIO_FS);
     mod_init(&s_mod, (float)AUDIO_FS);
     reverb_init(&s_rev, (float)AUDIO_FS);
-    delay_init(&s_dly, (float)AUDIO_FS, s_dly_line);
+    if (!s_lmem.owned) delay_init(&s_dly, (float)AUDIO_FS, s_dly_line);
     eq_reset(&s_eq);            /* the settings come back with the preset */
     s_amp_model = s_cab_type = -1;
     s_reapply = true;
@@ -249,10 +241,13 @@ static int load_long_ir(unsigned slot)
 {
     irstore_entry_t e;
     int taps = irstore_load(slot, s_ir, ENGINE_IR_TAPS, &e);
+    /* the looper has the tail: the first 512 taps, as a long IR playing
+     * when the loop started; loop_mem_give reloads the whole IR */
+    if (taps > CAB_TAPS && s_lmem.owned) taps = CAB_TAPS;
     return taps > 0 && cab_set_ir_len(&s_cab, s_ir, (unsigned)taps, e.gain) == 0;
 }
 
-float *engine_ir_borrow(void)
+COLD float *engine_ir_borrow(void)
 {
     /* the upload needs a whole slot (and the table) in it: long IRs on only */
     if (s_ir_busy || ENGINE_IR_TAPS < IRSTORE_TAPS) return NULL;
@@ -260,7 +255,7 @@ float *engine_ir_borrow(void)
     return s_ir;
 }
 
-void engine_ir_release(void)
+COLD void engine_ir_release(void)
 {
     s_ir_busy = false;
     s_cab_type = -1;   /* reload the preset's cab: its slot may be new */
@@ -271,7 +266,7 @@ void engine_ir_release(void)
  * a synthetic IR (noise, -60 dB at 4096) in the cab until the next cab
  * change; 0 goes back to the preset's cab. More than ENGINE_IR_TAPS: -2
  * (long IRs off). */
-int engine_cab_long(unsigned taps)
+COLD int engine_cab_long(unsigned taps)
 {
     if (taps == 0) {
         s_cab_type = -1;
@@ -279,7 +274,8 @@ int engine_cab_long(unsigned taps)
         return 0;
     }
     if (taps > ENGINE_IR_TAPS) return -2;
-    if (s_ir_busy) return -3;
+    if (taps > CAB_TAPS && s_lmem.owned) return -3;
+    if (s_ir_busy) return -4;
     uint32_t seed = 1;
     float env = 1.0f;
     for (unsigned i = 0; i < ENGINE_IR_TAPS; i++, env *= 0.99832f) {
@@ -290,7 +286,7 @@ int engine_cab_long(unsigned taps)
     return cab_set_ir_len(&s_cab, s_ir, taps, cab_user_ir_gain(s_ir));
 }
 
-void engine_apply_preset(const preset_t *p, unsigned master)
+COLD void engine_apply_preset(const preset_t *p, unsigned master)
 {
     s_amp_en = pget(p, P_AMP_EN) != 0;
     s_cab_en = pget(p, P_CAB_EN) != 0;
@@ -321,7 +317,7 @@ void engine_apply_preset(const preset_t *p, unsigned master)
     /* Stock presets have the delay "on" but the stock never plays it: only
      * presets with our marker play (preset.h preset_delay_on). Switching it
      * on starts from a silent line, not from old audio. */
-    bool dly = preset_delay_on(p);
+    bool dly = preset_delay_on(p) && !s_lmem.owned;   /* the looper has its line */
     if (dly && !s_dly_en) delay_clear(&s_dly);
     delay_set_params(&s_dly, pget(p, P_DLY_TIME), pget(p, P_DLY_FB), pget(p, P_DLY_MIX),
                      pget(p, P_DLY_LOWCUT), pget(p, P_DLY_TONE));
@@ -329,7 +325,7 @@ void engine_apply_preset(const preset_t *p, unsigned master)
     eq_load(&s_eq, preset_eq(p));   /* glides; unchanged stages keep going */
     s_master_target = (float)(master > 100u ? 100u : master) * 0.01f;
 }
-void engine_apply_settings(const settings_t *s)
+COLD void engine_apply_settings(const settings_t *s)
 {
     /* 0 dB: the float the stock smoother settles on from below (it stalls
      * short of 1.0), for bit parity at the default setting */
@@ -342,11 +338,55 @@ void engine_apply_settings(const settings_t *s)
     s_tuner_mute = s->b[S_TUNER_MUTE] != 0;
 }
 
+COLD int engine_loop(int action)
+{
+    if (!s_lmem.owned && (action == LOOPER_REC_A || action == LOOPER_TAP ||
+                          action == LOOPER_DUB_A)) {
+        if (action == LOOPER_DUB_A) return -1;   /* nothing to dub on */
+        s_dly_en = false;                        /* before the looper writes its line */
+        loop_mem_take(&s_lmem);
+    }
+    return looper_cmd(&s_loop, action);
+}
+
+COLD void engine_loop_poll(void)
+{
+    looper_poll(&s_loop);
+    if (s_lmem.owned && s_loop.state == LOOPER_EMPTY) {
+        loop_mem_give(&s_lmem);   /* delay line and tail cleared */
+        s_reapply = true;         /* the preset's delay plays again */
+        if (irstore_slot_of((unsigned)s_cab_type) >= 0)
+            s_cab_type = -1;      /* and a stored long IR all its taps */
+    }
+}
+
+COLD void engine_loop_info(looper_info_t *out)
+{
+    looper_info(&s_loop, out);
+    if (s_loop.state == LOOPER_OFF) {   /* what the first record gets */
+        uint32_t blocks = DELAY_LEN * 2u / LOOPER_BLK_BYTES +
+                          (ENGINE_LONG_IR ? (uint32_t)sizeof(conv2_tail_t) / LOOPER_BLK_BYTES : 0u);
+        uint32_t fs = out->hq ? AUDIO_FS : AUDIO_FS / 2u;
+        out->max_ms = (unsigned)((uint64_t)blocks * LOOPER_BLK * 1000u / fs);
+        out->undo_max_ms = (unsigned)((uint64_t)(blocks / 2u) * LOOPER_BLK * 1000u / fs);
+    }
+}
+COLD bool engine_loop_has_mem(void) { return s_lmem.owned != 0; }
+COLD int engine_loop_hq(int on) { return looper_set_hq(&s_loop, on); }
+COLD void engine_loop_level(unsigned pct) { looper_set_level(&s_loop, pct); }
+
+float engine_input_peak(void)
+{
+    float p = s_in_peak;
+    s_in_peak = 0.0f;
+    return p;
+}
+
 bool engine_tuner_poll(tuner_result_t *out) { return tuner_poll(&s_tuner, out) != 0; }
 drums_t *engine_drums(void) { return &s_drums; }
 struct eq_s *engine_eq(void) { return &s_eq; }
 
-void engine_get_stats(engine_stats_t *out)
+COLD void engine_get_stats(engine_stats_t *out)
 {
     *out = s_stats;
 }
@@ -363,10 +403,16 @@ float engine_get_gain_db(void)
 }
 
 void engine_testgen_input(bool on) { s_testgen_in = on; }
+void engine_set_dither(bool on)
+{
+    s_outq.dither = on;
+    usb_audio_set_dither(on);
+}
+bool engine_get_dither(void) { return s_outq.dither != 0; }
 void engine_set_usb_route(int route) { s_usb_route = route; }
 int engine_get_usb_route(void) { return s_usb_route; }
 
-void engine_cycles(uint32_t *avg, uint32_t *max, uint32_t *budget)
+COLD void engine_cycles(uint32_t *avg, uint32_t *max, uint32_t *budget)
 {
     *avg = s_cyc_n ? s_cyc_sum / s_cyc_n : 0;
     *max = s_cyc_max;
@@ -374,11 +420,11 @@ void engine_cycles(uint32_t *avg, uint32_t *max, uint32_t *budget)
     s_cyc_sum = s_cyc_n = s_cyc_max = 0;
 }
 
-void engine_profile(void)
+COLD void engine_profile(void)
 {
     static const char *const names[P_COUNT] = {
-        "in", "tuner", "gate", "comp", "amp", "cab", "eq", "mod", "delay", "reverb", "mix",
-        "drums", "usb-in", "out",
+        "in", "tuner", "gate", "comp", "amp", "cab", "eq", "mod", "delay", "reverb", "loop",
+        "mix", "drums", "usb-in", "out",
     };
     uint32_t n = s_prof_n ? s_prof_n : 1u;
     for (int i = 0; i < P_COUNT; i++) {
@@ -462,17 +508,16 @@ static void update_meters(const dsp_block_t *b, size_t n)
  * dropped, and the insert counter ran away. Seen on the pedal 2026-09-27.) */
 void engine_task(void)
 {
-    static int16_t last[2];
     int16_t in[ENGINE_FRAMES * 2];
     int16_t play[ENGINE_FRAMES * 2];
     int16_t out[ENGINE_FRAMES * 2];
 
     check_sai_faults();
 
-    size_t n = sai_pull(in, ENGINE_FRAMES);
-    if (n == 0) {
-        return;
-    }
+    /* Whole blocks only (audio/sai_ring.h): the chain always runs n =
+     * DSP_BLOCK. No block yet: the main loop comes back. */
+    if (!sai_pull_block(in)) return;
+    const size_t n = ENGINE_FRAMES;
     for (size_t i = 0; i < n; i++) {
         s_block.data[0][i] = (float)in[i * 2 + 0] * (1.0f / 32768.0f);
         s_block.data[1][i] = (float)in[i * 2 + 1] * (1.0f / 32768.0f);
@@ -483,15 +528,15 @@ void engine_task(void)
      * needed for bit parity, tests/test_stock_dsp_parity.py). */
     uint32_t t0 = DWT->CYCCNT;
     s_prof_t = t0;
-    /* Host playback, drift-compensated, only while the host streams. Pulled
-     * here, in the same block as the capture push: `usb in|mix` adds no
-     * block latency (docs/AUDIO_PATH.md). */
+    /* Host playback, resampled to the codec clock (audio/drift.h), only
+     * while the host streams. Pulled here, in the same block as the capture
+     * push: `usb in|mix` adds no block latency (docs/AUDIO_PATH.md). */
     if (usb_audio_playing()) {
-        (void)usb_audio_trim(MAX_RING_FILL, &s_stats.fifo_drops);
-        (void)usb_audio_pull16(play, n, last, &s_stats.fifo_inserts);
+        (void)usb_audio_pull_rs(&s_rs, play, n, MAX_RING_FILL, &s_stats.fifo_inserts,
+                                &s_stats.fifo_drops);
     } else {
         memset(play, 0, n * 2 * sizeof play[0]);
-        last[0] = last[1] = 0;
+        drift_rs_init(&s_rs, (float)AUDIO_FS);   /* the next stream starts fresh */
     }
     if (s_usb_route != ENGINE_USB_OUT) {   /* reamping: playback into the chain */
         drift_play_to_input(s_block.data[0], s_block.data[1], play, n,
@@ -504,7 +549,13 @@ void engine_task(void)
         testgen_process(&s_testgen, &s_block, n);
         for (size_t i = 0; i < n; i++) s_block.data[1][i] = 0.0f;   /* mono source on L */
     }
-    for (size_t i = 0; i < n; i++) x[i] = s_block.data[0][i] + s_block.data[1][i];
+    float pk = s_in_peak;
+    for (size_t i = 0; i < n; i++) {
+        x[i] = s_block.data[0][i] + s_block.data[1][i];
+        float a = x[i] < 0.0f ? -x[i] : x[i];
+        if (a > pk) pk = a;
+    }
+    s_in_peak = pk;
     PROF(P_IN);
     tuner_feed(&s_tuner, x, n);
     PROF(P_TUNER);
@@ -524,7 +575,7 @@ void engine_task(void)
     PROF(P_EQ);
     if (s_mod_en) mod_process(&s_mod, x, (unsigned)n);
     PROF(P_MOD);
-    if (s_dly_en) delay_process(&s_dly, x, (unsigned)n);
+    if (s_dly_en && !s_lmem.owned) delay_process(&s_dly, x, (unsigned)n);
     PROF(P_DELAY);
     float xl[ENGINE_FRAMES], xr[ENGINE_FRAMES];
     if (s_rev_en) reverb_process(&s_rev, x, xl, xr, (unsigned)n);   /* mono in, L/R out */
@@ -542,6 +593,9 @@ void engine_task(void)
             break;
         }
     }
+    /* the looper: records the chain (mono), plays into both sides */
+    looper_process(&s_loop, xl, xr, (unsigned)n);
+    PROF(P_LOOP);
     float btl[ENGINE_FRAMES] = {0}, btr[ENGINE_FRAMES] = {0};
     size_t nbt = bt_audio_pull(btl, btr, n);                 /* Bluetooth audio in */
     for (size_t i = nbt; i < n; i++) btl[i] = btr[i] = 0.0f;
@@ -583,8 +637,8 @@ void engine_task(void)
         /* stock output clip */
         if (l > 0.95f) l = 0.95f; else if (l < -0.95f) l = -0.95f;
         if (r > 0.95f) r = 0.95f; else if (r < -0.95f) r = -0.95f;
-        out[i * 2 + 0] = (int16_t)(l * 32767.0f);
-        out[i * 2 + 1] = (int16_t)(r * 32767.0f);
+        out[i * 2 + 0] = outq_sample(&s_outq, l);   /* rounded (v0.9.1: truncated) */
+        out[i * 2 + 1] = outq_sample(&s_outq, r);
     }
     PROF(P_OUT);
     s_prof_n++;
@@ -594,10 +648,8 @@ void engine_task(void)
     if (dt > s_cyc_max) s_cyc_max = dt;
     if (s_drop_tx_blocks != 0) {
         s_drop_tx_blocks--; /* `x` underrun check: skip the refill */
-    } else if (sai_tx_fill() > TX_TARGET_FILL) {
+    } else if (!sai_push_block(out, SAI_TX_TARGET_FILL)) {
         s_stats.latency_skips++;
-    } else {
-        (void)sai_push(out, n);
     }
 }
 

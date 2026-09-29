@@ -33,6 +33,7 @@ Status words:
 | Master volume, smoothed | DONE | `engine.c` (`s_master`), knob k15 |
 | Input gain (global `S+0x1a`, app, -55..+6 dB) | DONE | `dsp/gain.c` `gain_input_stock` (stock table dB steps, within 1 ulp; `dsp_host_test.c`), stock smoother in `engine.c`; 0 dB keeps the bit-parity value |
 | Delay (preset fields `0x8c..0x94`, protocol `0x85`) | BETTER | the stock DSP ignores them (emulation). Ours plays them only in presets with our marker, so stock presets sound the same: [M4 delay](#m4-bass-delay) |
+| Looper (not in the stock) | BETTER (host) | ours: ~16 s mono (8 s `hq`), overdub, one undo, single-switch looper mode (hold D + C long); borrows the delay line and the long-IR memory while a loop exists: [M8 looper](#m8-looper) |
 | Bass EQ (not in the stock) | BETTER (host) | ours: HPF + 5 bands + LPF after the cab, set from the console, stored in the preset with our marker (`0xc4`); stock presets keep it off: [M4 EQ](#m4-bass-eq) |
 | Module order (`0xbc`) | not needed | the stock ignores it (emulation); stored by `proto.c` `0xA0` |
 | Sample rate 44.1 kHz | DONE | `audio_config.h` `AUDIO_FS`; stock clock tree |
@@ -86,12 +87,15 @@ Status words:
 | PC editor (official Electron app) | UNKNOWN | same protocol; not tried with the official app |
 | USB audio 44.1 kHz, 2 in / 2 out | DONE, BETTER | UAC2 (stock UAC1), `audio/usb_audio.c`; recording and playback on the pedal (M1) |
 | USB OTG recording to a phone | UNKNOWN | class-compliant, not tried on a phone; the stock "OTG volume" setting is not identified |
-| Battery level (4 steps) and charger sense, `BB` to the app | DONE | `ui/power.c`, `proto_port.c` `proto_battery` |
+| Battery level (4 steps) and charger sense, `BB` to the app | DONE | `ui/power.c`, `proto_port.c` `proto_battery`; the stock thresholds on a filtered reading with hysteresis (`ui/power_logic.c`) |
 | Battery notification on change | DONE | `ui/power.c`: `BB` when the level or the charger changes (stock 0x18a5e); level 4 while charging (0x1897c) |
 | Power-fail settings save | DONE (different) | the switch is a hard cut (checked on the pedal); settings are written 3 s after a change |
 | Firmware update | DONE, BETTER | USB recovery + app slot, `fb200 update`, browser updater (v0.6.0); no A+D. The official PC updater (`C1`) goes to our recovery, not the vendor DFU: going back to stock needs A+D |
 
-Not in the stock (so not gaps): looper, MIDI, auto power-off. (Delay: ours, M4.)
+Not in the stock (so not gaps): looper, MIDI, auto power-off. (Delay: ours, M4;
+looper: ours, M8.)
+Ours, off by default: idle standby (panel dark), LED level, clock switch; on:
+CPU sleep, unused clocks off, low/critical battery handling ([POWER.md](POWER.md)).
 
 ## Gaps, ranked by user impact
 
@@ -280,7 +284,8 @@ Budgets on this chip: 600 MHz / 44.1 kHz = 13.6k cycles per sample; RAM
   NeuralAmpModelerCore, nam-binary-loader, nam-pedal), TONE3000 browsing in
   the editor, A1 -> A2-Lite distillation tool on the host.
 - **M8 - bass effects:** mono octaver (poly later), envelope filter/synth,
-  multiband compressor; ADPCM looper (~8-16 s in RAM); AIDA-X/RTNeural.
+  multiband compressor; ADPCM looper (first version done: ~16 s in borrowed
+  RAM, see [below](#m8-looper)); AIDA-X/RTNeural.
 
 ### M5: long IRs in the cab
 
@@ -354,13 +359,19 @@ is not verified: console `jedec` first.
 - **Transfer:** console `irput` streams the taps into the IR staging buffer
   (`s_ir`, 16 kB OCRAM: no new buffer; cab changes wait meanwhile), checks the
   CRC, then writes one 4 kB sector per main-loop pass with `flash_store`
-  (each sector stalls the main loop like any `flash_store` today; the
-  `fix/flash-write-audio` change keeps the audio running during it). The
-  table is built in the same buffer. `irls`, `irdel`; host `fb200 ir put`,
+  (`flash_rmw`: the audio keeps running while the flash is busy; its range
+  check takes the store's range only on a chip that holds it). The table is
+  built in the same buffer. `irls`, `irdel`; host `fb200 ir put`,
   `ir ls --long`, MCP `long_ir_*` ([PROTOCOL.md §5.10](PROTOCOL.md#510-long-ir-store-our-firmware-usb-console)).
 - **Load:** `engine_apply_preset` checks the data CRC in flash (~0.8 ms for
   4096 taps, main loop), copies the taps into `s_ir` and calls
   `cab_set_ir_len`. Empty or bad: cab bypass, as an empty stock slot.
+- **With the looper (M8):** the looper wins. While a loop exists it has the
+  long-IR tail: console `cab <20-83>` and MCP/app `set_cab` 20..83 are
+  refused ("not available (the looper has the long-IR memory; loop clear
+  first)"); a preset that selects a long slot plays its first 512 taps, and
+  the whole IR loads again when the loop is cleared. The upload (`irput`)
+  uses `s_ir`, not the tail: it works during a loop.
 - **Gain:** the stock user-IR rule (`cab_user_ir_gain`, first 512 taps),
   computed once at upload and stored. Why: the head of a cab IR carries its
   level; the same IR plays at the same level from a stock slot (512 taps) and
@@ -377,6 +388,86 @@ is not verified: console `jedec` first.
   output; also under gcc 14 ASan/UBSan with `IRSTORE_CFLAGS`),
   `tests/test_longir_console.py` (host client, CLI and MCP against a pty pedal
   that runs irstore.c).
+
+### M8: looper
+
+Status: first version on the host (2026-09-29), not tried on the pedal.
+
+**Where.** `dsp/looper.c`, mono, after the reverb and before the master
+volume: it records the processed sound, the loop plays into both sides and
+the master scales it with the live signal; the USB capture has it, the drums
+are not recorded. Live sound passes at unity.
+
+**Memory (the hard part).** RAM is full
+([memory map](FIRMWARE_BRINGUP.md#memory-map-audio-app)). The looper has no
+buffer of its own: from the first record until **clear** it borrows the delay
+line (`.dtcm_hi`, 88 kB) and the long-IR tail (`.dtcm_lo`, 96 kB), 184 kB =
+1412 blocks (`dsp/loop_mem.c`). Meanwhile the delay is **off** (simple: no
+shorter delay line to manage; the preset keeps its delay settings) and the cab
+plays **512 taps** (`cab_detach_tail`: a long IR keeps its head, a long IR
+still loading is dropped; `cab long` over 512 and a stored long IR, cab
+20..83, from the console or the host answer "not available"; M5 P2). On
+clear the delay line is zeroed (`delay_clear`), the tail is cleared and
+attached again and the preset is applied again: the delay starts from a
+silent line. Never both: the engine does not run the delay while the looper
+owns the line, and a DSP reset (NaN guard) does not touch either area. Its
+state (~0.4 kB) is in the spare low DTCM.
+
+**Format.** 4-bit IMA ADPCM in blocks of 256 samples with a 4-byte header
+(predictor, step index): every block decodes on its own, so a dub can start
+anywhere and undo is a bank switch. Default 22.05 kHz: the input decimated
+by 2 with a 27-tap half-band FIR (flat +-0.03 dB to 8 kHz, <= -64 dB from
+15 kHz), the output interpolated with the same filter: **16.4 s**. `loop hq
+on` (only with no loop): 44.1 kHz, no resampling, **8.2 s**. Samples at x
+16384: +6 dB of headroom over full scale.
+
+**Behaviour.** First record: A press to A press sets the length
+(sample-accurate at the loop's rate: 2 samples at 44.1 kHz by default, 1 in
+`hq`; the wrap is at that sample, no drift, host test over 10 passes). The
+close crossfades: the first block (11.6 ms) fades in while what was played
+right after the close fades out, so the wrap has no click (host test: the
+second difference at the wrap equals the loop's own, a hard splice would
+step 0.3). Overdub: new = old x (1 - 0.05 g) + in x g, g the punch gain
+(5 ms ramp); old layers lose 0.45 dB per dubbed pass. **Undo:** a dub starts
+on a copy of the loop in the other half of the memory (one memcpy of up to
+92 kB between blocks), so undo and redo swap halves, faded (5 ms out, 5 ms
+in). That needs the loop to fit twice: up to 8.2 s (4.1 s `hq`); longer loops
+dub in place without undo (clear with a long hold of B). Stop and play fade
+over 5 ms; play restarts from the loop start.
+
+**Measured on the host** (`tests/test_looper.py`, a recorded sine played back
+on the next pass, SNR = fundamental vs everything else, THD = harmonics 2-5):
+
+| Sine | 22.05 kHz SNR / THD | hq SNR / THD |
+| --- | --- | --- |
+| 55 Hz, -6 dBFS | 58 / -81 dB | 64 / -86 dB |
+| 110 Hz, -6 dBFS | 52 / -70 dB | 58 / -83 dB |
+| 110 Hz, -46 dBFS | 40 / -50 dB | 41 / -48 dB |
+| 440 Hz, -6 dBFS | 40 / -60 dB | 46 / -74 dB |
+| 2 kHz, -6 dBFS | 26 / -50 dB | 32 / -54 dB |
+
+ADPCM noise follows the slope: -6 dB per octave. Fine for bass fundamentals,
+audible hiss on bright material; `hq` buys 6 dB.
+
+**CPU** (`tools/engine_cycles.py --looper rec|play|dub [--hq]`, the M7
+model, cycles per 32-sample block): 22.05 kHz record 2.9k, play 2.0k, dub
+3.4k (worst block 3.5k); `hq` 3.2k, 2.2k, 4.2k (4.4k). The block budget is
+435k: under 1 %. Code: ~1.8 kB of ITCM (`looper_process`, `run`, the codec
+step; the control code is `COLD`), ~0.7 kB of ITCM left.
+
+**Controls.** Looper mode: hold D, then C long (display `LP-`; the same
+again leaves; rhythm mode and looper mode exclude each other). A acts when
+pressed (record, close, punch out, restart), a tap of A while playing dubs
+(on release: a held A is the undo), hold A = undo/redo, tap B = stop/play,
+hold B = clear. Display `rEC`, `PLY`, `odb`, `StP`, `Und`/`rdo`, `CLr`; ring
+A red/green/orange with a white flash at each loop start, ring B blue while a
+loop exists. Console `loop`, MCP `looper`. Host tests: the UI mapping
+(`test_proto_host.py`), the state machine, the handover.
+
+Open: the pedal check (hardware checklist in the PR); drum sync (quantise the
+loop length to bars when the drums run); `loop save <n>` / `load <n>` to flash
+(a full loop is 184 kB, 45 sectors: a flash area and a background writer are
+needed, not cheap); a stereo loop; a shorter delay while looping.
 
 ### M4: bass delay
 

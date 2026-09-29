@@ -18,15 +18,112 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `long_ir_import`, `long_ir_delete` (the app asks before an import or delete).
   Gain: the stock user-IR rule, computed at upload. An empty or bad slot bypasses
   the cab. The 9 stock slots and the stock app protocol are unchanged.
+  While a loop exists the looper has the long-IR memory: selecting a long IR slot
+  from the console or the host is refused, and a preset with one plays 512 taps
+  until the loop is cleared.
 - **Console `cab [<1-83>]`:** select a cab type in the edit buffer (stock, user IR or
   long IR) without the app.
 - **Console `jedec`:** the flash chip's JEDEC ID, its size and the FlexSPI window.
   The long IR store is off on a chip smaller than 5 MB (checked at run time).
+- **Looper** (the stock has none): mono, after the reverb, ~16 s at 22.05 kHz
+  (4-bit IMA ADPCM, half-band resampling) or ~8 s with `loop hq on`. Overdub, one
+  undo/redo level for loops up to half the memory, a crossfade at the loop point
+  (no click), faded stop/play/undo/clear. Looper mode on the footswitches: hold D,
+  then C long; A = record / play / overdub (acts when pressed), hold A = undo, B =
+  stop/play, hold B = clear; display and ring feedback. Console `loop`, MCP
+  `looper`. RAM is full, so from the first record until clear the looper borrows the
+  delay line and the long-IR memory: the delay is off and IRs play 512 taps
+  meanwhile ([`docs/PARITY.md`](docs/PARITY.md#m8-looper)). Tested on the host, not
+  yet on a pedal.
+- `tools/engine_cycles.py --looper rec|play|dub [--hq]`: the looper's cost per block.
 
 ### Changed
 
 - A selector knob (CAB) whose stored value no knob position reaches (a long IR,
   cab 20..83) takes over at the first turn; before, it never picked up.
+- More engine control code (`engine_cab_long`, `engine_apply_settings`,
+  `engine_profile`, stats) runs from flash (`COLD`): ITCM for the looper.
+
+## [0.10.0] - 2026-09-29
+
+Faster, cleaner, safer and easier on the battery. Measured on a pedal: the DSP
+engine at 8 % of the CPU (was 14-15 %), no ticks in USB playback, a 30-minute
+soak without faults.
+
+### Changed
+
+- **Amp 30 % faster, bit-exact** (`tone_df1`: biquad stages in pairs, fused
+  oversampler): 21.4k -> 15.0k cycles per block on the pedal.
+- **Cab 2x faster:** the head convolver did two FFT steps per block after any short
+  audio block. It re-phases once now, and the engine passes only whole 32-frame blocks
+  (`src/audio/sai_ring.h`). 512 taps 20.9k -> 10.7k, 4096 taps 37.7k -> 27.0k cycles.
+- **Sound:** DAC and USB capture round to 16 bit (were truncated; `dither on` for
+  TPDF), the EQ runs in double (no added low-band noise), the delay line stores a
+  16-bit float format (cleaner quiet repeats), and USB playback is resampled to the
+  codec clock: no ticks (was one about every 2.5 s).
+- **Init and main-loop functions run from flash** (`COLD` marker, `src/cold.h`) to
+  keep ITCM for the audio path.
+
+### Added
+
+- **Host fuzzing of the firmware parsers** (`tests/test_fuzz_host.py`,
+  `firmware/audio/tests/fuzz_host_test.c`): the app protocol (HID/BLE frames,
+  every command incl. IR upload, preset writes, rename, settings), the console
+  (every command's arguments), presets/settings from flash and the stock data
+  blob, under ASan/UBSan with clang (edge coverage) and gcc 14 (docker). A short
+  fixed-seed run is in the default suite; `pytest -m fuzz` runs long ones.
+- **Soak test** `tools/soak.py`: minutes of preset changes, parameter writes,
+  console commands, IR lists and audio captures on a pedal; fails on skipped
+  blocks, SAI over/underruns, new crumbs, missing replies or a low stack.
+- **Console `stack`**: high-water of the 8 kB stack reserve (painted at boot).
+  `firmware/tools/stack_usage.py` bounds the worst case from `-fstack-usage`
+  and the call graph; the image tests keep 512 B of headroom.
+
+### Fixed
+
+- **Erased or corrupt presets/settings played as they were:** a power loss
+  during a save erases a whole sector (8 presets, or the settings). An erased
+  preset played every module at 655 % (a reverb that ran away to NaN); now it
+  loads as the stock blank preset, and out-of-range fields are clamped to the
+  stock's limits, also for whole-preset writes from the app (0x97). Erased
+  settings load the stock defaults (they played at full master volume).
+- **Stock data blob:** a CRC-valid blob with bad drum tables or NaN/Inf
+  coefficients is refused (the drums walked past their event lists).
+- **Console:** `peek`/`dumpmem`/`crc` checked only the ends of a range (reads
+  of the unmapped ITCM/DTCM space, a `crc` spanning ITCM to flash: bus fault);
+  `poke` wrote into the flash window; `gain`/`testgen` took values that
+  overflow (infinite gain); commands without an argument read a NULL pointer.
+- **Update session:** after an app update the pedal resets by itself when the
+  host is gone (it stayed half alive until a power cycle).
+- **Host tools:** a pedal reset mid-command gives a clear error at once, not a
+  hang (a sub-ms HID timeout blocked forever); a busy console port says which
+  port and what to do; read-only queries retry once.
+- **BT name:** a control byte ends the name sent in AT commands.
+- **LabWired twin: knobs.** `labwired/system.yaml` models the 16 knobs as
+  potentiometers behind the two 74HC4051 multiplexers (select GPIO2_IO17..19,
+  ADC1 IN3/IN4). New long gate `labwired/stock-knobs.yaml`: the unmodified
+  stock firmware reads every knob into its knob table (DTCM `0x2001DED6` /
+  `0x2001DEE6`) and follows a knob turned mid-run. Needs labwired-core with
+  the `74hc4051` part.
+- **Battery operation** ([docs/POWER.md](docs/POWER.md)): the main loop sleeps
+  (`WFI`) when there is no audio block or USB event (the stock busy-loops at
+  600 MHz); `cpu` shows the loop busy %. Unused PLLs, the second USB PHY and
+  unused clock gates are off. `power led 100|66|33` dims the display, knob LEDs
+  and light rings; `power idle <min>` (off by default) darkens the panel after
+  idle minutes. `power clock 528|396` for measurements (not saved). Battery
+  gauge: filtered, with hysteresis, an mV/% estimate, a "LOb" warning, and a
+  critical state that saves the settings and stops flash writes.
+
+## [0.9.1] - 2026-09-29
+
+### Fixed
+
+- **Audio drops out during flash writes:** a preset save, a settings write, an IR
+  import or delete stopped the audio for tens of ms (the main loop waited for the
+  flash, and the audio engine runs in it). The flash busy-wait now keeps the audio
+  running (`src/debug/flash_rmw.c`); drums keep time but are silent during a write
+  (their samples are in flash). Measured on the pedal: 0 skipped blocks for a save,
+  a settings write and an IR import + delete (were 13 and 38).
 
 ## [0.9.0] - 2026-09-29
 

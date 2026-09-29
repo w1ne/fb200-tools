@@ -2,7 +2,7 @@
  *
  * The flash controller stays exactly as the boot ROM and the vendor
  * bootloader configured it, so memory-mapped (AHB) reads keep working. We only
- * add four plain SPI-NOR sequences in LUT slots 12..15 and run them as IP
+ * add five plain SPI-NOR sequences in LUT slots 11..15 and run them as IP
  * commands. (The ROM FlexSPI driver's init was tried first: after it, any AHB
  * read of flash, including a speculative one, hangs the core. Seen on
  * hardware 2026-09-27.)
@@ -13,7 +13,9 @@
  * nothing that runs while the flash is busy may be there, and an app update
  * erases that very code. So fw_begin(FW_APP) never returns to its caller: it
  * ends in fw_session(), which runs only RAM code until the reset.
- * firmware/tools/hot_path.py checks both (flash-write roots). */
+ * firmware/tools/hot_path.py checks both (flash-write roots).
+ * While the flash is busy, flash_wait_idle (flash_rmw.c) keeps the audio
+ * running (flash_pump below; hot_path.py flash-busy roots). */
 #include <stdint.h>
 #include <string.h>
 #include "fsl_device_registers.h"
@@ -23,7 +25,7 @@
 #include "selfupdate.h"
 #include "recovery.h"
 #include "console.h"
-#include "irstore/irstore.h"
+#include "flash_rmw.h"
 #ifndef FB200_RECOVERY
 #include "audio/engine.h"
 #include "audio/usb_audio.h"
@@ -38,13 +40,10 @@ static const struct { uint32_t base, limit; } regions[] = {
     [FW_RECOVERY] = {0x00010000u, 0x00020000u},
     [FW_STOCK]    = {0x00061000u, 0x00071000u},   /* up to the presets */
 };
-/* The data store of flash_store (below) */
-#define STORE_BASE   0x00071000u
-#define STORE_LIMIT  0x000A1800u
 #define FCB_TAG      0x42464346u   /* "FCFB" */
 #define FCB_LUT      0x80u         /* FCB offset of the lookup table */
-#define SECTOR       4096u
-#define PAGE         256u
+#define SECTOR       FLASH_SECTOR
+#define PAGE         FLASH_PAGE
 #define FW_IDLE_MS   3000u
 
 #define SEQ_RDID     11u   /* JEDEC ID (FCB convention: chip erase, never used here) */
@@ -137,14 +136,32 @@ static int write_enable(void)
     return read_status(&sr) && (sr & 0x02u);   /* WEL */
 }
 
-static int wait_idle(uint32_t timeout_ms)
+/* ---- flash_rmw.h primitives ---- */
+int flash_cmd_init(void) { return lut_init(); }
+int flash_write_enable(void) { return write_enable(); }
+int flash_cmd_erase(uint32_t sector)
 {
-    uint32_t t0 = tusb_time_millis_api(), sr;
-    do {
-        if (!read_status(&sr)) return 0;
-        if (!(sr & 0x01u)) return 1;           /* WIP clear */
-    } while (tusb_time_millis_api() - t0 < timeout_ms);
-    return 0;
+    return ip(SEQ_ERASE, sector, kFLEXSPI_Command, NULL, 0) == kStatus_Success;
+}
+int flash_cmd_program(uint32_t page, const uint32_t *data)
+{
+    return ip(SEQ_PROGRAM, page, kFLEXSPI_Write, (uint32_t *)data, PAGE) == kStatus_Success;
+}
+int flash_read_status(uint32_t *sr) { return read_status(sr); }
+const void *flash_map(uint32_t offset) { return (const void *)(FLASH_AHB + offset); }
+uint32_t flash_now_ms(void) { return tusb_time_millis_api(); }
+
+/* While the flash is busy (flash_wait_idle): the watchdog and the audio.
+ * engine_pump is RAM code that reads no flash (hot_path.py flash-busy
+ * roots); the drums, whose samples are in flash, keep time silently. Not
+ * tud_task: the USB audio endpoints run in the USB ISR (audiod_xfer_isr),
+ * and a flash write can itself run inside tud_task (HID -> proto_feed). */
+void flash_pump(void)
+{
+    wdog_feed();
+#ifndef FB200_RECOVERY
+    engine_pump();
+#endif
 }
 
 /* Drop stale AHB prefetch/cache lines so reads see the new contents. While
@@ -152,7 +169,7 @@ static int wait_idle(uint32_t timeout_ms)
  * (XIP code included) may have cached garbage: reset the FlexSPI AHB
  * buffers, and drop the whole I-cache and the D-cache lines of the XIP code
  * as well as of the written range. */
-static void refresh_ahb(uint32_t offset, uint32_t len)
+void flash_refresh(uint32_t offset, uint32_t len)
 {
 #ifndef FB200_RECOVERY
     extern uint8_t __xiptext_start__[], __xiptext_end__[];
@@ -204,13 +221,6 @@ uint32_t flash_capacity(void)
     return cap;
 }
 
-/* The long IR store (irstore.h), only on a chip that holds all of it. */
-static int store_region_ok(uint32_t offset, uint32_t len)
-{
-    if (offset >= STORE_BASE && offset + len <= STORE_LIMIT) return 1;
-    return offset >= IRSTORE_BASE && offset + len <= IRSTORE_END && flash_capacity() >= IRSTORE_END;
-}
-
 void fw_info(void)
 {
     uint32_t pads = 0, bits = 0, sr = 0;
@@ -258,9 +268,9 @@ void fw_begin(fw_target_t target, uint32_t len, uint32_t crc)
     for (uint32_t a = base; a < end; a += SECTOR) {
         wdog_feed();
         if (!write_enable() || ip(SEQ_ERASE, a, kFLEXSPI_Command, NULL, 0) != kStatus_Success ||
-            !wait_idle(2000u)) {
+            !flash_wait_idle(2000u)) {
             log_printf("fw: erase FAILED at 0x%08x\r\n", (unsigned)a);
-            refresh_ahb(base, end - base);
+            flash_refresh(base, end - base);
 #ifndef FB200_RECOVERY
             if (xip_gone) fw_session();
 #endif
@@ -269,7 +279,7 @@ void fw_begin(fw_target_t target, uint32_t len, uint32_t crc)
         tud_task();
         cdc_log_task();
     }
-    refresh_ahb(base, end - base);
+    flash_refresh(base, end - base);
     fw_off = base;
     fw_len = len;
     fw_crc = crc;
@@ -289,16 +299,36 @@ void fw_begin(fw_target_t target, uint32_t len, uint32_t crc)
  * the new slot's cold code belongs to the new app. The audio keeps running
  * (engine_task and usb_audio_task are ITCM code). HID reports are dropped
  * (usb_hid.c). */
+/* Once the stream has ended (done or aborted), only `reset` leaves: the old
+ * app's cold code is gone, so its UI is dead while the audio still runs. If
+ * the host is not there to send it (USB unplugged for FW_GONE_MS, or no
+ * console input for FW_IDLE_RESET_MS), reset anyway: the new app starts, or
+ * recovery if the slot is invalid. The watchdog cannot do it: this loop
+ * feeds it. */
+#define FW_GONE_MS       5000u
+#define FW_IDLE_RESET_MS 120000u
+
 __attribute__((noreturn)) void fw_session(void)
 {
     static char line[16];
     unsigned n = 0;
+    uint32_t idle_since = 0, gone_since = 0;
     for (;;) {
         wdog_feed();
         tud_task();
         if (active) {
             fw_rx_task();
+            idle_since = gone_since = 0;
         } else {
+            uint32_t now = tusb_time_millis_api();
+            if (!idle_since) idle_since = now;
+            if (tud_mounted()) gone_since = 0;
+            else if (!gone_since) gone_since = now;
+            if ((gone_since && now - gone_since > FW_GONE_MS) || now - idle_since > FW_IDLE_RESET_MS) {
+                log_printf("fw: no host after the update: rebooting\r\n");
+                console_reboot();
+            }
+            if (tud_cdc_available()) idle_since = now;
             while (tud_cdc_available()) {
                 char c = (char)tud_cdc_read_char();
                 if (c != '\r' && c != '\n') {
@@ -331,7 +361,7 @@ static int program_page(void)
     page_fill = 0;
     if (!write_enable() ||
         ip(SEQ_PROGRAM, off, kFLEXSPI_Write, page_buf, PAGE) != kStatus_Success ||
-        !wait_idle(100u)) {
+        !flash_wait_idle(100u)) {
         log_printf("fw: program FAILED at 0x%08x\r\n", (unsigned)off);
         return 0;
     }
@@ -341,7 +371,7 @@ static int program_page(void)
 static void finish(void)
 {
     active = 0;
-    refresh_ahb(fw_off, fw_len);
+    flash_refresh(fw_off, fw_len);
     uint32_t got = crc32_ieee((const uint8_t *)(FLASH_AHB + fw_off), fw_len);
     log_printf("fw done crc=%08x %s\r\n", (unsigned)got, got == fw_crc ? "ok" : "BAD");
 }
@@ -369,37 +399,18 @@ void fw_rx_task(void)
     }
 }
 
-/* Data store: rewrite part of one 4 KB sector (read-modify-write, as the
- * stock does) inside the preset/settings/IR region F:0x71000..0xA1800:
- * presets, settings, rhythm, BT name, update flag, IR names/flags and the
- * 9 user IR slots at 0x89000 + slot * 0x2800 (docs/UI_AND_STORAGE.md §5,
- * docs/PROTOCOL.md); or inside the long IR store (irstore.h) when the chip
- * holds it (store_region_ok). Verifies by reading back. 0 on success. */
-static uint32_t sector_buf[SECTOR / 4];
+/* Data store: rewrite part of one 4 KB sector (flash_rmw.c) inside the
+ * preset/settings/IR region F:0x71000..0xA1800: presets, settings, rhythm,
+ * BT name, update flag, IR names/flags and the 9 user IR slots at 0x89000 +
+ * slot * 0x2800 (docs/UI_AND_STORAGE.md §5, docs/PROTOCOL.md), or the long
+ * IR store (irstore.h) when the chip holds it. Not during an update stream
+ * or after an app update erased the cold code. 0 on success. */
+static int store_blocked;
+void flash_store_block(int on) { store_blocked = on; }
 
 int flash_store(uint32_t offset, const void *data, uint32_t len)
 {
-    uint32_t sector = offset & ~(SECTOR - 1u);
-    /* Never the vendor bootloader's update-flag sector (F:0x86000): the
-     * A+D recovery depends on it. */
-    if (sector == 0x00086000u) return -1;
-    if (!store_region_ok(offset, len) || len == 0u ||
-        offset + len > sector + SECTOR || active || xip_gone) {
-        return -1;
-    }
-    memcpy(sector_buf, (const void *)(FLASH_AHB + sector), SECTOR);
-    memcpy((uint8_t *)sector_buf + (offset - sector), data, len);
-    if (!lut_init() || !write_enable() ||
-        ip(SEQ_ERASE, sector, kFLEXSPI_Command, NULL, 0) != kStatus_Success || !wait_idle(2000u)) {
-        return -2;
-    }
-    for (uint32_t p = 0; p < SECTOR; p += PAGE) {
-        if (!write_enable() ||
-            ip(SEQ_PROGRAM, sector + p, kFLEXSPI_Write, sector_buf + p / 4u, PAGE) != kStatus_Success ||
-            !wait_idle(100u)) {
-            return -3;
-        }
-    }
-    refresh_ahb(sector, SECTOR);
-    return memcmp((const void *)(FLASH_AHB + offset), data, len) == 0 ? 0 : -4;
+    if (active || xip_gone) return -1;
+    if (store_blocked) return -5;   /* battery critical: no erase at brown-out risk */
+    return flash_rmw(offset, data, len);
 }

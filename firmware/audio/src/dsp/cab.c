@@ -1,4 +1,5 @@
 #include <string.h>
+#include "cold.h"
 #include "cab.h"
 #include "arm_const_structs.h"
 #include "stock_data.h"
@@ -33,6 +34,16 @@ void cab_set_ir(cab_t *c, const float *ir, float gain)
     (void)cab_set_ir_len(c, ir, CAB_TAPS, gain);
 }
 
+COLD void cab_detach_tail(cab_t *c)
+{
+    int staged = c->conv.load == CONV2_LOAD_HEAD;   /* goes live: its gain too */
+    conv2_detach_tail(&c->conv);
+    if (c->scale_due && staged) c->scale = c->next_scale;
+    c->scale_due = 0;
+}
+
+COLD void cab_attach_tail(cab_t *c, conv2_tail_t *tail) { conv2_attach_tail(&c->conv, tail); }
+
 int cab_set_model(cab_t *c, int cab)
 {
     if (!g_stock || cab < 1 || cab > STOCK_CABS) return -1;
@@ -46,7 +57,7 @@ int cab_set_model(cab_t *c, int cab)
 #define HANN_C2 0.999924848688876
 #define HANN_S2 0.012259566653371795
 
-float cab_user_ir_gain(const float *ir)
+COLD float cab_user_ir_gain(const float *ir)
 {
     float buf[2 * 512], mag[85];
     /* stock window table: 0.5 - 0.5 cos(2 pi m / 1025) rounded to 6 decimals;

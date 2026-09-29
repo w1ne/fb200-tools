@@ -232,6 +232,34 @@ static void test_impulse(void)
     assert(fabsf(s_y[0] - s_ir[0]) < 1e-6f && fabsf(s_y[512] - s_ir[512]) < 1e-6f);
 }
 
+/* Partition phase: one short block, then DSP_BLOCK blocks (the engine
+ * after a SAI hiccup). Without re-phasing every later block straddles a
+ * partition edge and costs the head two FFT + MAC steps; with it, one step
+ * per block from the first full block on, and the output stays within the
+ * FIR tolerance (the re-phase round trip rounds, ~1e-7). Head only (conv2
+ * tail off: a 512-tap IR) and with a 4096-tap tail. */
+static void test_phase(size_t taps, size_t first)
+{
+    make_ir(s_ir, taps, 1500.0f);
+    fir(s_x, LEN, s_ir, taps, s_ir, taps, LEN, 0, s_ref);
+    assert(conv2_init(&s_c, &s_tail) == 0);
+    load_now(&s_c, s_ir, taps);
+    memcpy(s_y, s_x, sizeof s_y);
+    conv2_process(&s_c, s_y, s_y, first);
+    size_t i = first;
+    conv2_process(&s_c, s_y + i, s_y + i, DSP_BLOCK);      /* straddles: 2 steps, re-phase */
+    i += DSP_BLOCK;
+    assert(s_c.head.fill == 0);
+    uint32_t steps = s_c.head.steps, blocks = 0;
+    for (; i + DSP_BLOCK <= LEN; i += DSP_BLOCK, blocks++)
+        conv2_process(&s_c, s_y + i, s_y + i, DSP_BLOCK);
+    double db = err_db(s_y, s_ref, i);
+    printf("conv2 %4zu taps, %2zu-sample block then %u full blocks: %.3f steps/block, err %.1f dB\n",
+           taps, first, (unsigned)blocks, (double)(s_c.head.steps - steps) / blocks, db);
+    assert(s_c.head.steps - steps == blocks);
+    assert(db < -100);
+}
+
 int main(void)
 {
     for (size_t i = 0; i < LEN; i++) s_x[i] = frand();
@@ -263,6 +291,11 @@ int main(void)
         test_restart(200, mode);
     }
     test_impulse();
+    static const size_t firsts[] = {1, 8, 31};
+    for (size_t i = 0; i < 3; i++) {
+        test_phase(512, firsts[i]);
+        test_phase(4096, firsts[i]);
+    }
     printf("conv2 host tests OK\n");
     return 0;
 }

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fb200-tools"
-version = "0.9.0"
+version = "0.10.0"
 description = "Open-source tools for the FLAMMA FB200 (Mooer-based) bass multi-effects pedal: IR management, firmware inspection, patching and flashing"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -42,5 +42,6 @@ pythonpath = ["src", "app"]
 markers = [
     "hardware: requires a connected FB200 pedal",
     "stock: slow stock-DSP emulation (unicorn + fb200-stock.mr); nightly: pytest -m stock",
+    "fuzz: long fuzz runs of the firmware parsers (ASan/UBSan, minutes); pytest -m fuzz",
 ]
-addopts = "-m 'not hardware and not stock'"
+addopts = "-m 'not hardware and not stock and not fuzz'"

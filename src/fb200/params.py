@@ -200,5 +200,5 @@ def check_complete() -> list[str]:
 def parameter_docs() -> dict:
     """Every block, field, range, unit and sound meaning, plus tone recipes."""
     return {"chain": "in -> gate -> comp -> amp -> cab -> eq -> mod -> delay -> reverb -> "
-                     "master -> output",
+                     "looper -> master -> output",
             "blocks": BLOCKS, "eq": EQ, "global": GLOBAL, "recipes": RECIPES}

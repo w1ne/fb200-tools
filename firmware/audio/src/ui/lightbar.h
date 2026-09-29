@@ -8,8 +8,10 @@
  *   live mode    a ring per switch, lit while its module is on
  *   tuner mode   all off
  *   rhythm mode  A, B lit while held; C flashes the tempo; D lit while playing
+ *   looper mode  (ours) A: red recording, green playing, orange dubbing,
+ *                white flash at each loop start; B blue while a loop exists
  *   save         1 s blink of the saved slot's ring */
-typedef enum { LB_PRESET, LB_LIVE, LB_TUNER, LB_RHYTHM } lb_mode_t;
+typedef enum { LB_PRESET, LB_LIVE, LB_TUNER, LB_RHYTHM, LB_LOOPER } lb_mode_t;
 
 typedef struct {
     lb_mode_t mode;
@@ -18,6 +20,8 @@ typedef struct {
     uint8_t on;            /* bit per switch: live = module on, rhythm = switch held */
     bool playing;          /* rhythm: drums running */
     uint16_t bpm;          /* rhythm: tempo */
+    uint8_t loop;          /* looper: state (dsp/looper.h LOOPER_*) */
+    bool loop_top;         /* looper: near the loop start */
 } lightbar_in_t;
 
 /* Stock colour (0x17908): palette index 0..9 (> 9 -> 8), level 0..100
@@ -29,4 +33,6 @@ void lightbar_save(uint32_t now_ms);                       /* start the save bli
 /* Build the frame and send it (rgb_show) only when it changed, at most every
  * 20 ms: the DMA frame must not disturb the audio. */
 void lightbar_task(uint32_t now_ms, const lightbar_in_t *in);
+/* Global brightness on top of the stock level, 0..100 % (0 = dark). */
+void lightbar_set_level(unsigned pct);
 #endif

@@ -12,6 +12,9 @@
 #define PRESET_SIZE 0x100u
 #define SETTINGS_FLASH 0x00080000u
 #define SETTINGS_SIZE 0x31u
+/* Ours, in the settings sector after the stock block (ui/power.c): u16
+ * marker "PW" 0x5750, idle standby minutes (0 = off), LED level %. */
+#define POWER_SETTINGS_FLASH (SETTINGS_FLASH + 0x100u)
 #define RHYTHM_FLASH 0x00081000u     /* on, ?, rhythm, level, bpm u16 */
 #define RHYTHM_SIZE 6u
 
@@ -88,6 +91,15 @@ static inline bool preset_eq_on(const preset_t *p)
 {
     return preset_eq(p) && p->b[P_EQ_DATA] != 0;
 }
+
+/* Checks of untrusted records (preset_check.c): an erased preset becomes
+ * the stock blank "EMPTY" preset, out-of-range fields the stock's limits;
+ * erased settings the stock defaults, an out-of-range field its default.
+ * They return the number of fields fixed (0: the record was valid). */
+extern const uint8_t settings_default[SETTINGS_SIZE];
+bool preset_erased(const preset_t *p);
+unsigned preset_sanitize(preset_t *p);
+unsigned settings_sanitize(settings_t *s);
 
 void preset_read(unsigned index, preset_t *out);         /* from flash */
 int preset_write(unsigned index, const preset_t *p);      /* 0 on success */

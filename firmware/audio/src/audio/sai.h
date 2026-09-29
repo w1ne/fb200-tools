@@ -9,10 +9,19 @@
 
 void sai_audio_init(void);
 
-/* Engine side (stereo interleaved int16). */
-size_t sai_pull(int16_t *dst, size_t frames);       /* codec ADC -> engine */
-size_t sai_push(const int16_t *src, size_t frames); /* engine -> codec DAC */
+/* DAC latency bound for sai_push_block. At start-up the RX ring overflows
+ * before the engine runs; draining that backlog filled the TX ring (10.6 ms)
+ * and, with equal rates, it stayed full. Above the target the engine skips
+ * a block. */
+#define SAI_TX_TARGET_FILL (3u * SAI_BLOCK_FRAMES)
 
+/* Engine side (stereo interleaved int16), whole SAI_BLOCK_FRAMES blocks only
+ * (audio/sai_ring.h). */
+bool sai_pull_block(int16_t *dst);   /* codec ADC -> engine; false: no whole block yet */
+/* engine -> codec DAC; false: skipped (more than max_fill frames queued) */
+bool sai_push_block(const int16_t *src, uint32_t max_fill);
+
+uint32_t sai_rx_fill(void);   /* frames the engine has not pulled yet */
 uint32_t sai_tx_fill(void);   /* frames queued for the DAC (= output latency) */
 void sai_stats(uint32_t *rx_fill, uint32_t *tx_fill, uint32_t *rx_blocks,
                uint32_t *tx_blocks, uint32_t *over, uint32_t *under);
