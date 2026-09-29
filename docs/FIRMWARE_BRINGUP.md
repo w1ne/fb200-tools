@@ -173,7 +173,10 @@ from flash (XIP):
   (erase/program) or after an app update has erased the app's own cold code
   (it lives in the slot): `selfupdate.c` (`fw_begin`, `fw_rx_task`,
   `flash_store`, `fw_session`), `fsl_flexspi.c`, `tud_task` and the
-  CDC/HID/audio class drivers, the USB descriptors, the CDC log.
+  CDC/HID/audio class drivers, the USB descriptors, the CDC log, and the
+  looper's flash operations (`loopstore/lsio.c`: they return only with the
+  flash idle or its erase suspended, so their caller, `loopstore.c`, is
+  cold; every other writer ends a suspended erase first, `lsio_quiesce`).
   `fw_begin(FW_APP)` never returns to its (cold) caller: it ends in
   `fw_session()`, which streams the image and waits for `reset`, keeping the
   audio running (`engine_task`). HID reports are dropped then
