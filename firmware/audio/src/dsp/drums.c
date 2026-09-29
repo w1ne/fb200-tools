@@ -143,8 +143,10 @@ static void mixer(drums_t *d, float *out, unsigned n)
         }
         uint32_t cnt = v->len - v->pos;
         if (cnt > n) cnt = n;
-        const float *s = d->smp[v->sample] + v->pos;
-        for (uint32_t k = 0; k < cnt; k++) out[k] += s[k] * v->gain;
+        if (!d->no_flash) {   /* no flash read while the flash is busy */
+            const float *s = d->smp[v->sample] + v->pos;
+            for (uint32_t k = 0; k < cnt; k++) out[k] += s[k] * v->gain;
+        }
         v->pos += n;
     }
 }

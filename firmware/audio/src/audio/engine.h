@@ -15,6 +15,11 @@ typedef struct {
 
 void engine_init(void);
 void engine_task(void);
+/* One pass of the main loop's audio work (usb_audio_task + engine_task) for
+ * a flash write that blocks the main loop (debug/flash_rmw.h flash_pump):
+ * the flash is busy, so the drums (samples in flash) advance silently.
+ * Nothing before engine_init. */
+void engine_pump(void);
 void engine_get_stats(engine_stats_t *out);
 
 void engine_set_gain_db(float db);

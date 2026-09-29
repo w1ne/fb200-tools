@@ -29,6 +29,16 @@ Everything they reach must be in RAM (not in flash), and none of it may
 load the address of cold const data. A call guarded by fw_xip_gone() (the
 caller returns first once an app update started) is not followed: GATED.
 
+Flash-busy roots (third check): flash_pump, the audio work that runs while
+the flash erases or programs (src/debug/flash_rmw.c flash_wait_idle). All
+it reaches must be in ITCM, like the hot set, and none of it may load the
+address of anything in flash (FLASH_DATA): a flash read while the flash is
+busy returns garbage and can leave stale cache lines. Flash reads through
+pointers kept in RAM (the drum samples) are not visible here: the engine
+gates them at run time (engine_pump, drums no_flash). The pump must also
+be wired: each PUMP_CALLERS function reaches flash_pump, and flash_pump
+reaches each PUMP_MUST_REACH function.
+
 Exit status 1 and a list of the offending call chains if a hot function is
 in flash.
 """
@@ -46,6 +56,10 @@ HOT_ENTRY = ("engine_task", "usb_audio_task")
 HOT_PATTERN = re.compile(r"^audiod_")
 FLASH_WRITE_ENTRY = ("fw_begin", "fw_rx_task", "fw_session", "flash_store")
 FLASH_WRITE_PATTERN = re.compile(r"^(cdcd_|hidd_|audiod_)")
+FLASH_BUSY_ENTRY = ("flash_pump",)
+PUMP_CALLERS = ("flash_rmw", "fw_begin", "fw_rx_task")
+PUMP_MUST_REACH = ("engine_task", "usb_audio_task", "wdog_feed")
+FLASH_DATA = range(0x60000000, 0x61000000)   # the 16 MB of the flash window in use
 # caller -> callee edges not followed by the flash-write check, and the gate
 # the caller must also call (it returns before the callee once set)
 GATED = {("tud_hid_set_report_cb", "proto_feed"): "fw_xip_gone"}
@@ -183,7 +197,7 @@ def reachable(img: Image, roots: dict[int, str],
 
 
 def _chains(img: Image, parent: dict[int, int | None], roots: dict[int, str],
-            bad_place, what: str) -> list[str]:
+            bad_place, what: str, data: range | None = None) -> list[str]:
     bad = []
     for f in sorted(parent):
         if not bad_place(f) or "veneer" in img.name(f):
@@ -195,11 +209,12 @@ def _chains(img: Image, parent: dict[int, int | None], roots: dict[int, str],
         bad.append(f"{what}{img.name(f)} @ {f:#010x}: " + " <- ".join(chain) + f" ({roots[root]})")
     # Nor may it read cold const data (strings, tables of a COLD_SRC file):
     # a literal-pool address into .xiptext that is not a function (those are
-    # callbacks, checked above).
+    # callbacks, checked above). The flash-busy set: no flash address at all.
     for f in sorted(parent):
         for w in sorted(img.words.get(f, ())):
-            if w in img.cold and (w & ~1) not in img.funcs:
-                bad.append(f"{what}{img.name(f)} reads cold data at {w:#010x}")
+            if w in (img.cold if data is None else data) and (w & ~1) not in img.funcs:
+                kind = "cold data" if data is None else "flash data"
+                bad.append(f"{what}{img.name(f)} reads {kind} at {w:#010x}")
     return bad
 
 
@@ -220,6 +235,30 @@ def check(elf: Path, cross: str = "arm-none-eabi-") -> list[str]:
     bad += gate_bad
     bad += _chains(img, reachable(img, wroots, skip), wroots, lambda f: f in FLASH,
                    "flash write: ")
+    return bad + check_flash_busy(img)
+
+
+def flash_busy_roots(img: Image) -> dict[int, str]:
+    return {a: "flash busy" for a, n in img.funcs.items() if n in FLASH_BUSY_ENTRY}
+
+
+def check_flash_busy(img: Image) -> list[str]:
+    """The audio pump: RAM only, no flash address, and wired both ways."""
+    roots = flash_busy_roots(img)
+    if len(roots) != len(FLASH_BUSY_ENTRY):
+        return [f"flash-busy entry {n} not found" for n in FLASH_BUSY_ENTRY
+                if n not in img.addr]
+    found = reachable(img, roots)
+    bad = _chains(img, found, roots, lambda f: f not in ITCM, "flash busy: ", FLASH_DATA)
+    names = {img.name(f) for f in found}
+    bad += [f"flash busy: {', '.join(FLASH_BUSY_ENTRY)} does not reach {n}"
+            for n in PUMP_MUST_REACH if n not in names]
+    for caller in PUMP_CALLERS:
+        a = img.addr.get(caller)
+        reach = {img.name(f) for f in reachable(img, {a: "caller"})} if a is not None else set()
+        if not set(FLASH_BUSY_ENTRY) & reach:
+            bad.append(f"flash busy: {caller} does not reach {', '.join(FLASH_BUSY_ENTRY)} "
+                       "(the flash wait no longer runs the audio)")
     return bad
 
 
@@ -230,11 +269,15 @@ def main() -> int:
     ap.add_argument("--list", action="store_true", help="print the hot set")
     ap.add_argument("--list-flash-write", action="store_true",
                     help="print the flash-write set")
+    ap.add_argument("--list-flash-busy", action="store_true",
+                    help="print the flash-busy set (the audio pump)")
     args = ap.parse_args()
-    if args.list or args.list_flash_write:
+    if args.list or args.list_flash_write or args.list_flash_busy:
         img = Image(args.elf, args.cross)
         if args.list:
             found = reachable(img, hot_roots(img))
+        elif args.list_flash_busy:
+            found = reachable(img, flash_busy_roots(img))
         else:
             found = reachable(img, flash_write_roots(img), gated_edges(img)[0])
         for f in sorted(found):

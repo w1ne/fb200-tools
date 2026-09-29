@@ -157,6 +157,7 @@ static uint32_t s_prof[P_COUNT], s_prof_n, s_prof_t;
                          s_prof_t = now_; } while (0)
 static uint32_t s_drop_tx_blocks;
 static uint32_t s_meter_last_ms;
+static bool s_ready;          /* engine_init done: engine_pump may run */
 
 void engine_init(void)
 {
@@ -189,6 +190,16 @@ void engine_init(void)
     static drums_data_t rhythms;
     if (g_stock) drums_data_from_stock(&rhythms, g_stock);
     drums_init(&s_drums, (const void *)DRUMS_BANK_ADDR, g_stock ? &rhythms : NULL);  /* NULL: silent */
+    s_ready = true;
+}
+
+void engine_pump(void)
+{
+    if (!s_ready) return;
+    s_drums.no_flash = 1;
+    usb_audio_task();
+    engine_task();
+    s_drums.no_flash = 0;
 }
 
 void engine_set_tuner(bool on) { s_tuner_on = on; }
