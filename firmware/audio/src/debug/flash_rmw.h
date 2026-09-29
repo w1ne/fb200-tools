@@ -19,12 +19,26 @@
  * 9 user IR slots): F:0x71000..0xA1800 (docs/UI_AND_STORAGE.md §5). */
 #define FLASH_STORE_BASE  0x00071000u
 #define FLASH_STORE_LIMIT 0x000A1800u
+/* The looper's area (loopstore/loopstore.h): F:0x510000 (64 kB aligned,
+ * after the long IR store F:0x400000..0x502000) to the end of the chip
+ * (flash_capacity), at most FLASH_LOOP_END. FLASH_LOOP_META (one sector
+ * below it) is kept for a later `loop save` header; nothing writes it yet.
+ * Only on a chip that holds at least FLASH_LOOP_MIN of it. */
+#define FLASH_LOOP_META  0x0050F000u
+#define FLASH_LOOP_BASE  0x00510000u
+#define FLASH_LOOP_END   0x00800000u
+#define FLASH_LOOP_MIN   0x00100000u
 /* The vendor bootloader's update-flag sector: never written (the A+D
  * recovery depends on it). */
 #define FLASH_UPDATE_FLAG 0x00086000u
 
-/* Rewrite [offset, offset + len) inside one sector of the data store
- * (read-modify-write, as the stock does), then read it back.
+/* The end of the looper's area on this chip (flash_capacity), or 0: no
+ * area (a chip smaller than FLASH_LOOP_BASE + FLASH_LOOP_MIN). */
+uint32_t flash_loop_end(void);
+
+/* Rewrite [offset, offset + len) inside one sector of the data store or of
+ * the looper's area with its meta sector (read-modify-write, as the stock
+ * does), then read it back.
  * 0 on success; -1 bad range, -2 erase failed, -3 program failed,
  * -4 read-back differs. */
 int flash_rmw(uint32_t offset, const void *data, uint32_t len);
@@ -38,6 +52,12 @@ int flash_write_enable(void);                               /* 1: WEL set */
 int flash_cmd_erase(uint32_t sector);                       /* 1: command sent */
 int flash_cmd_program(uint32_t page, const uint32_t *data); /* FLASH_PAGE bytes; 1: sent */
 int flash_read_status(uint32_t *sr);                        /* 1 ok */
+int flash_read_status2(uint32_t *sr2);                      /* 1 ok (35h: SUS = bit 7) */
+int flash_cmd_read(uint32_t offset, void *dst, uint32_t len); /* IP fast read (0Bh); 1 ok */
+int flash_cmd_erase_block(uint32_t block);                  /* 64 kB (D8h); 1: command sent */
+int flash_cmd_suspend(void);                                /* 75h; 1: sent */
+int flash_cmd_resume(void);                                 /* 7Ah; 1: sent */
+uint32_t flash_capacity(void);                              /* bytes (JEDEC ID and the window), 0: unknown */
 void flash_refresh(uint32_t offset, uint32_t len);          /* drop stale AHB/cache lines */
 const void *flash_map(uint32_t offset);                     /* memory-mapped read */
 uint32_t flash_now_ms(void);

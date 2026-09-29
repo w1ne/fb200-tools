@@ -17,11 +17,28 @@ int flash_wait_idle(uint32_t timeout_ms)
 
 static uint32_t sector_buf[FLASH_SECTOR / 4];
 
+uint32_t flash_loop_end(void)
+{
+    uint32_t cap = flash_capacity();
+    if (cap > FLASH_LOOP_END) cap = FLASH_LOOP_END;
+    return cap >= FLASH_LOOP_BASE + FLASH_LOOP_MIN ? cap : 0u;
+}
+
+/* [offset, offset + len), len > 0, inside the data store, or inside the
+ * looper's area (with its meta sector) on a chip that has it. */
+static int in_region(uint32_t offset, uint32_t len)
+{
+    if (len == 0u) return 0;
+    if (offset >= FLASH_STORE_BASE && offset < FLASH_STORE_LIMIT)
+        return len <= FLASH_STORE_LIMIT - offset;
+    uint32_t end = offset >= FLASH_LOOP_META ? flash_loop_end() : 0u;
+    return offset < end && len <= end - offset;
+}
+
 int flash_rmw(uint32_t offset, const void *data, uint32_t len)
 {
     uint32_t sector = offset & ~(FLASH_SECTOR - 1u);
-    if (sector == FLASH_UPDATE_FLAG || offset < FLASH_STORE_BASE ||
-        offset >= FLASH_STORE_LIMIT || len == 0u || len > FLASH_STORE_LIMIT - offset ||
+    if (sector == FLASH_UPDATE_FLAG || !in_region(offset, len) ||
         len > sector + FLASH_SECTOR - offset) {
         return -1;
     }

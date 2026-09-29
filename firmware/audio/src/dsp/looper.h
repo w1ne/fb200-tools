@@ -1,48 +1,55 @@
 #ifndef FB200_DSP_LOOPER_H
 #define FB200_DSP_LOOPER_H
-/* Looper (our addition, the stock has none; docs/PARITY.md). Mono, after the
- * reverb (it records the processed sound), before the master volume: the
- * loop plays into both channels, the live signal passes at unity.
+/* Looper (our addition, the stock has none; docs/PARITY.md M8). Mono, after
+ * the reverb (it records the processed sound), before the master volume:
+ * the loop plays into both channels, the live signal passes at unity.
  *
- * Memory: none of its own. The engine lends it the delay line and the
- * long-IR tail while a loop exists (loop_mem.h); looper_attach gives it the
- * two areas, looper_detach takes them back.
+ * Storage: the external NOR flash (loopstore/loopstore.h), up to 108 s.
+ * This file is the audio side: it decodes the loop from the read stream
+ * and sends the new frames down the write stream (loopstore/loopio.h); the
+ * flash side (loopstore.c, the main loop) moves them to and from the flash.
+ * The delay and the long-IR cab keep their RAM.
  *
- * Format: 4-bit IMA ADPCM in blocks of LOOPER_BLK samples, each with a
- * header (predictor, step index), so every block decodes on its own. At
- * 22.05 kHz (default: the input decimated by 2 with a 27-tap half-band FIR,
- * flat to 8 kHz, <= -47 dB from 14 kHz, <= -64 dB from 15 kHz; the output interpolated back with the
- * same filter) or at 44.1 kHz ("hq": half the time). Values are int16 at
- * x 16384: +6 dB of headroom over full scale.
+ * Format: 22.05 kHz (the input decimated by 2 with a 27-tap half-band FIR,
+ * flat to 8 kHz, <= -47 dB from 14 kHz, <= -64 dB from 15 kHz; the output
+ * interpolated back with the same filter), frames of LC_N samples in
+ * 10-bit block floating point (dsp/loopcodec.h, 60 dB SNR).
  *
  * Overdub: new = old * (1 - (1 - LOOPER_FB) * g) + in * g, g the punch
- * gain (ramps over LOOPER_RAMP_MS). One undo level when the loop fits in
- * half the memory: a dub starts on a copy of the loop (two banks), undo and
- * redo swap the banks. Longer loops dub in place (no undo).
+ * gain (ramps over LOOPER_RAMP_MS). Undo: the loop before the last dub (the
+ * whole dub, however many passes); again = redo. A dub over the whole loop
+ * needs as much free flash as the loop: loops up to undo_max (54 s) dub
+ * whole, a longer loop dubs until the free flash runs out (the dub fades
+ * out at a chunk end).
  *
- * Loop points are sample-accurate at the loop's rate (the record length is
- * the sample count, the wrap is at that sample). The first record closes
- * with a crossfade: the first block of the loop fades in while what was
- * played right after the close fades out, so the wrap has no click. Play,
- * stop, undo and clear fade the loop output over LOOPER_RAMP_MS.
+ * Loop points are sample-accurate at 22.05 kHz. The first record closes
+ * with a crossfade: the first LOOPER_XFADE samples of the loop fade in
+ * while what was played right after the close fades out (written as a new
+ * version of the first frames), so the wrap has no click. Play, stop, undo
+ * and clear fade the loop output over LOOPER_RAMP_MS. A record closes by
+ * itself when the flash is full or the erase falls behind (at a chunk end,
+ * with the same crossfade).
  *
- * Threads: looper_process runs in engine_task; everything else in the main
- * loop (between blocks: nothing runs concurrently). The actions that wait
- * for a fade finish in looper_poll. */
+ * Threads: looper_process runs in engine_task (also inside the flash
+ * side's busy waits); everything else in the main loop. The actions that
+ * wait for a fade or for the flash side finish in looper_poll. */
 #include <stddef.h>
 #include <stdint.h>
 #include "dsp.h"
+#include "dsp/loopcodec.h"
+#include "loopstore/loopio.h"
 
-#define LOOPER_BLK        256                   /* samples per ADPCM block */
-#define LOOPER_BLK_BYTES  (4 + LOOPER_BLK / 2)  /* header + nibbles */
+#define LOOPER_FS         22050.0f
 #define LOOPER_FB         0.95f                 /* old layers per dubbed pass */
 #define LOOPER_RAMP_MS    5
-#define LOOPER_MIN_BLKS   2                     /* shortest loop: 2 blocks (~23 ms) */
+#define LOOPER_MIN_MS     500                   /* shortest loop */
+#define LOOPER_XFADE      (8 * LC_N)            /* closing crossfade: 256 samples, 11.6 ms */
 #define LOOPER_HB_SIDE    7                     /* half-band side taps (27-tap FIR) */
+#define LOOPER_READY_CHUNKS 3u                  /* erased chunks a record needs to start */
 
 enum {
-    LOOPER_OFF,     /* no memory (the delay and long IRs have it) */
-    LOOPER_EMPTY,   /* memory, no loop */
+    LOOPER_OFF,     /* no flash area (the chip is too small or unknown) */
+    LOOPER_EMPTY,   /* no loop */
     LOOPER_REC,     /* first record */
     LOOPER_PLAY,
     LOOPER_DUB,
@@ -59,27 +66,28 @@ enum {
     LOOPER_CLEAR_A,
 };
 
-typedef struct {
-    int16_t pred;
-    uint8_t idx;
-} adpcm_t;
+struct loopstore;
 
 typedef struct {
-    uint8_t *seg[2];              /* memory: two areas of whole blocks */
-    uint32_t nseg0, total, half;  /* blocks in seg[0]; in all; in a bank */
-    uint8_t state, hq;
-    uint8_t cur;                  /* bank that plays (0/1) */
-    uint8_t banks;                /* 2: the loop fits twice (undo), else 1 */
-    uint8_t alt, redo;            /* the other bank is valid; it is a redo */
-    uint8_t writing;              /* the current block is being rewritten */
+    loopio_t *io;
+    struct loopstore *ls;
+    uint8_t state;
+    uint8_t alt, redo;            /* the undo map is valid; it is a redo */
     uint8_t pend;                 /* action waiting for silence (looper_poll) */
-    uint8_t dub_req;              /* a dub waiting for the writer to finish */
-    uint32_t pos, len, nblk;      /* samples at the loop's rate */
+    uint8_t dub_req;              /* a dub waiting for the writer */
+    uint8_t sess, fresh;          /* a write session is open (audio side); first record */
+    uint8_t touched;              /* the current frame is new (write it) */
+    uint32_t mark;                /* a marker (LIO_END/LIO_SNAP) waiting for a ring slot */
+    uint32_t pos, len, nfr;       /* samples / frames at 22.05 kHz */
     uint32_t rec_end;             /* REC closes at this pos */
     uint32_t xfade;               /* samples of the closing crossfade left */
-    uint32_t passes;              /* loop wraps (display) */
+    uint32_t passes;              /* loop wraps */
+    uint32_t rd_f;                /* loop frame of the next read-stream frame */
+    uint32_t started, w_lc;       /* chunks started by write sessions; the last one */
+    uint32_t chunks;              /* the flash area, in chunks (0: none) */
+    uint32_t cut;                 /* records and dubs ended early by the free flash */
     float dub_g, dub_t, out_g, out_t, ramp, level;
-    adpcm_t dec, enc;
+    float dec[LC_N], enc[LC_N];   /* the frame playing (old); the frame being written */
     /* half-band filters: [history | this block] (26 + 32 at 44.1 kHz,
      * 13 + 16 at 22.05 kHz) */
     float dw[4 * LOOPER_HB_SIDE - 2 + DSP_BLOCK];
@@ -90,26 +98,22 @@ typedef struct {
     int state;
     unsigned len_ms, pos_ms, max_ms, undo_max_ms;
     int undo;                     /* 0 none, 1 undo, 2 redo */
-    int hq;
     unsigned level;
+    unsigned prep_ms;             /* erased flash ready for recording */
+    int flash;                    /* the flash area exists */
 } looper_info_t;
 
-void looper_init(looper_t *lp);   /* OFF, 22.05 kHz, level 100 */
-/* Lend the memory (EMPTY) / take it back (OFF, from any state: the loop is
- * gone). m1 may be NULL. */
-void looper_attach(looper_t *lp, void *m0, size_t bytes0, void *m1, size_t bytes1);
-void looper_detach(looper_t *lp);
-/* 0 ok, -1 not now (see the action), -2 no memory (OFF: the engine attaches
- * first, loop_mem.h). */
+/* OFF when the store has no area, else EMPTY; level 100 */
+void looper_init(looper_t *lp, loopio_t *io, struct loopstore *ls);
+/* 0 ok, -1 not now, -2 no flash area (OFF), -3 not ready (the flash is
+ * still being erased: try again) */
 int looper_cmd(looper_t *lp, int action);
 void looper_poll(looper_t *lp);                  /* main loop: finish the fades */
-int looper_set_hq(looper_t *lp, int on);         /* -1 while a loop exists */
 void looper_set_level(looper_t *lp, unsigned pct);   /* 0..100 = 0..unity */
 void looper_info(const looper_t *lp, looper_info_t *out);
-/* In place on the chain's L/R (post reverb), n <= DSP_BLOCK, n even. */
+/* A write session runs or waits in the flash side: another flash writer
+ * (flash_store) must wait. RAM code (flash-write path). */
+int looper_writing(const looper_t *lp);
+/* In place on the chain's L/R (post reverb), n == DSP_BLOCK. */
 void looper_process(looper_t *lp, float *l, float *r, unsigned n);
-
-/* The codec, for the tests. */
-unsigned looper_adpcm_enc(adpcm_t *s, int x);
-int looper_adpcm_dec(adpcm_t *s, unsigned nib);
 #endif
