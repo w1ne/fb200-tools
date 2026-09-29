@@ -12,6 +12,9 @@
 #define PRESET_SIZE 0x100u
 #define SETTINGS_FLASH 0x00080000u
 #define SETTINGS_SIZE 0x31u
+/* Ours, in the settings sector after the stock block (ui/power.c): u16
+ * marker "PW" 0x5750, idle standby minutes (0 = off), LED level %. */
+#define POWER_SETTINGS_FLASH (SETTINGS_FLASH + 0x100u)
 #define RHYTHM_FLASH 0x00081000u     /* on, ?, rhythm, level, bpm u16 */
 #define RHYTHM_SIZE 6u
 

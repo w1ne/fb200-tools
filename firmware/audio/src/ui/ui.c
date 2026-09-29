@@ -8,6 +8,7 @@
 #include "proto/proto.h"
 #include "dsp/stock_data.h"
 #include "debug/recovery.h"
+#include "ui/power.h"
 
 enum { SW_A, SW_B, SW_C, SW_D };
 enum { M_GATE, M_COMP, M_AMP, M_CAB, M_MOD, M_REV, M_NONE };
@@ -283,6 +284,7 @@ static void footswitches(uint32_t now)
     int sw;
     fsw_event_t ev;
     while ((ev = fsw_event(&sw)) != FSW_NONE) {
+        power_activity();   /* wakes the panel from standby */
         if (ui_log)
             log_printf("fsw %c %s\r\n", "ABCD"[sw],
                        ev == FSW_PRESS ? "press" : ev == FSW_RELEASE ? "release" : "long");
@@ -345,6 +347,7 @@ static void knobs(uint32_t now)
 {
     for (int k = 0; k < KNOB_COUNT; k++) {
         if (!knob_changed(k)) continue;
+        power_activity();
         uint16_t v = knob_units(k), s = stored(k);
         if (ui_log) log_printf("knob k%d = %u (raw %u, stored %u%s)\r\n", k, v,
                                (unsigned)knob_value(k), s, caught[k] ? "" : ", not caught");
