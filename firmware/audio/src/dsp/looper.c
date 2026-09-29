@@ -308,6 +308,7 @@ static COLD void to_empty(looper_t *lp)
 {
     lp->state = LOOPER_EMPTY;
     lp->writing = lp->xfade = 0;
+    lp->alt = lp->redo = 0;
     lp->pend = lp->dub_req = 0;
     lp->dub_g = lp->dub_t = 0.0f;
     lp->len = lp->pos = 0;

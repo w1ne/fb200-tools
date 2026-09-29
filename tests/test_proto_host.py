@@ -38,7 +38,7 @@ def build() -> Path:
          "-I", str(FW / "src"), str(FW / "tests" / "proto_host_test.c"),
          str(FW / "src" / "proto" / "proto.c"), str(FW / "src" / "ui" / "ui.c"),
          str(FW / "src" / "ui" / "lightbar.c"), str(FW / "src" / "preset" / "preset_check.c"),
-         "-o", str(exe)],
+         str(FW / "src" / "dsp" / "looper.c"), "-o", str(exe)],
         check=True,
     )
     return exe
@@ -684,3 +684,81 @@ def test_ir_upload_replies_per_frame_and_hook(h):
         lines += got
     assert "HOOK ir 1" in lines
     assert ("b", 0x69) in [(t, fn) for t, fn, _ in frames(lines)]
+
+
+# ---------------------------------------------------------------- looper mode
+
+def loop(h) -> tuple[int, int, str]:
+    """(state, undo, actions since the last call): dsp/looper.h LOOPER_*"""
+    _, st, undo, *acts = h.cmd("loop")[0].split(" ")
+    return int(st), int(undo), " ".join(a for a in acts if a)
+
+
+def blocks(h, n: int) -> None:
+    for _ in range(n):
+        h.cmd("tick 1")                                        # one audio block per pass
+
+
+def looper_chord(h) -> list[str]:
+    """Ours: hold D, then C long (as the stock's B+A tuner and C+B rhythm chords)."""
+    return (h.cmd("fsw d press") + h.cmd("fsw c press") + h.cmd("fsw c long")
+            + h.cmd("fsw c release") + h.cmd("fsw d release"))
+
+
+def test_looper_mode_footswitches(h):
+    before = h.cmd("index")
+    out = looper_chord(h)
+    assert disp(h) == "LP-" and not frames(out)                 # no save, no bank change
+    assert h.cmd("index") == before
+    h.cmd("fsw a press")                                       # A acts when pressed
+    assert loop(h) == (2, 0, "tap") and disp(h) == "rEC"
+    h.cmd("fsw a release")
+    blocks(h, 40)
+    assert loop(h)[0] == 2
+    h.cmd("fsw a press")                                       # close: plays
+    h.cmd("fsw a release")                                     # (the press acted: no dub)
+    blocks(h, 20)                                              # past the closing crossfade
+    assert loop(h) == (3, 0, "tap") and disp(h) == "PLY"
+    assert ring_colours(h)[0] in ((0, 0x3F, 0), (0x3F, 0x3F, 0x3F))   # green (white at the top)
+    tap(h, "a")                                                # released while playing: dub
+    assert loop(h) == (4, 1, "dub") and disp(h) == "odb"
+    blocks(h, 60)
+    out = h.cmd("fsw a press") + h.cmd("fsw a long") + h.cmd("fsw a release")
+    assert loop(h)[2] == "tap undo"                            # punched out, then undo
+    assert disp(h) == "Und" and not frames(out)                # no save in looper mode
+    blocks(h, 40)
+    assert loop(h)[:2] == (3, 2)                               # playing, redo available
+    tap(h, "b")                                                # stop
+    blocks(h, 40)
+    assert loop(h) == (5, 2, "stop")
+    tap(h, "b")                                                # play from the start
+    assert loop(h)[::2] == (3, "play")
+    hold(h, "b")                                               # clear: the memory goes back
+    assert disp(h) == "CLr"
+    blocks(h, 20)
+    assert loop(h) == (0, 0, "clear")
+    hold(h, "a")                                               # nothing to undo
+    assert disp(h) == "no " and loop(h)[2] == "tap undo!"      # (the press started a record)
+    hold(h, "b")
+    blocks(h, 20)
+    assert loop(h)[0] == 0
+    tap(h, "c", "d")                                           # chords do nothing here
+    assert h.cmd("index") == before
+    looper_chord(h)                                            # leave
+    assert disp(h).startswith("P")
+
+
+def test_looper_mode_and_rhythm_mode_exclude_each_other(h):
+    looper_chord(h)
+    h.cmd("fsw c press")
+    h.cmd("fsw b press")
+    h.cmd("fsw b long")                                        # C held + B long: rhythm
+    h.cmd("fsw b release")
+    h.cmd("fsw c release")
+    assert disp(h).startswith("d")
+    h.cmd("fsw a press")                                       # A: previous rhythm, no loop
+    h.cmd("fsw a release")
+    assert loop(h) == (0, 0, "")
+    looper_chord(h)
+    assert disp(h) == "LP-"
+    looper_chord(h)
