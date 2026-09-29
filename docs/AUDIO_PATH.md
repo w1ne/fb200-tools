@@ -92,8 +92,8 @@ and input front-end enable).
 ## USB playback routing (reamping)
 
 Console `usb [out|in|mix]` (`usb` alone prints `route=` with the stats). The
-engine pulls the host playback once per block, drift-compensated as before
-(`usb_audio_trim` / `usb_audio_pull16`), before the chain input:
+engine pulls the host playback once per block, resampled to the codec clock
+(`usb_audio_pull_rs`, see "Clock drift" below), before the chain input:
 
 | Route | Chain input (the stock L + R of the ADC) | DAC | USB capture |
 | --- | --- | --- | --- |
@@ -110,12 +110,11 @@ input, so also the playback. The route is not saved (reboot: `out`).
 
 Latency, USB playback -> USB capture, inside the pedal:
 
-- Playback ring (`usb_audio.c`, drained by the engine): the engine starts
-  pulling at once when the host opens the stream, so the ring runs near its
-  minimum, about one USB frame of audio + one engine block (44-45 + 32
-  frames, 1-2 ms at 44.1 kHz). With a host clock faster than the codec clock
-  the fill grows until the trim holds it at `MAX_RING_FILL` = 480 frames
-  (10.9 ms). `usb` shows the current `play_fill`.
+- Playback ring (`usb_audio.c`, drained by the engine): the resampler
+  starts when the fill reaches `DRIFT_RS_TARGET` = 96 frames and then holds
+  the fill there (it moves between ~40 and ~90 frames with the 1 ms USB
+  packets and the 32-frame blocks): 1-2 ms at 44.1 kHz. `usb` shows the
+  current `play_fill`.
 - Engine: 0. The pull, the chain and the capture push run in the same
   32-frame block; the effects buffer nothing (the cab convolver included):
   only filter group delay, e.g. the amp's 3x oversampling interpolation
@@ -123,8 +122,26 @@ Latency, USB playback -> USB capture, inside the pedal:
 - Capture: the capture ring is drained on every main-loop pass (up to 64
   frames per pass) into the TinyUSB FIFO: about one USB frame (~1 ms).
 
-So the pedal adds roughly 2-3 ms, at most ~12 ms, and it changes when the
-drift compensation inserts or drops a frame. The host (CoreAudio / driver
+So the pedal adds roughly 2-3 ms. The host (CoreAudio / driver
 buffers) adds more. Do not align with a constant: `audio_test` (MCP) returns
 `delay_ms` from the cross-correlation of the played and captured signal
 (`fb200.audio.delay_frames`).
+
+## Clock drift (host playback)
+
+The host's USB audio clock and the codec clock (PLL4) differ by some ppm.
+v0.9.1 repeated a frame when the playback ring ran dry and dropped frames
+when it overfilled: a step in the waveform each time. Measured 2026-09-29
+(MacBook, `usb in`, a -10 dBFS 1 kHz sine): 8 steps in 18.5 s, one every
+~2.5 s; the worst 10 ms window -23.5 dB re the signal (a tick).
+
+Now `drift_rs` (`src/audio/drift.c`) reads the ring at a fractional position
+(4-point Catmull-Rom interpolation) that advances by `ratio` frames per output
+frame; a PI loop on the low-passed fill steers `ratio` (+-2000 ppm) so the
+fill stays at the target. Host model (`tests/test_dsp_host.py`
+test_engine_drift_suite, the host clock -500..+500 ppm off): no frame
+repeated or dropped, the worst 10 ms window of a 1 kHz sine -83 dB, of an
+8 kHz sine -75 dB (the interpolation). The fallbacks stay and are counted
+(`stats`: inserts, drops): ring dry -> the last frame repeats; fill above
+480 frames -> restart at the target.
+

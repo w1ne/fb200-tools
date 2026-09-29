@@ -144,17 +144,21 @@ def test_fx_suite():
 
 
 def test_engine_drift_suite():
+    """Host playback resampler (audio/drift.c drift_rs): no repeated or dropped
+    frame at +-500 ppm, no step in a sine, fallbacks; the `usb in|mix` input."""
     out = _build_dir() / "engine_host_test"
     subprocess.run(
-        ["cc", "-O2", "-Wall", "-Wextra", "-I", str(FW / "src"),
+        ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-I", str(FW / "src"),
          str(FW / "tests" / "engine_host_test.c"),
-         str(FW / "src" / "audio" / "drift.c"), "-o", str(out)],
+         str(FW / "src" / "audio" / "drift.c"), "-lm", "-o", str(out)],
         check=True,
     )
     result = subprocess.run([str(out)], capture_output=True, text=True,
                             check=False)
     assert result.returncode == 0, result.stdout + result.stderr
+    print(result.stdout)
     assert "drift host tests OK" in result.stdout
+    assert "drift_rs +500 ppm: inserts 0 drops 0" in result.stdout
 
 
 def test_led_pattern_suite():

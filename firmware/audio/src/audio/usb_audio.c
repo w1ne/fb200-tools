@@ -266,16 +266,11 @@ void usb_audio_push(const float *src, size_t frames)
     }
 }
 
-size_t usb_audio_pull16(int16_t *dst, size_t frames, int16_t last[2],
-                        uint32_t *inserts)
+size_t usb_audio_pull_rs(drift_rs_t *rs, int16_t *dst, size_t frames, uint32_t max_fill,
+                         uint32_t *inserts, uint32_t *drops)
 {
-    return drift_fill(play_ring, RING_FRAMES, &play_tail, play_head, dst,
-                      frames, last, inserts);
-}
-
-uint32_t usb_audio_trim(uint32_t max_fill, uint32_t *drops)
-{
-    return drift_trim(RING_FRAMES, play_head, &play_tail, max_fill, drops);
+    return drift_rs_pull(rs, play_ring, RING_FRAMES, &play_tail, play_head, dst, frames,
+                         max_fill, inserts, drops);
 }
 
 void usb_audio_stats(uint32_t *play_fill, uint32_t *cap_fill, uint32_t *overflow,
