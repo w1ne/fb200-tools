@@ -1,0 +1,87 @@
+# fb200-tools: LabWired twin of the FLAMMA FB200 - stock knob gate.
+#
+# LONG GATE (3.4 G cycles). Boots the UNMODIFIED vendor firmware (V1.0.1)
+# from a blank flash on the FB200 board (system.yaml), with the 16 knobs
+# modelled as potentiometers behind the two 74HC4051 multiplexers. The
+# firmware reaches its main loop at about 3.22 G cycles (factory reset, then
+# a fixed 3 s delay; see stock-first-boot.yaml) and starts to scan the knobs.
+# Build build/labwired/stock.elf first (docs/LABWIRED.md).
+#
+# What the stock scanner does (ITCM 0x1b538, called every 10 ms from the
+# main loop, docs/LABWIRED.md section 5):
+#   - selects mux channel c = (i + 1) mod 8 for scan slot i (i = 0..7),
+#     on GPIO2_IO17..19 (S0..S2), and converts ADC1 IN3 (mux A, k0..k7)
+#     and IN4 (mux B, k8..k15) 8 times each at once;
+#   - drops the minimum and the maximum, averages the other 6;
+#   - stores 4095 - average (inverted; 0 below 10, 4095 above 4085) as u16
+#     in two tables in DTCM: 0x2001DED6 + 2 i (mux A) and 0x2001DEE6 + 2 i
+#     (mux B).
+#
+# Each knob kN starts at a distinct position, 10 + 5 N % (system.yaml), so
+# every slot has its own expected value. Expected value of a knob at P %:
+#   mV = trunc(3300 * P / 100); counts = round(mV * 4095 / 3300);
+#   slot value = 4095 - counts.
+# These are datasheet and divider facts, not bytes of the vendor image.
+#
+# At 3.30 G cycles a stimulus turns MASTER (k15) from 85 % to 20 %. The
+# scanner reads it again within 80 ms (48 M cycles), so at 3.40 G its slot
+# must hold the new value 0xCCC, not the start value 0x266.
+schema_version: "1.2"
+inputs:
+  firmware: "../build/labwired/stock.elf"
+  system: "system.yaml"
+limits:
+  max_steps: 8000000000
+  max_cycles: 3400000000
+  # The margin is for a busy Mac (about 15 min idle, 72 min at load 100).
+  wall_time_ms: 7200000
+stimuli:
+  - target: { component: "knob_k15_master", channel: "position" }
+    trigger: !after_cycles { cycles: 3300000000 }
+    value: 20
+assertions:
+  # --- The scanner configured the parts it reads ---
+  # ADC1_CFG.MODE = 2: 12-bit conversions (reset 0 = 8-bit).
+  - memory_value: { address: 0x400C4044, mask: 0x0000000C, expected_value: 0x00000008 }
+  # GPIO2_GDIR bits 17..19: the mux select lines are outputs (reset 0).
+  - memory_value: { address: 0x401BC004, mask: 0x000E0000, expected_value: 0x000E0000 }
+
+  # --- Mux A (ADC1 IN3): slot i holds knob k0+((i + 1) mod 8) ---
+  # slot 0: k1 COMP_LEVEL at 15 %
+  - memory_value: { address: 0x2001DED6, size: 2, expected_value: 0xd99 }
+  # slot 1: k2 AMP at 20 %
+  - memory_value: { address: 0x2001DED8, size: 2, expected_value: 0xccc }
+  # slot 2: k3 GATE at 25 %
+  - memory_value: { address: 0x2001DEDA, size: 2, expected_value: 0xbff }
+  # slot 3: k4 BASS at 30 %
+  - memory_value: { address: 0x2001DEDC, size: 2, expected_value: 0xb32 }
+  # slot 4: k5 GAIN at 35 %
+  - memory_value: { address: 0x2001DEDE, size: 2, expected_value: 0xa66 }
+  # slot 5: k6 MID at 40 %
+  - memory_value: { address: 0x2001DEE0, size: 2, expected_value: 0x999 }
+  # slot 6: k7 TREBLE at 45 %
+  - memory_value: { address: 0x2001DEE2, size: 2, expected_value: 0x8cc }
+  # slot 7: k0 THRESH at 10 %
+  - memory_value: { address: 0x2001DEE4, size: 2, expected_value: 0xe65 }
+
+  # --- Mux B (ADC1 IN4): slot i holds knob k8+((i + 1) mod 8) ---
+  # slot 0: k9 MOD at 55 %
+  - memory_value: { address: 0x2001DEE6, size: 2, expected_value: 0x733 }
+  # slot 1: k10 VOL at 60 %
+  - memory_value: { address: 0x2001DEE8, size: 2, expected_value: 0x666 }
+  # slot 2: k11 MIX at 65 %
+  - memory_value: { address: 0x2001DEEA, size: 2, expected_value: 0x599 }
+  # slot 3: k12 REVERB at 70 %
+  - memory_value: { address: 0x2001DEEC, size: 2, expected_value: 0x4cc }
+  # slot 4: k13 CAB at 75 %
+  - memory_value: { address: 0x2001DEEE, size: 2, expected_value: 0x400 }
+  # slot 5: k14 REV_LEVEL at 80 %
+  - memory_value: { address: 0x2001DEF0, size: 2, expected_value: 0x333 }
+  # slot 6: k15 MASTER at 20 % (turned from 85 %: start value would be 0x266)
+  - memory_value: { address: 0x2001DEF2, size: 2, expected_value: 0xccc }
+  # slot 7: k8 RATE at 50 %
+  - memory_value: { address: 0x2001DEF4, size: 2, expected_value: 0x7ff }
+
+  # --- No fidelity gap, and the run did not stop early ---
+  - fidelity_clean: true
+  - expected_stop_reason: max_cycles
