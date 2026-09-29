@@ -83,6 +83,15 @@ static int lut_init(void)
                    (unsigned)pads, (unsigned)bits);
         return 0;
     }
+    /* We overwrite LUT sequences SEQ_RDID..15: the AHB (XIP) read must not use them. */
+    uint32_t cr2 = FLEXSPI->FLSHCR2[0];
+    uint32_t rd = (cr2 & FLEXSPI_FLSHCR2_ARDSEQID_MASK) >> FLEXSPI_FLSHCR2_ARDSEQID_SHIFT;
+    uint32_t rn = ((cr2 & FLEXSPI_FLSHCR2_ARDSEQNUM_MASK) >> FLEXSPI_FLSHCR2_ARDSEQNUM_SHIFT) + 1u;
+    if (rd + rn > SEQ_RDID) {
+        log_printf("fw: AHB read uses LUT seq %u..%u; not touched\r\n", (unsigned)rd,
+                   (unsigned)(rd + rn - 1u));
+        return 0;
+    }
     /* 4-byte-address opcodes (0x21/0x12) work in either address mode. */
     uint8_t se = bits == 32u ? 0x21 : 0x20;
     uint8_t pp = bits == 32u ? 0x12 : 0x02;
