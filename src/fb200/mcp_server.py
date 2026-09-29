@@ -670,9 +670,6 @@ class PedalTools:
              "crash_dump", "ir_list", "ir_import", "audio_test", "preset_list", "rename_preset",
              "ir_delete", "settings", "parameter_docs", "long_ir_list", "long_ir_import",
              "long_ir_delete")
-    # tools that overwrite stored data: the client should confirm them
-    DESTRUCTIVE = ("ir_import", "ir_delete", "long_ir_import", "long_ir_delete", "rename_preset",
-                   "save_preset")
 
 
 def _sdk():
@@ -705,15 +702,8 @@ def build_server(tools: PedalTools):
                 raise tool_error(f"{type(exc).__name__}: {exc}") from exc
         return call
 
-    try:
-        from mcp.types import ToolAnnotations
-    except ImportError:                     # an SDK without tool annotations
-        ToolAnnotations = None
     for name in PedalTools.TOOLS:
-        extra = {}
-        if ToolAnnotations is not None and name in PedalTools.DESTRUCTIVE:
-            extra["annotations"] = ToolAnnotations(destructiveHint=True)
-        server.tool(name=name, **extra)(wrap(getattr(tools, name)))
+        server.tool(name=name)(wrap(getattr(tools, name)))
 
     @server.resource(PARAMETER_DOCS_URI, name="parameter_docs", mime_type="application/json")
     def parameter_docs_resource() -> str:
