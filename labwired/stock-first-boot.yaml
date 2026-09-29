@@ -15,6 +15,9 @@
 #                   0x32, status poll 0x05). Magic "FB200" at F:0x82000,
 #                   "B01" at F:0xB0000.
 #   1.40 .. 3.20 G  a fixed delay_ms(3000) before the main loop
+#   3.23 G          the main loop starts the display refresh: "P.0.A."
+#                   (preset P0A; the dp of every digit is on, see below)
+#   3.42 G          the display shows "0.5.0."
 #   6.15 .. 6.70 G  Bluetooth module bring-up on LPUART5: AT+TM, AT+BD..,
 #                   AT+BM.., AT+CN00, AT+B501, AT+B401, 150 ms apart
 #
@@ -61,6 +64,13 @@ assertions:
   # is not modelled, so nothing answers; the firmware does not wait for "OK".
   - uart_ordered: ["AT+TM\r\n", "AT+BD", "AT+BM", "AT+CN00\r\n", "AT+B501\r\n", "AT+B401\r\n"]
   - uart_contains: "AT+B401"
+
+  # --- The 14-segment display (system.yaml, id "display") ---
+  # The first screen of the main loop, decoded by the display model from the
+  # GPIO3/GPIO4 multiplexing. The stock glyph writer never drives the dp
+  # line (GPIO4_IO23); another routine holds it high in this mode, so the
+  # dp shows after every digit.
+  - peripheral_log: {peripheral: display, log: text, contains: "\"P.0.A.\""}
 
   # --- No fidelity gap, and the run did not stop early ---
   - fidelity_clean: true
