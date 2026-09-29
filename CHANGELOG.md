@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-29
+
+Bass EQ, 1 s delay that plays on the pedal, IRs up to 4096 taps on an FFT cab,
+reamping over USB, an MCP server and a PoC app so an AI agent can drive the
+pedal. The memory map now matches the chip (OCRAM is 32 kB on the RT1052).
+Verified on a pedal.
+
 ### Added
 
 - **Desktop app PoC (`app/`, `fb200-app`):** a local web UI (Starlette, 127.0.0.1) to
