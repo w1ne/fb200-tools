@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FB200 Studio</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="bar">
+  <strong class="brand">FB200 Studio</strong>
+  <span id="conn" class="pill off" data-testid="conn">checking...</span>
+  <span id="current" class="muted"></span>
+  <span class="spacer"></span>
+  <button id="refresh" type="button">Refresh</button>
+  <button id="save" type="button" class="warn">Save preset...</button>
+  <button id="open-settings" type="button">Settings</button>
+</header>
+
+<main class="layout">
+  <section class="col presets" aria-label="Presets">
+    <h2>Presets</h2>
+    <ol id="preset-list" class="plist"></ol>
+  </section>
+
+  <section class="col editor" aria-label="Editor">
+    <div id="blocks" class="blocks"></div>
+
+    <details class="card" id="ir-card" open>
+      <summary><h3>User IRs</h3></summary>
+      <ol id="ir-list" class="irlist"></ol>
+      <form id="ir-form" class="irform">
+        <label>WAV <input type="file" id="ir-file" accept=".wav,audio/wav"></label>
+        <label>Slot <select id="ir-slot"></select></label>
+        <label>Name <input id="ir-name" maxlength="50" placeholder="from file"></label>
+        <label>Channel <select id="ir-channel"><option>left</option><option>right</option><option>sum</option></select></label>
+        <label>Low cut Hz <input id="ir-lowcut" type="number" min="0" max="2000" placeholder="off"></label>
+        <label>High cut Hz <input id="ir-highcut" type="number" min="0" max="20000" placeholder="off"></label>
+        <label class="chk"><input type="checkbox" id="ir-trim"> trim silence</label>
+        <label class="chk"><input type="checkbox" id="ir-minphase"> min phase</label>
+        <label class="chk"><input type="checkbox" id="ir-normalize"> normalize</label>
+        <button type="submit" class="warn">Import...</button>
+      </form>
+    </details>
+
+    <div class="row2">
+      <details class="card" open>
+        <summary><h3>Drums</h3></summary>
+        <div id="drums" class="fields"></div>
+      </details>
+      <details class="card" open>
+        <summary><h3>Tuner</h3></summary>
+        <div class="tuner"><span id="tuner-read" class="big">--</span>
+          <button id="tuner-on" type="button">Read</button>
+          <button id="tuner-off" type="button">Off</button></div>
+      </details>
+      <details class="card">
+        <summary><h3>Output and global</h3></summary>
+        <div id="output" class="fields"></div>
+        <div id="globals" class="fields"></div>
+      </details>
+    </div>
+  </section>
+
+  <section class="col chat" aria-label="Assistant">
+    <h2>Assistant</h2>
+    <div id="chat-log" class="log" aria-live="polite"></div>
+    <div id="measure" class="measure" hidden>
+      <h3>Measurements <small class="muted">octave bands, dB re 1 kHz</small></h3>
+      <svg id="chart" viewBox="0 0 320 140" role="img" aria-label="Octave band response"></svg>
+      <div id="chart-legend" class="legend"></div>
+    </div>
+    <form id="chat-form" class="chatform">
+      <textarea id="chat-input" rows="2" placeholder="e.g. make it brighter / the low end is muddy / prepare a slap preset"></textarea>
+      <div class="chatbar">
+        <select id="chat-model" aria-label="Model"></select>
+        <button type="button" id="chat-stop">Stop</button>
+        <button type="button" id="chat-reset">New chat</button>
+        <button type="submit" class="primary">Send</button>
+      </div>
+    </form>
+  </section>
+</main>
+
+<dialog id="confirm-dlg">
+  <form method="dialog">
+    <h3 id="confirm-title">Confirm</h3>
+    <p id="confirm-text"></p>
+    <pre id="confirm-args"></pre>
+    <menu><button value="no">Cancel</button><button value="yes" class="warn">Confirm</button></menu>
+  </form>
+</dialog>
+
+<dialog id="settings-dlg">
+  <form method="dialog" id="settings-form">
+    <h3>Settings</h3>
+    <label>Model <select id="set-model"></select></label>
+    <label>Anthropic API key <input id="set-key" type="password" autocomplete="off" placeholder="unchanged"></label>
+    <p class="muted" id="set-key-state"></p>
+    <menu><button value="cancel">Cancel</button><button value="clear" id="set-clear">Forget key</button><button value="save" class="primary">Save</button></menu>
+  </form>
+</dialog>
+
+<script src="/static/app.js" type="module"></script>
+</body>
+</html>

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-09-29
+
+Bass EQ, 1 s delay that plays on the pedal, IRs up to 4096 taps on an FFT cab,
+reamping over USB, an MCP server and a PoC app so an AI agent can drive the
+pedal. The memory map now matches the chip (OCRAM is 32 kB on the RT1052).
+Verified on a pedal.
+
 ### Added
 - **LabWired twin: knobs.** `labwired/system.yaml` models the 16 knobs as
   potentiometers behind the two 74HC4051 multiplexers (select GPIO2_IO17..19,
@@ -15,6 +22,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `0x2001DEE6`) and follows a knob turned mid-run. Needs labwired-core with
   the `74hc4051` part.
 
+- **Desktop app PoC (`app/`, `fb200-app`):** a local web UI (Starlette, 127.0.0.1) to
+  edit the pedal like the vendor app - presets (list, select, rename, save), the 7
+  effect blocks, delay, EQ, user IRs (import with the `process_ir` options, delete),
+  drums, tuner, output and global settings - and an assistant panel: type "make it
+  brighter" and a Claude agent (default `claude-sonnet-5`, or `claude-opus-5-5`) calls
+  the MCP tools, shows each step, measures with `audio_test` and charts the octave
+  bands. Tools that store to flash (`save_preset`, `rename_preset`, `ir_import`,
+  `ir_delete`, `settings`, console `save`/`factory`) wait for a user click. The tool
+  schema is the MCP server's `tools/list` (in process). Install: `pip install
+  '.[app]'`. See `app/README.md`. Not yet tried on a real pedal.
+- **MCP tools:** `parameter_docs` (also the resource `fb200://parameter-docs`: every
+  field's range, unit and sound meaning, plus tone recipes, from `fb200/params.py`),
+  `preset_list` (40 names, HID `0x96`), `rename_preset` (`0x99`), `ir_delete`,
+  `settings` (the `0xB0` block: input gain, global cab, BT audio, light ring);
+  `ir_import` takes the `process_ir` options (channel, trim, lowcut, highcut,
+  minphase, normalize).
 - **Reamping over USB:** console `usb in` routes the computer's USB playback into the
   effects chain input instead of the instrument (`usb mix`: summed with it; `usb out`:
   to the analog output only, the default and the stock behaviour). Play a DI track or a
@@ -23,8 +46,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `delay_ms`.
 - **Bass EQ** (not in the stock): HPF 20-200 Hz, 5 peaking bands (30-10000 Hz,
   +-15 dB, Q 0.3-4), LPF 2-20 kHz, after the cab. Changes glide in 12 ms, no clicks.
-  Off after boot and bit-exact when off or flat; not in the preset yet. Console:
-  `eq [on|off]`, `eq hpf|lpf <hz>`, `eq <band> <hz> <dB> [q]` (docs/PARITY.md M4).
+  Bit-exact when off or flat. Console: `eq [on|off]`, `eq hpf|lpf <hz>`,
+  `eq <band> <hz> <dB> [q]` (docs/PARITY.md M4).
+- **Bass EQ in the preset:** the console `eq` writes the EQ into the edit buffer and
+  `save` stores it: marker "EQ" at preset `0xc4` and 24 bytes of settings at
+  `0xc6..0xdd` (the unused tail after the module order; gain in 1/8 dB, Q x 50).
+  A preset change glides to its EQ (no click). Presets without the marker (all
+  factory presets, presets from the stock app) play with the EQ off; the stock
+  firmware and the stock app ignore the bytes and the app's module edits keep them.
+- **MCP tools** `set_eq` (on/off, HPF, LPF, band freq/gain/q; returns the EQ state),
+  `usb_route` (`out`/`in`/`mix`) and `cab_long` (N-tap synthetic cab IR for
+  measurements, 0 = back to the preset's cab); the `console` tool lists `eq` and
+  `cab long`.
 - **Two-stage convolver for long IRs (M5, library only):** `dsp/conv2.c` runs
   IRs up to 4096 taps with no added latency: the 512-tap head on the current
   convolver, the rest in 256-sample partitions spread over the 8 blocks of each
@@ -34,9 +67,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   <= 512 taps the tail does no work: same sound (bit-identical) and same CPU as
   before. A long IR loads without an audio stall: one tail FFT per block, then an
   exact swap at a frame boundary (~15-25 ms after the change). From a short IR the
-  new tail starts empty and fades in over its length. The tail buffers (96 kB) and
-  the 512-point FFT tables (4.9 kB) are in OCRAM. Console: `cab long <taps>` loads
-  a synthetic test IR (0: back to the preset's cab), for `prof` on the pedal.
+  new tail starts empty and fades in over its length. Console: `cab long <taps>`
+  loads a synthetic test IR (0: back to the preset's cab), for `prof` on the pedal.
 - **Better IR import** (host): `fb200 ir import` resamples with a Kaiser windowed
   sinc (aliasing below -60 dB; the linear resampler is gone) and takes
   `--channel`, `--trim`, `--taps N` (up to 4096, half-Hann fade-out),
@@ -54,6 +86,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and F:0xB0000, magics `FB200` and `B01`) and sends the Bluetooth AT
   sequence on LPUART5 (`AT+TM` .. `AT+B401`) at about 11 s of device time.
   See `docs/LABWIRED.md`.
+
+### Fixed
+
+- **Memory map: OCRAM is 32 kB.** The pedal's chip is an i.MX RT1052: its FlexRAM
+  split (IOMUXC_GPR17 = 0xFFAAAAA9, read back on the pedal) gives ITCM 128 kB, DTCM
+  352 kB and OCRAM 32 kB at 0x20200000. Our linker script declared 512 kB of OCRAM at
+  0x20210000 (an RT1062 layout), where the pedal has nothing: writes are dropped,
+  reads return 0, code there faults. Now `linker.ld` has the real regions (with
+  `ASSERT`s), a test checks that every section of both images lies in real memory,
+  and the boot emulation, the stock emulators and the LabWired chip model map only
+  the real RAM (docs/FIRMWARE_BRINGUP.md, "Memory map").
+- **The app crashed at boot** (unreleased): its cold code ran from the missing OCRAM.
+  The cold code (console, UI, preset storage, protocol, clock and pin setup, init
+  drivers) now runs in place from flash (XIP, the slot data area); the audio path and
+  the flash write path stay in ITCM (`firmware/tools/hot_path.py` checks both). An app
+  update runs from RAM only once it starts erasing (`fw_session`): send `reset` when it
+  is done, as before. A slot without its data still goes back to recovery.
+- **RAM reclaimed:** the low DTCM that the stock data used to fill (our images load
+  none there) holds the long-IR tail, the DTCM above `.bss` the delay line (8 kB kept
+  for the stack), the ITCM above the code the reverb state. The crash dump moved to
+  0x20018A00 (an older recovery shows "no crash dump" for a newer app).
+- **Bass delay: the repeats never played on the pedal in v0.8.0** (its line was in
+  the missing OCRAM: only the dry signal came out). The line is now in DTCM, max time
+  1000 ms (sized for 44.1 kHz, the pedal's only rate). `delay on` on a stock preset
+  now sets 300 ms (was 350).
+- **User IR slots (cab 11-19)** (unreleased): the IR was staged in the missing OCRAM,
+  so the cab got the IR only while the D-cache still held it, else zeros (silence).
+  The staging buffer is in the real OCRAM now.
+- **Bass EQ** (unreleased): its state was in the missing OCRAM (it held only while
+  in the D-cache). Now in the real OCRAM.
+- **Long IRs** fit in the real RAM (tail in the low DTCM, FFT tables in OCRAM):
+  `ENGINE_IR_TAPS` (`src/audio/engine.h`) is 4096. A build with 512 links neither the
+  tail nor the tables; there `cab long` over 512 answers "not available" (the MCP
+  `cab_long` reports an error).
 
 ### Changed
 

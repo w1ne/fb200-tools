@@ -15,6 +15,13 @@ from fb200.protocol import FrameReader, Transport, pack_frame, write_frame
 IR_SLOT_COUNT = 9
 IR_SAMPLE_COUNT = 1024
 PRESET_SIZE = 256
+PRESET_COUNT = 40
+PRESET_NAME_SIZE = 20
+SETTINGS_SIZE = 13
+# Named bytes of the 0xB0 settings block (docs/PROTOCOL.md 5.5); the others
+# are written back unchanged.
+SETTINGS_FIELDS = {"cab_global": 1, "input_gain": 2, "tuner": 8, "bt_audio": 10,
+                   "ring_color": 11, "ring_level": 12}
 
 # Effect module blocks of the edit buffer (docs/PROTOCOL.md 5.3): fn 0x80 + index
 # writes the u16 fields in this order. Field names follow
@@ -183,6 +190,58 @@ class FB200Device:
         if len(data) < 1 + PRESET_SIZE:
             raise ProtocolError(f"short edit buffer reply ({len(data)} bytes)")
         return data[0], bytes(data[1:1 + PRESET_SIZE])
+
+    def read_preset(self, index: int) -> bytes:
+        """The stored 256-byte preset `index` (0..39), from flash."""
+        if not 0 <= index < PRESET_COUNT:
+            raise InvalidArgumentError(f"preset index must be 0..{PRESET_COUNT - 1}")
+        for _ in range(3):              # skip a 97 notification for another preset
+            packet = self.request(protocol.CMD_READ_PRESET, bytes([index]),
+                                  expect=protocol.REPLY_PRESET)
+            data = packet[1:]
+            if len(data) < 1 + PRESET_SIZE:
+                raise ProtocolError(f"short preset reply ({len(data)} bytes)")
+            if data[0] == index:
+                return bytes(data[1:1 + PRESET_SIZE])
+        raise CommunicationError(f"no reply for preset {index}")
+
+    def preset_names(self) -> list[str]:
+        """The names of the 40 stored presets."""
+        return [_cstr(self.read_preset(i), 0, PRESET_NAME_SIZE) for i in range(PRESET_COUNT)]
+
+    def rename_preset(self, index: int, name: str) -> str:
+        """Select preset `index`, set its name and store it (flash). The edit
+        buffer is stored with the new name. Returns the name read back."""
+        if not 0 <= index < PRESET_COUNT:
+            raise InvalidArgumentError(f"preset index must be 0..{PRESET_COUNT - 1}")
+        raw = sanitize_ir_name(name)[:PRESET_NAME_SIZE].encode("ascii")
+        self.send(protocol.CMD_RENAME_PRESET,
+                  bytes([index]) + raw + bytes(PRESET_NAME_SIZE - len(raw)))
+        return _cstr(self.read_preset(index), 0, PRESET_NAME_SIZE)
+
+    def settings(self) -> bytes:
+        """The 13-byte global settings block (from the connect dump)."""
+        packet = self.request(protocol.CMD_CONNECT, expect=protocol.REPLY_SETTINGS)
+        data = packet[1:]
+        if len(data) < SETTINGS_SIZE:
+            raise ProtocolError(f"short settings reply ({len(data)} bytes)")
+        return bytes(data[:SETTINGS_SIZE])
+
+    def set_settings(self, changes: dict[str, int]) -> dict[str, int]:
+        """Change named settings bytes (SETTINGS_FIELDS); return them read back."""
+        unknown = set(changes) - set(SETTINGS_FIELDS)
+        if unknown:
+            raise InvalidArgumentError(f"unknown setting {', '.join(sorted(unknown))} "
+                                       f"(have {', '.join(SETTINGS_FIELDS)})")
+        block = bytearray(self.settings())
+        for key, value in changes.items():
+            if not 0 <= int(value) <= 0xFF:
+                raise InvalidArgumentError(f"{key} = {value}: must be 0..255")
+            block[SETTINGS_FIELDS[key]] = int(value)
+        if changes:
+            self.send(protocol.CMD_SETTINGS, bytes(block))
+        block = self.settings()
+        return {k: block[i] for k, i in SETTINGS_FIELDS.items()}
 
     def modules(self) -> dict[str, dict[str, int]]:
         _index, edit = self.edit_buffer()

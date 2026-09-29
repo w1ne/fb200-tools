@@ -67,11 +67,14 @@ static void snapshot_crumbs(void)
     for (int i = 0; i < 4; i++) { snap[i] = CRUMB[i]; CRUMB[i] = 0; }
 }
 
-/* Full crash dump in DTCM below our .bss (0x20018B44). Measured on the
+/* Full crash dump in DTCM just below our .bss (0x20018B44). Measured on the
  * pedal: 0x20000100..0x2000C000 and 0x20017000.. survive a warm reset;
- * OCRAM and 0x20012000 (next to the vendor bootloader's 0x2001xxxx
- * handshake slots) do not, and neither does anything from 0x20050000. */
-#define DUMP_ADDR    0x20008000u
+ * OCRAM and 0x20012000 (the vendor bootloader's data, 0x20010000..
+ * 0x20012F0C by its load table) do not, and neither does anything from
+ * 0x20050000 (FlexRAM bank 11, ITCM for the bootloader). Below the dump the
+ * app keeps big buffers (linker.ld DTCM_LO). The dump used to be at
+ * 0x20008000: an older recovery prints "no crash dump" for a newer app. */
+#define DUMP_ADDR    0x20018A00u
 #define DUMP_MAGIC   0xC0A5D00Du
 #define DUMP_STACK   32u
 #define STACK_TOP    0x20058000u
@@ -83,6 +86,7 @@ typedef struct {
     uint32_t stack[DUMP_STACK];
     uint32_t crc;
 } crash_dump_t;
+_Static_assert(DUMP_ADDR + sizeof(crash_dump_t) <= BSS_START, "crash dump overlaps .bss");
 
 #define DUMP ((volatile crash_dump_t *)DUMP_ADDR)
 

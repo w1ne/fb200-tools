@@ -184,7 +184,9 @@ or footswitch changes a module.
 
 The stock DSP ignores the `85` delay block. Our firmware plays it only in a
 preset that also has our marker at `P+0x96` (`PARITY.md` M4); `85` writes
-`0x8C..0x95` and keeps the marker.
+`0x8C..0x95` and keeps the marker. Our EQ (marker + settings at
+`P+0xC4..0xDD`, after the module order) is outside every block: no `80`..`86`
+or `A0` write touches it.
 
 ### 5.4 Presets
 

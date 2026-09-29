@@ -33,7 +33,7 @@ Status words:
 | Master volume, smoothed | DONE | `engine.c` (`s_master`), knob k15 |
 | Input gain (global `S+0x1a`, app, -55..+6 dB) | DONE | `dsp/gain.c` `gain_input_stock` (stock table dB steps, within 1 ulp; `dsp_host_test.c`), stock smoother in `engine.c`; 0 dB keeps the bit-parity value |
 | Delay (preset fields `0x8c..0x94`, protocol `0x85`) | BETTER | the stock DSP ignores them (emulation). Ours plays them only in presets with our marker, so stock presets sound the same: [M4 delay](#m4-bass-delay) |
-| Bass EQ (not in the stock) | BETTER (host) | ours: HPF + 5 bands + LPF after the cab, console only, off after boot: [M4 EQ](#m4-bass-eq) |
+| Bass EQ (not in the stock) | BETTER (host) | ours: HPF + 5 bands + LPF after the cab, set from the console, stored in the preset with our marker (`0xc4`); stock presets keep it off: [M4 EQ](#m4-bass-eq) |
 | Module order (`0xbc`) | not needed | the stock ignores it (emulation); stored by `proto.c` `0xA0` |
 | Sample rate 44.1 kHz | DONE | `audio_config.h` `AUDIO_FS`; stock clock tree |
 
@@ -283,8 +283,14 @@ Budgets on this chip: 600 MHz / 44.1 kHz = 13.6k cycles per sample; RAM
 
 ### M5: long IRs in the cab
 
-Status: step P1b on the host (2026-09-28), not tried on the pedal. Stock
-and user slots are still 512 taps; `cab_set_ir_len` takes up to 4096.
+Status: step P1b on the host (2026-09-28); on the pedal from the RAM
+reclaim (2026-09-29, not yet measured on hardware). The tail (~96 kB) is in
+the low DTCM and its FFT tables (4.9 kB) in OCRAM
+([memory map](FIRMWARE_BRINGUP.md#memory-map-audio-app)). The firmware is
+built with `ENGINE_IR_TAPS` = 4096 (`src/audio/engine.h`); with 512 there is
+no tail, no 512-point tables, `cab_set_ir_len` over 512 taps fails and
+`cab long` over 512 answers "not available". Stock and user slots are 512
+taps.
 
 **Design** (`dsp/conv2.c`, `dsp/cab.c`). The cab is a `conv2_t`: head =
 taps 0..511 on the 32-sample partitioned convolver (`conv.c`, as before),
@@ -319,19 +325,27 @@ slice of the work per block, 512 samples late = no added latency.
 
 **Memory.** DTCM: +64 B (`cab_t` +84 B; TinyUSB's 2 kB-aligned `_dcd_data`
 now comes first in `.bss`, where the section alignment pads anyway, so it
-no longer costs up to 2 kB of padding). OCRAM: tail 96 kB (`s_cab_tail`),
-IR staging 16 kB (`s_ir`, 4096 taps for `cab long`), and the 512-point
-rfft tables (4.9 kB, `linker.ld` `.ocramdata`: copied from the slot data
-at boot, with the DTCM tables; ITCM and DTCM have no room). ITCM code:
-+2.6 kB.
+no longer costs up to 2 kB of padding). Tail 96 kB (`s_cab_tail`) in the
+low DTCM (`linker.ld` `.dtcm_lo`); in OCRAM (32 kB) the IR staging 16 kB
+(`s_ir`, 4096 taps for `cab long`) and the 512-point rfft tables (4.9 kB,
+`.ocramdata`: copied from the slot data at boot, with the DTCM tables).
+See [the memory map](FIRMWARE_BRINGUP.md#memory-map-audio-app). A build with
+`ENGINE_IR_TAPS` = 512 (long IRs off) needs IR staging 2 kB and links
+neither the tail nor the tables (`cab_init` uses `conv2_init_head`). ITCM
+code: +2.6 kB.
 
 **Console:** `cab long <taps>` puts a synthetic IR (noise, -60 dB at 4096
 taps) in the cab until the next cab change; `cab long 0` goes back to the
-preset's cab. With `prof` it measures the real cost on the pedal.
+preset's cab. With `prof` it measures the real cost on the pedal. Up to
+`ENGINE_IR_TAPS` taps (over: "not available").
 
 ### M4: bass delay
 
-Status: first version on the host (2026-09-28), not tried on the pedal.
+Status: first version on the host (2026-09-28). **Max time 1000 ms.** In
+v0.8.0 the line was in memory the pedal does not have (OCRAM above
+0x20208000: writes dropped, reads 0), so the repeats never played on the
+pedal, only the dry signal. Then the line was in the real 32 kB OCRAM (max
+342 ms); now it is in DTCM (see RAM below).
 
 **The problem.** The stock preset has a delay block (app command `0x85`,
 fields `P+0x8c` en, `0x8e` type 0-6, `0x90` mix, `0x92` feedback, `0x94`
@@ -366,7 +380,9 @@ Our words: `0x96` marker, `0x98` low cut (knob 0-100), `0x9a` tone (knob
 smooths `0x90` as the delay mix, `tests/stock_emu_fx.py`), `0x92` =
 feedback, `0x94` = time in ms. The type field `0x8e` is kept but not used
 (one delay voice). The app clamps time to 40-2500 ms; our DSP clamps to
-20-1000 ms (RAM, below).
+20-1000 ms (`DELAY_MS_MAX`, RAM, below). The preset format is unchanged: a
+preset keeps its stored time and plays it clamped to `DELAY_MS_MAX`; the console
+shows the clamped time, and its next edit of that preset stores it.
 
 **The official app.** `PROTOCOL.md` has the `0x85` block and per-type
 defaults (stock table `0x20008868`); the app files are not in this
@@ -381,14 +397,14 @@ knob x 0.95, mix knob x 1.0, low cut 12 dB/oct at 20-500 Hz (knob 63 =
 is at most 0.95 at every frequency (Butterworth high-pass, no peak).
 
 **RAM.** The line is int16 (x 16384, +-2.0 full scale, truncated toward zero
-so the tail dies out to exact zeros): 1 s at up to 48 kHz = 96,008 B. DTCM
-has ~5.5 kB free (`.bss` ends at 0x2004CE68, the limit is 0x2004E3E8), so
-the line is in OCRAM2 (`linker.ld` `.ocram`, 0x20210000, NOLOAD, cleared by
-`delay_init`). OCRAM2 (512 kB) is free after boot: the vendor loader only
-unpacks the stock's 0x5AA0-byte OCRAM data to 0x20200000, which our code does
-not read. OCRAM is cached (D-cache on, default memory map); the delay
-touches it 3 times per sample. `delay_t` (116 B) stays in DTCM. ITCM code:
-+2.9 kB.
+so the tail dies out to exact zeros): 1 s at 44.1 kHz (`AUDIO_FS`, the only
+rate) = 88,208 B (`DELAY_MS_MAX` in `dsp/delay.h`, the line sized for
+`DELAY_FS_MAX` = 44.1 kHz; the link fails if it does not fit). The line is
+in the DTCM between `.bss` and the stack (`linker.ld` `.dtcm_hi`, NOLOAD,
+cleared at boot and by `delay_init`); see
+[the memory map](FIRMWARE_BRINGUP.md#memory-map-audio-app). (v0.8.0 placed
+it at OCRAM 0x20210000, where the pedal has no RAM; main then had 342 ms in
+the real 32 kB OCRAM.) `delay_t` (116 B) stays in `.bss`. ITCM code: +2.9 kB.
 
 **CPU.** Measured by instruction count (Cortex-M7 build, `-O2`, Unicorn):
 92 instructions per sample with low cut and tone on = 0.7 % of the 600 MHz
@@ -399,13 +415,14 @@ budget at CPI 1, 1.4 % at CPI 2. Check on the pedal with `cpu`.
 from off to on clears the line first (no old audio).
 
 **Console** (for tests on the pedal): `delay [on|off] [time 20-1000 ms] [fb
-0-100] [mix 0-100] [lowcut 0-100] [tone 0-100]`. It edits the edit buffer
+0-100] [mix 0-100] [lowcut 0-100] [tone 0-100]` (a longer time clamps). It edits the edit buffer
 (save with `save` or a held footswitch). The first edit of a preset without
-the marker writes the marker and our defaults (350 ms, fb 30, mix 35, low
+the marker writes the marker and our defaults (300 ms, fb 30, mix 35, low
 cut 63, tone 70). `delay off` on a stock preset writes nothing.
 
 **Tests** (`tests/test_delay.py`, `audio/tests/delay_host_test.c`, at 44.1
-and 48 kHz): first echo at exactly `time * fs`, echo ratio = feedback
+and 32 kHz): first echo at exactly `time * fs` (also at 20 ms and at
+`DELAY_MS_MAX`, and a longer time clamps to it), echo ratio = feedback
 (0.475 +- 0.001), nothing between the echoes; 40 Hz through a 150 Hz low
 cut comes back at -23.2 dB (Butterworth -23.2 dB), 1 kHz at 0 dB; full
 feedback then 30 s of silence: exact zeros after ~1 s, no NaN, no subnormal;
@@ -427,8 +444,29 @@ bands (30-10000 Hz, +-15 dB, Q 0.3-4; defaults 40, 100, 250, 800, 3000 Hz at
 to float once. No shelves: a band at 30-40 Hz with a low Q or the HPF does
 that job; add them if players ask.
 
-**Not in the preset** (yet): off after boot, set from the console. A preset
-field needs a free place and a rule like the delay marker (open).
+**In the preset, with a marker** (the delay rule). The record has a free
+tail after the module order (`0xbc..0xc3`): `0xc4..0xff` is 0 in all 21
+factory presets, no app command writes it (`0x80..0x86` write inside their
+0x18-byte module blocks, `0xA0` writes `0xbc..0xc2`, `0x99` the name), and
+the stock DSP ignores it. Layout (`preset.h` `P_EQ_MARK`, `eq.h` `eq_save`):
+
+| offset | size | field |
+|---|---|---|
+| `0xc4` | u16 | marker `0x5145` ("EQ") |
+| `0xc6` | u8 | on |
+| `0xc7` | u8 | HPF Hz (0 = off, 20-200) |
+| `0xc8` | u16 | LPF Hz (0 = off, 2000-20000) |
+| `0xca + 4 b` | u16, s8, u8 | band b 0..4: Hz, gain in 1/8 dB (+-120 = +-15 dB), Q x 50 (15-200) |
+
+`0xde..0xff` stays free. No marker (every stock preset, erased flash, a
+whole preset from the app with 0 there) = EQ off with the default settings.
+`engine_apply_preset` loads it every time (`eq_load`): only the stages that
+change glide (the same 16-block glide as the console), so a preset change
+does not click and a knob edit restarts nothing. The console `eq` writes the
+marker and the record into the edit buffer (on the grid: the state it shows
+is what `save` keeps). Presets with the EQ still load on the stock firmware
+(it ignores the bytes) and in the app; a whole-preset write from the app
+keeps them if the app sends back what it read.
 
 **Changes do not click.** Each stage glides to a new setting in 16 blocks
 (11.6 ms): frequency and Q in octaves, gain in dB, a new design every block,
@@ -461,7 +499,8 @@ with `prof` and `cpu`.
 
 **Console** (for tests on the pedal): `eq` (state), `eq on|off`,
 `eq hpf <20-200 Hz|0>`, `eq lpf <2000-20000 Hz|0>`,
-`eq <band 1-5> <hz> <gain dB> [q]` (e.g. `eq 2 100 -4.5 1.4`).
+`eq <band 1-5> <hz> <gain dB> [q]` (e.g. `eq 2 100 -4.5 1.4`). Each change
+goes into the edit buffer; `save` stores it. MCP: `set_eq`.
 
 **Tests** (`tests/test_dsp_host.py::test_eq_suite`, `audio/tests/eq_host_test.c`,
 44.1 and 48 kHz): the measured response (the DFT of the impulse response
@@ -474,9 +513,18 @@ through 10 parameter changes, the output above 8 kHz stays below -70 dB re
 its peak (worst -76 dB; negative controls: a 1 % step added at the change
 reads -48 to -63 dB, a hard coefficient switch fails 2 of the 10); stable:
 every stage at its limits, 20 s of random changes every 1-40 blocks, a
-silence ends in exact zeros.
+silence ends in exact zeros. Preset (`tests/test_eq_preset.py`,
+`audio/tests/eq_preset_host_test.c`): the marker rule (0, erased,
+byte-swapped), the record layout byte for byte, save -> load -> save is the
+identity, off-grid values round, garbage clamps and stays finite; a preset
+change with a 100 Hz sine: max |second difference| stays at the settled
+sine's (0.98 off -> on, 0.90 on -> off; a cleared-state control reads 199x),
+then bypassed and bit-exact; all factory presets 0 in `0xc4..0xff`; the
+stock DSP output is bit-identical with a full EQ record there (emulation;
+an amp-gain control edit does change it); app module/order/name writes keep
+the bytes (`test_proto_host.py`).
 
-Open: preset storage and app control, pedal knobs/footswitch for it,
+Open: app control, pedal knobs/footswitch for it,
 shelves if wanted, the pedal check.
 
 ## Why ours is better

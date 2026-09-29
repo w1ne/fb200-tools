@@ -19,6 +19,9 @@ CMD_QUERY_IR = 0x63
 CMD_DELETE_IR = 0x67
 CMD_MODULE = 0x80          # + module index 0..6, no reply
 CMD_CONNECT = 0x94         # state dump; the first reply is REPLY_EDIT
+CMD_READ_PRESET = 0x96     # [index] -> REPLY_PRESET
+CMD_RENAME_PRESET = 0x99   # [index][name 20]: select, rename, store
+CMD_SETTINGS = 0xB0        # [13 B] global settings (also in the connect dump)
 CMD_JUMP_BOOTLOADER = 0xC1
 CMD_EXIT_BOOTLOADER = 0xFF
 
@@ -27,6 +30,8 @@ REPLY_UPLOAD_IR = 0x62
 REPLY_QUERY_IR = 0x64
 REPLY_DELETE_IR = 0x68
 REPLY_EDIT = 0xA1          # [preset index][256-byte edit buffer]
+REPLY_PRESET = 0x97        # [index][256-byte preset from flash]
+REPLY_SETTINGS = 0xB0
 
 CRC_TABLE = [
     0, 4129, 8258, 12387, 16516, 20645, 24774, 28903, 33032, 37161, 41290, 45419, 49548, 53677,

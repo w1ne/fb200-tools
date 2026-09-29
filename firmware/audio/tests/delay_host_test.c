@@ -49,13 +49,14 @@ static void test_impulse(float fs)
            fs, D, ms, x[D], r2, r3);
     free(x);
 
-    /* 20 ms and 1000 ms: the ends of the range */
+    /* DELAY_MS_MIN and DELAY_MS_MAX: the ends of the range; the line holds the
+     * longest at DELAY_FS_MAX */
     const unsigned ends[2] = {DELAY_MS_MIN, DELAY_MS_MAX};
     for (int k = 0; k < 2; k++) {
         unsigned d = (unsigned)(ends[k] * fs / 1000.0f + 0.5f);
         float *y = calloc(d + 64, sizeof *y);
         delay_init(&dl, fs, line);
-        delay_set_params(&dl, ends[k] + (k ? 500u : 0u), 0, 100, 0, 100);   /* 1500 clamps */
+        delay_set_params(&dl, ends[k] + (k ? 500u : 0u), 0, 100, 0, 100);   /* max + 500 clamps */
         y[0] = 1.0f;
         run(y, d + 64);
         for (unsigned i = 1; i < d + 64; i++) assert(i == d ? fabsf(y[i] - 1.0f) <= LSB : y[i] == 0.0f);
@@ -133,15 +134,15 @@ static void test_glide(float fs)
     delay_set_params(&dl, 100, 0, 100, 0, 100);
     float blk[DSP_BLOCK];
     for (int b = 0; b < 50; b++) { for (int i = 0; i < DSP_BLOCK; i++) blk[i] = 0.1f; delay_process(&dl, blk, DSP_BLOCK); }
-    delay_set_params(&dl, 400, 0, 100, 0, 100);
+    delay_set_params(&dl, 300, 0, 100, 0, 100);
     assert(dl.d != dl.d_t);                            /* not a jump */
     for (unsigned b = 0; b < (unsigned)fs / DSP_BLOCK; b++) {
         memset(blk, 0, sizeof blk);
         delay_process(&dl, blk, DSP_BLOCK);
         for (int i = 0; i < DSP_BLOCK; i++) assert(isfinite(blk[i]) && fabsf(blk[i]) <= 0.1f + LSB);
     }
-    assert(dl.d == (float)(unsigned)(0.4f * fs + 0.5f));
-    printf("glide %.0f Hz: 100 -> 400 ms settles on %u samples\n", fs, (unsigned)dl.d);
+    assert(dl.d == (float)(unsigned)(0.3f * fs + 0.5f));
+    printf("glide %.0f Hz: 100 -> 300 ms settles on %u samples\n", fs, (unsigned)dl.d);
 }
 
 /* Stock presets never play the delay: every factory preset has the stock
@@ -183,7 +184,7 @@ int main(int argc, char **argv)
 {
     if (argc > 1 && strcmp(argv[1], "--presets") == 0) return check_presets();
     test_preset_rule();
-    const float rates[2] = {44100.0f, 48000.0f};
+    const float rates[2] = {(float)DELAY_FS_MAX, 32000.0f};   /* the pedal runs 44.1 kHz */
     for (int k = 0; k < 2; k++) {
         test_impulse(rates[k]);
         test_lowcut(rates[k]);
