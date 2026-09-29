@@ -34,6 +34,7 @@
 #include "dsp/delay.h"
 #include "dsp/eq.h"
 #include "preset/preset.h"
+#include "irstore/irstore.h"
 #include "fsl_sai.h"
 #include "tusb.h"
 #endif
@@ -144,8 +145,10 @@ static eq_t s_eq __attribute__((section(".ocram")));
 static bool s_amp_en, s_cab_en, s_gate_en, s_comp_en, s_mod_en, s_rev_en;
 static int s_amp_model = -1, s_cab_type = -1;
 static float s_master = 1.0f, s_master_target = 1.0f;
-/* user IR staging, read only when a slot loads: OCRAM. Also `cab long`. */
+/* user IR staging, read only when a slot loads: OCRAM. Also `cab long`, and
+ * the long IR upload's buffer (engine_ir_borrow; no cab change meanwhile). */
 static float s_ir[ENGINE_IR_TAPS] __attribute__((section(".ocram")));
+static bool s_ir_busy;
 static bool s_testgen_in;               /* testgen feeds the chain input */
 static int s_usb_route;                 /* ENGINE_USB_OUT / _IN / _MIX */
 static uint32_t s_cyc_max, s_cyc_sum, s_cyc_n;   /* DWT cycles per block */
@@ -238,6 +241,32 @@ static int load_user_ir(unsigned slot)
 
 static bool s_cab_bypass;   /* user IR slot selected but empty */
 
+/* Long IR slots (cab 20..83, irstore.h): the data CRC is checked before the
+ * IR loads; an empty or bad slot bypasses the cab, as an empty user slot.
+ * The gain is the stored one (the stock rule, computed at upload). A build
+ * with less IR RAM (ENGINE_IR_TAPS) plays the first taps. */
+static int load_long_ir(unsigned slot)
+{
+    irstore_entry_t e;
+    int taps = irstore_load(slot, s_ir, ENGINE_IR_TAPS, &e);
+    return taps > 0 && cab_set_ir_len(&s_cab, s_ir, (unsigned)taps, e.gain) == 0;
+}
+
+float *engine_ir_borrow(void)
+{
+    /* the upload needs a whole slot (and the table) in it: long IRs on only */
+    if (s_ir_busy || ENGINE_IR_TAPS < IRSTORE_TAPS) return NULL;
+    s_ir_busy = true;
+    return s_ir;
+}
+
+void engine_ir_release(void)
+{
+    s_ir_busy = false;
+    s_cab_type = -1;   /* reload the preset's cab: its slot may be new */
+    s_reapply = true;
+}
+
 /* `cab long <taps>` (console, for `prof` on the pedal): the first taps of
  * a synthetic IR (noise, -60 dB at 4096) in the cab until the next cab
  * change; 0 goes back to the preset's cab. More than ENGINE_IR_TAPS: -2
@@ -250,6 +279,7 @@ int engine_cab_long(unsigned taps)
         return 0;
     }
     if (taps > ENGINE_IR_TAPS) return -2;
+    if (s_ir_busy) return -3;
     uint32_t seed = 1;
     float env = 1.0f;
     for (unsigned i = 0; i < ENGINE_IR_TAPS; i++, env *= 0.99832f) {
@@ -269,10 +299,12 @@ void engine_apply_preset(const preset_t *p, unsigned master)
     amp_set_params(&s_amp, pget(p, P_AMP_GAIN), pget(p, P_AMP_BASS), pget(p, P_AMP_MID),
                    pget(p, P_AMP_MIDFREQ), pget(p, P_AMP_TREBLE), pget(p, P_AMP_VOLUME));
     int cab = pget(p, P_CAB_TYPE);
-    if (cab != s_cab_type) {
+    if (cab != s_cab_type && !s_ir_busy) {   /* busy: engine_ir_release reapplies */
         s_cab_bypass = false;
         if (cab >= 1 && cab <= 10) (void)cab_set_model(&s_cab, cab);
         else if (cab >= 11 && cab <= 19) s_cab_bypass = !load_user_ir((unsigned)(cab - 11));
+        else if (irstore_slot_of((unsigned)cab) >= 0)
+            s_cab_bypass = !load_long_ir((unsigned)irstore_slot_of((unsigned)cab));
         s_cab_type = cab;
     }
     s_gate_en = pget(p, P_GATE_EN) != 0;

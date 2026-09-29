@@ -132,10 +132,11 @@ def test_hot_and_cold_placement():
                 "Default_Handler", "wdog_feed", "dcd_int_handler", "EDMA_HandleIRQ",
                 "memcpy", "crc32_ieee",
                 "fw_begin", "fw_session", "flash_store", "FLEXSPI_TransferBlocking",
+                "flash_read_id", "flash_capacity",
                 "log_printf", "tud_descriptor_configuration_cb", "cdcd_xfer_cb"):
         assert syms[hot] in ITCM, hot
     for cold in ("console_task", "ui_task", "display_task", "proto_feed", "preset_write",
-                 "CLOCK_InitArmPll"):
+                 "CLOCK_InitArmPll", "irstore_put_task", "irstore_load"):
         assert syms[cold] in XIP, cold
 
 
@@ -181,6 +182,8 @@ def test_hot_path_check_catches_cold_flash_writes(tmp_path):
     bad = "\n".join(hot_path.check(out / "fb200-app.elf"))
     assert "flash write: fw_begin @" in bad and "flash write: flash_store @" in bad, bad
     assert "flash write: cdcd_xfer_cb @" in bad, bad
+    # the long IR store's path: flash_store -> flash_capacity -> flash_read_id
+    assert "flash write: flash_capacity @" in bad and "flash write: flash_read_id @" in bad, bad
     gates = dict(hot_path.GATED)
     try:
         hot_path.GATED[("tud_hid_set_report_cb", "proto_feed")] = "no_such_gate"

@@ -23,6 +23,7 @@
 #include "selfupdate.h"
 #include "recovery.h"
 #include "console.h"
+#include "irstore/irstore.h"
 #ifndef FB200_RECOVERY
 #include "audio/engine.h"
 #include "audio/usb_audio.h"
@@ -37,12 +38,16 @@ static const struct { uint32_t base, limit; } regions[] = {
     [FW_RECOVERY] = {0x00010000u, 0x00020000u},
     [FW_STOCK]    = {0x00061000u, 0x00071000u},   /* up to the presets */
 };
+/* The data store of flash_store (below) */
+#define STORE_BASE   0x00071000u
+#define STORE_LIMIT  0x000A1800u
 #define FCB_TAG      0x42464346u   /* "FCFB" */
 #define FCB_LUT      0x80u         /* FCB offset of the lookup table */
 #define SECTOR       4096u
 #define PAGE         256u
 #define FW_IDLE_MS   3000u
 
+#define SEQ_RDID     11u   /* JEDEC ID (FCB convention: chip erase, never used here) */
 #define SEQ_WREN     12u
 #define SEQ_RDSR     13u
 #define SEQ_ERASE    14u
@@ -81,19 +86,21 @@ static int lut_init(void)
     /* 4-byte-address opcodes (0x21/0x12) work in either address mode. */
     uint8_t se = bits == 32u ? 0x21 : 0x20;
     uint8_t pp = bits == 32u ? 0x12 : 0x02;
-    const uint32_t lut[16] = {
-        [0]  = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, 0x06,
+    const uint32_t lut[20] = {
+        [0]  = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, 0x9F,
+                               kFLEXSPI_Command_READ_SDR, kFLEXSPI_1PAD, 0x03),
+        [4]  = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, 0x06,
                                kFLEXSPI_Command_STOP, kFLEXSPI_1PAD, 0),
-        [4]  = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, 0x05,
+        [8]  = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, 0x05,
                                kFLEXSPI_Command_READ_SDR, kFLEXSPI_1PAD, 0x04),
-        [8]  = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, se,
+        [12] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, se,
                                kFLEXSPI_Command_RADDR_SDR, kFLEXSPI_1PAD, bits),
-        [12] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, pp,
+        [16] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, pp,
                                kFLEXSPI_Command_RADDR_SDR, kFLEXSPI_1PAD, bits),
-        [13] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_WRITE_SDR, kFLEXSPI_1PAD, 0x04,
+        [17] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_WRITE_SDR, kFLEXSPI_1PAD, 0x04,
                                kFLEXSPI_Command_STOP, kFLEXSPI_1PAD, 0),
     };
-    FLEXSPI_UpdateLUT(FLEXSPI, SEQ_WREN * 4u, lut, 16u);
+    FLEXSPI_UpdateLUT(FLEXSPI, SEQ_RDID * 4u, lut, 20u);
     lut_ready = 1;
     return 1;
 }
@@ -149,6 +156,50 @@ static void refresh_ahb(uint32_t offset, uint32_t len)
     SCB_InvalidateDCache_by_Addr(__xiptext_start__, (int32_t)(__xiptext_end__ - __xiptext_start__));
 #endif
     SCB_InvalidateICache();
+}
+
+/* JEDEC ID (0x9F): manufacturer, memory type, capacity code. 1 on success. */
+int flash_read_id(uint8_t id[3])
+{
+    uint32_t w = 0;
+    if (!lut_init() || ip(SEQ_RDID, 0, kFLEXSPI_Read, &w, 3) != kStatus_Success) return 0;
+    id[0] = (uint8_t)w;
+    id[1] = (uint8_t)(w >> 8);
+    id[2] = (uint8_t)(w >> 16);
+    return 1;
+}
+
+/* The flash size port A1 is configured for (FLSHA1CR0, from the FCB): AHB
+ * reads and IP commands past it do not reach this chip. */
+uint32_t flash_window(void)
+{
+    return (FLEXSPI->FLSHCR0[0] & FLEXSPI_FLSHCR0_FLSHSZ_MASK) * 1024u;
+}
+
+uint32_t flash_chip_size(const uint8_t id[3])
+{
+    /* capacity code n = 2^n bytes (Winbond, GigaDevice, Macronix, ISSI, ...) */
+    if (id[0] == 0x00u || id[0] == 0xFFu || id[2] < 0x10u || id[2] > 0x1Fu) return 0;
+    return 1u << id[2];
+}
+
+uint32_t flash_capacity(void)
+{
+    static uint32_t cap;   /* 0: not read yet (or the read failed: try again) */
+    if (cap == 0u) {
+        uint8_t id[3];
+        uint32_t chip = flash_read_id(id) ? flash_chip_size(id) : 0u;
+        uint32_t win = flash_window();
+        cap = chip < win ? chip : win;
+    }
+    return cap;
+}
+
+/* The long IR store (irstore.h), only on a chip that holds all of it. */
+static int store_region_ok(uint32_t offset, uint32_t len)
+{
+    if (offset >= STORE_BASE && offset + len <= STORE_LIMIT) return 1;
+    return offset >= IRSTORE_BASE && offset + len <= IRSTORE_END && flash_capacity() >= IRSTORE_END;
 }
 
 void fw_info(void)
@@ -313,9 +364,8 @@ void fw_rx_task(void)
  * stock does) inside the preset/settings/IR region F:0x71000..0xA1800:
  * presets, settings, rhythm, BT name, update flag, IR names/flags and the
  * 9 user IR slots at 0x89000 + slot * 0x2800 (docs/UI_AND_STORAGE.md §5,
- * docs/PROTOCOL.md). Verifies by reading back. 0 on success. */
-#define STORE_BASE  0x00071000u
-#define STORE_LIMIT 0x000A1800u
+ * docs/PROTOCOL.md); or inside the long IR store (irstore.h) when the chip
+ * holds it (store_region_ok). Verifies by reading back. 0 on success. */
 static uint32_t sector_buf[SECTOR / 4];
 
 int flash_store(uint32_t offset, const void *data, uint32_t len)
@@ -324,7 +374,7 @@ int flash_store(uint32_t offset, const void *data, uint32_t len)
     /* Never the vendor bootloader's update-flag sector (F:0x86000): the
      * A+D recovery depends on it. */
     if (sector == 0x00086000u) return -1;
-    if (offset < STORE_BASE || offset + len > STORE_LIMIT || len == 0u ||
+    if (!store_region_ok(offset, len) || len == 0u ||
         offset + len > sector + SECTOR || active || xip_gone) {
         return -1;
     }

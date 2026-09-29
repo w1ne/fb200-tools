@@ -63,6 +63,11 @@ bool engine_needs_reapply(void);   /* after a DSP reset: apply the preset again 
 /* `cab long <taps>`: synthetic long IR in the cab (0: the preset's cab). 0 on
  * success, -2 when taps is over what this build has RAM for (long IRs off:
  * 512, engine.c ENGINE_IR_TAPS), -1 on other bad taps. */
-int engine_cab_long(unsigned taps);
+int engine_cab_long(unsigned taps);   /* -3: the IR buffer is in use (upload) */
+/* The IR staging buffer (ENGINE_IR_TAPS floats) for the long IR upload
+ * (irstore.h): NULL while in use, and always with long IRs off. While borrowed, cab changes wait; release
+ * reloads the preset's cab. Main loop only. */
+float *engine_ir_borrow(void);
+void engine_ir_release(void);
 
 #endif

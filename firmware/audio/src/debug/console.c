@@ -2,6 +2,7 @@
  *   help | stats | hb on|off | scan | dump [bus addr] | peek <addr> [len]
  *   poke <addr> <val> | crc <addr> <len> | fwinfo | fwtest | crumbs
  *   fwbegin|fwrec|fwstock <len> <crc32> (USB self-update, see selfupdate.h)
+ *   jedec (flash chip) | irput|irls|irdel (long IR store, irstore/irstore.h)
  *   recovery | boot (two-stage boot, see recovery.h) | crash | hang (app only)
  *   reset | reboot
  * Addresses accept 0x.. hex or decimal. peek/poke are limited to RAM/flash
@@ -34,6 +35,7 @@
 #include "dsp/delay.h"
 #include "dsp/eq.h"
 #include "proto/proto.h"
+#include "irstore/irstore.h"
 #endif
 
 #define STR_(x) #x
@@ -133,7 +135,11 @@ static void cmd_help(void)
              "          peek <addr> [len] | dumpmem <addr> <len> | poke <addr> <u8>\r\n"
              "          peek32 <addr> [n] | poke32 <addr> <u32> | crc <addr> <len>\r\n"
              "  i2c   : scan | dump [bus addr]\r\n"
-             "  flash : fwinfo | fwtest | fwbegin|fwrec|fwstock <len> <crc32>\r\n"
+             "  flash : fwinfo | fwtest | jedec | fwbegin|fwrec|fwstock <len> <crc32>\r\n"
+#ifndef FB200_RECOVERY
+             "  irs   : irls | irdel <20-83> | irput <20-83> <taps 1-4096> <crc32> <name> [rate]\r\n"
+             "          (long IRs, cab types 20-83; irput then takes taps x 4 raw float32 bytes)\r\n"
+#endif
              "  boot  : recovery | boot | reset\r\n");
 }
 
@@ -334,6 +340,93 @@ static void cmd_fwbegin(fw_target_t target, const char *a1, const char *a2)
     if (!ok1 || !ok2) { log_printf("usage: fwbegin|fwrec|fwstock <len> <crc32>\r\n"); return; }
     fw_begin(target, len, crc);
 }
+
+/* `jedec`: the flash chip's JEDEC ID, its size, the FlexSPI window and the
+ * long IR store's state (docs/HARDWARE.md). */
+static void cmd_jedec(void)
+{
+    static const struct { uint8_t id; const char *name; } vendors[] = {
+        {0xEF, "Winbond"}, {0xC8, "GigaDevice"}, {0xC2, "Macronix"}, {0x9D, "ISSI"},
+        {0x20, "Micron/XMC"}, {0x68, "Boya"}, {0x0B, "XTX"}, {0x85, "Puya"}, {0x1F, "Adesto"},
+        {0x5E, "Zbit"}, {0xA1, "Fudan"}, {0xBA, "Zetta"},
+    };
+    uint8_t id[3];
+    if (!flash_read_id(id)) { log_printf("jedec: read FAILED\r\n"); return; }
+    const char *vendor = "unknown";
+    for (unsigned i = 0; i < sizeof vendors / sizeof vendors[0]; i++)
+        if (vendors[i].id == id[0]) vendor = vendors[i].name;
+    uint32_t chip = flash_chip_size(id), win = flash_window(), cap = flash_capacity();
+    log_printf("jedec %02x %02x %02x: manufacturer %s, type %02x, capacity %02x = %lu kB\r\n",
+               id[0], id[1], id[2], vendor, id[1], id[2], (unsigned long)(chip / 1024u));
+    log_printf("flexspi A1 window %lu kB; usable %lu kB\r\n", (unsigned long)(win / 1024u),
+               (unsigned long)(cap / 1024u));
+#ifndef FB200_RECOVERY
+    log_printf("ir store F:0x%06lx..0x%06lx: %s\r\n", (unsigned long)IRSTORE_BASE,
+               (unsigned long)IRSTORE_END, cap >= IRSTORE_END ? "fits" : "does NOT fit (off)");
+#endif
+}
+
+#ifndef FB200_RECOVERY
+/* Long IR store (irstore/irstore.h): irput / irls / irdel. */
+static void cmd_irput(int argc, char **argv)
+{
+    int ok1, ok2, ok3, ok4 = 1;
+    uint32_t slot = parse_num(argv[1], &ok1), taps = parse_num(argv[2], &ok2);
+    uint32_t crc = parse_num(argv[3], &ok3), rate = 44100u;
+    if (argc > 5) rate = parse_num(argv[5], &ok4);
+    if (argc < 5 || !ok1 || !ok2 || !ok3 || !ok4) {
+        log_printf("ir: usage: irput <slot %u-%u> <taps 1-%u> <crc32> <name> [rate]\r\n",
+                   IRSTORE_FIRST, IRSTORE_LAST, IRSTORE_TAPS);
+        return;
+    }
+    (void)irstore_put_begin(slot, taps, crc, argv[4], rate);
+}
+
+static void cmd_irls(void)
+{
+    if (!irstore_ready()) {
+        log_printf("ir store: not available: flash %lu kB, needs %lu kB\r\n",
+                   (unsigned long)(flash_capacity() / 1024u), (unsigned long)(IRSTORE_END / 1024u));
+        return;
+    }
+    uint32_t seq = 0;
+    int copy = irstore_current(&seq);
+    unsigned used = 0;
+    for (unsigned i = 0; i < IRSTORE_SLOTS; i++) {
+        irstore_entry_t e;
+        if (irstore_get(i, &e) <= 0) continue;
+        used++;
+        /* ~0.8 ms per 4096-tap slot: keep the audio going between slots */
+        int good = crc32_ieee(irstore_map(IRSTORE_DATA(i)), e.taps * 4u) == e.crc;
+        usb_audio_task();
+        engine_task();
+        uint32_t g = (uint32_t)(e.gain * 10000.0f + 0.5f);
+        log_printf("ir %u taps %u rate %lu gain %lu.%04lu crc %08lx %s name %s\r\n",
+                   i + IRSTORE_FIRST, (unsigned)e.taps, (unsigned long)e.rate,
+                   (unsigned long)(g / 10000u), (unsigned long)(g % 10000u), (unsigned long)e.crc,
+                   good ? "ok" : "BAD", e.name);
+    }
+    log_printf("ir store: %u of %u slots used (cab %u-%u, %u taps), table %s seq %lu\r\n", used,
+               IRSTORE_SLOTS, IRSTORE_FIRST, IRSTORE_LAST, IRSTORE_TAPS,
+               copy < 0 ? "empty" : copy ? "B" : "A", (unsigned long)seq);
+}
+
+static void cmd_irdel(const char *a1)
+{
+    int ok;
+    uint32_t t = parse_num(a1, &ok);
+    int slot = ok ? irstore_slot_of(t) : -1;
+    if (slot < 0) {
+        log_printf("ir: usage: irdel <slot %u-%u>\r\n", IRSTORE_FIRST, IRSTORE_LAST);
+        return;
+    }
+    int r = irstore_delete((unsigned)slot);
+    log_printf(r == 1 ? "ir %lu deleted\r\n" : r == 0 ? "ir %lu: empty\r\n"
+               : r == -1 ? "ir %lu: FAILED (store not available)\r\n"
+               : r == -2 ? "ir %lu: FAILED (busy)\r\n" : "ir %lu: FAILED (flash write)\r\n",
+               (unsigned long)t);
+}
+#endif
 
 static void cmd_stats(void)
 {
@@ -657,6 +750,7 @@ static void dispatch(char *cmd)
     else if (streq(argv[0], "crc")) cmd_crc(argv[1], argv[2]);
     else if (streq(argv[0], "fwinfo")) fw_info();
     else if (streq(argv[0], "fwtest")) fw_test();
+    else if (streq(argv[0], "jedec")) cmd_jedec();
     else if (streq(argv[0], "crumbs")) crumbs_print();
 #ifndef FB200_RECOVERY
     else if (streq(argv[0], "ui")) cmd_ui();
@@ -690,13 +784,16 @@ static void dispatch(char *cmd)
                        (int)r.freq, (int)((r.freq - (int)r.freq) * 100.0f));
     }
     else if (streq(argv[0], "prof")) engine_profile();
+    else if (streq(argv[0], "irput")) cmd_irput(argc, argv);
+    else if (streq(argv[0], "irls")) cmd_irls();
+    else if (streq(argv[0], "irdel")) cmd_irdel(argv[1]);
     else if (streq(argv[0], "cab") && argc > 2 && streq(argv[1], "long")) {
         int ok;
         uint32_t n = parse_num(argv[2], &ok);
         int r = ok ? engine_cab_long(n) : -1;
         log_printf("cab long %lu: %s\r\n", (unsigned long)n,
                    r == 0 ? "ok" : r == -2 ? "not available (long IRs need more RAM; max " XSTR(ENGINE_IR_TAPS) ")"
-                                           : "bad taps");
+                                 : r == -3 ? "busy (IR upload)" : "bad taps");
     }
     else if (streq(argv[0], "stock")) {
         int r = stock_check((const void *)STOCK_FLASH, STOCK_FLASH_SIZE);
@@ -817,6 +914,9 @@ void console_init(void) { line_len = 0; heartbeat_on = 0; }
 void console_task(void)
 {
     if (fw_active()) { fw_rx_task(); return; }
+#ifndef FB200_RECOVERY
+    if (irstore_put_active()) { irstore_put_task(); return; }
+#endif
     while (tud_cdc_available()) {
         char c = (char)tud_cdc_read_char();
         if (c == '\r' || c == '\n') {

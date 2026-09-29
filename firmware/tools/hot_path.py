@@ -23,7 +23,9 @@ table) are not followed: those tables are cold, except usbd's audio entries
 Flash-write roots (second check): the code that runs while the flash is
 busy, or after an app update has erased the app's own cold code (it lives
 in the app slot's data area): fw_begin, fw_rx_task, fw_session and
-flash_store (src/debug/selfupdate.c), and the USB class drivers that
+flash_store (src/debug/selfupdate.c), flash_read_id (a FlexSPI IP command:
+flash_store reaches it through flash_capacity for the long IR store), and
+the USB class drivers that
 tud_task dispatches through usbd's driver table (cdcd_*, hidd_*, audiod_*).
 Everything they reach must be in RAM (not in flash), and none of it may
 load the address of cold const data. A call guarded by fw_xip_gone() (the
@@ -44,7 +46,7 @@ ITCM = range(0x20000)
 FLASH = range(0x60000000, 0x70000000)
 HOT_ENTRY = ("engine_task", "usb_audio_task")
 HOT_PATTERN = re.compile(r"^audiod_")
-FLASH_WRITE_ENTRY = ("fw_begin", "fw_rx_task", "fw_session", "flash_store")
+FLASH_WRITE_ENTRY = ("fw_begin", "fw_rx_task", "fw_session", "flash_store", "flash_read_id")
 FLASH_WRITE_PATTERN = re.compile(r"^(cdcd_|hidd_|audiod_)")
 # caller -> callee edges not followed by the flash-write check, and the gate
 # the caller must also call (it returns before the callee once set)
