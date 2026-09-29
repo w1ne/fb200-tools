@@ -529,6 +529,7 @@ def test_server_call_and_tool_error(rig):
 
 
 def test_busy_console_port_is_a_clear_tool_error():
+    pytest.importorskip("mcp")
     """Another program holds the console: the tool says which port and what to do,
     and the next call works once the port is free."""
     pty = pytest.importorskip("pty")

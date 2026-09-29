@@ -25,7 +25,21 @@ from test_dsp_host import DSP, DSP_GROUPS
 ROOT = Path(__file__).resolve().parents[1]
 FW = ROOT / "firmware" / "audio"
 
-pytestmark = pytest.mark.skipif(shutil.which("cc") is None, reason="host C compiler not installed")
+def _sanitizers_link() -> bool:
+    """ASan/UBSan need their runtime libraries (MinGW gcc on Windows has none)."""
+    if shutil.which("cc") is None:
+        return False
+    with tempfile.TemporaryDirectory() as d:
+        src = Path(d) / "t.c"
+        src.write_text("int main(void) { return 0; }\n")
+        r = subprocess.run(["cc", *SAN, str(src), "-o", str(Path(d) / "t")],
+                           capture_output=True, check=False)
+        return r.returncode == 0
+
+
+SAN = ["-fsanitize=address,undefined", "-fno-sanitize-recover=all", "-fno-omit-frame-pointer"]
+pytestmark = pytest.mark.skipif(not _sanitizers_link(),
+                                reason="host C compiler with ASan/UBSan runtime not installed")
 
 TARGETS = ["proto", "console", "preset", "stock"]
 FW_SRC = ["proto/proto.c", "ui/ui.c", "ui/lightbar.c", "preset/preset_check.c",
@@ -33,8 +47,6 @@ FW_SRC = ["proto/proto.c", "ui/ui.c", "ui/lightbar.c", "preset/preset_check.c",
           "dsp/math.c", "dsp/delay.c", "dsp/amp.c", "dsp/tone.c", "dsp/cab.c", "dsp/conv.c",
           "dsp/conv2.c", "dsp/gate.c", "dsp/detector.c", "dsp/comp.c", "dsp/mod.c",
           "dsp/reverb.c"]
-SAN = ["-fsanitize=address,undefined", "-fno-sanitize-recover=all", "-fno-omit-frame-pointer"]
-
 
 def _is_clang(cc: str) -> bool:
     out = subprocess.run([cc, "--version"], capture_output=True, text=True, check=False).stdout
