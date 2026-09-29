@@ -8,7 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-
+- **LabWired twin: knobs.** `labwired/system.yaml` models the 16 knobs as
+  potentiometers behind the two 74HC4051 multiplexers (select GPIO2_IO17..19,
+  ADC1 IN3/IN4). New long gate `labwired/stock-knobs.yaml`: the unmodified
+  stock firmware reads every knob into its knob table (DTCM `0x2001DED6` /
+  `0x2001DEE6`) and follows a knob turned mid-run. Needs labwired-core with
+  the `74hc4051` part.
 - **Battery operation** ([docs/POWER.md](docs/POWER.md)): the main loop sleeps
   (`WFI`) when there is no audio block or USB event (the stock busy-loops at
   600 MHz); `cpu` shows the loop busy %. Unused PLLs, the second USB PHY and
@@ -37,7 +42,6 @@ pedal. The memory map now matches the chip (OCRAM is 32 kB on the RT1052).
 Verified on a pedal.
 
 ### Added
-
 - **Desktop app PoC (`app/`, `fb200-app`):** a local web UI (Starlette, 127.0.0.1) to
   edit the pedal like the vendor app - presets (list, select, rename, save), the 7
   effect blocks, delay, EQ, user IRs (import with the `process_ir` options, delete),
