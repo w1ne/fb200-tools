@@ -76,7 +76,7 @@ Expected result:
 ```
 PASS  5/5 checks · smoke · 40000000 steps · 36.87s
 PASS  24/24 checks · stock-boot · 90000000 steps · 15.26s
-PASS  11/11 checks · stock-first-boot · 6800000000 steps · 3669.59s
+PASS  12/12 checks · stock-first-boot · 6800000000 steps · 3669.59s
 ```
 
 The stock gate asserts `fidelity_clean: true`: an unmapped MMIO access or an
@@ -152,7 +152,9 @@ board fresh from the factory, for 6.8 G cycles (11.3 s of device time at
 600 MHz). It needs about 29 min of CPU time (Apple M4) and 1.1 GB of
 memory at peak (most of it is the text of the FlexSPI `ip` log at the end
 of the run: about 12 M status-poll lines).
-On a busy Mac it took 61 min of wall time. It is not in the default loop.
+On a busy Mac it took 61 min of wall time, and 142 min with the display
+model while two other simulations ran (`wall_time_ms` is 4 h). It is not in
+the default loop.
 
 Timeline, measured on the twin (SysTick is 1 ms = 600 000 cycles):
 
@@ -182,7 +184,10 @@ firmware does not wait for `OK`, so the sequence is complete anyway.
 Negative control: the same run with each new expected value changed (an
 erase and a program of F:0x10000 and F:0xB1000, `FB21`, `1`, `B02`,
 `AT+BD` before `AT+TM`, `AT+B402`) fails all nine of these checks
-(`FAIL 2/11`; only `fidelity_clean` and the stop reason pass).
+(`FAIL 2/11`; only `fidelity_clean` and the stop reason pass). The same
+run with `"P0A"` (the text without the dp) in addition to `"P.0.A."` fails
+only that check (`FAIL 12/13`), and the message shows the three lines of
+the `text` log.
 
 Notes on `result.json` for long runs:
 
