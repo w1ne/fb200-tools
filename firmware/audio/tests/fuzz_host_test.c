@@ -771,6 +771,13 @@ __attribute__((no_sanitize("coverage"))) void __sanitizer_cov_trace_pc_guard(uin
 
 /* ---- driver ------------------------------------------------------------------- */
 typedef void (*runner_t)(void);
+
+static double now_s(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+}
 #define CORPUS 256
 #define MAX_IN 4096
 static uint8_t corpus[CORPUS][MAX_IN];
@@ -947,10 +954,10 @@ int main(int argc, char **argv)
     rng = strtoull(argv[2], NULL, 0) * 2654435761u + 1u;
     double secs = atof(argv[3]);
     unsigned long max_iters = argc > 4 ? strtoul(argv[4], NULL, 0) : 0;
-    clock_t t0 = clock();
     unsigned long iters = 0;
     static uint8_t d[MAX_IN];
-    while ((double)(clock() - t0) / CLOCKS_PER_SEC < secs && (!max_iters || iters < max_iters)) {
+    double t0 = now_s();   /* wall clock: a loaded machine runs fewer inputs, not longer */
+    while (now_s() - t0 < secs && (!max_iters || iters < max_iters)) {
         size_t n = make_input(d);
 #ifdef FUZZ_COVERAGE
         edges_new = 0;
