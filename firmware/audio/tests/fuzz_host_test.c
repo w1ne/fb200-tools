@@ -59,6 +59,7 @@ static uint32_t host_crc(uint32_t a, uint32_t n);
 #include "dsp/mod.h"
 #include "dsp/reverb.h"
 #include "dsp/delay.h"
+#include "dsp/looper.h"
 #include "crc32.h"
 
 #define FAIL(...) do { fprintf(stderr, "FAIL: " __VA_ARGS__); fprintf(stderr, "\n"); fail_dump(); abort(); } while (0)
@@ -196,6 +197,27 @@ bool engine_get_mute(void) { return muted; }
 void engine_set_meters(bool on) { (void)on; }
 void engine_drop_tx(uint32_t blocks) { (void)blocks; }
 int engine_cab_long(unsigned taps) { return taps > ENGINE_IR_TAPS ? -2 : 0; }
+/* the looper (console `loop`, ui.c looper mode): the real state machine on
+ * a small memory, attached and detached as the engine does */
+static looper_t loop;
+static uint8_t loop_mem[2][LOOPER_BLK_BYTES * 8 + 3];
+int engine_loop(int a)
+{
+    CHECK(a >= LOOPER_TAP && a <= LOOPER_CLEAR_A, "loop action %d", a);
+    if (loop.state == LOOPER_OFF && (a == LOOPER_REC_A || a == LOOPER_TAP))
+        looper_attach(&loop, loop_mem[0], sizeof loop_mem[0], loop_mem[1], sizeof loop_mem[1]);
+    return looper_cmd(&loop, a);
+}
+void engine_loop_poll(void)
+{
+    float l[DSP_BLOCK] = {0}, r[DSP_BLOCK] = {0};
+    looper_process(&loop, l, r, DSP_BLOCK);   /* a block per pass: the fades finish */
+    looper_poll(&loop);
+    if (loop.state == LOOPER_EMPTY) looper_detach(&loop);
+}
+void engine_loop_info(looper_info_t *out) { looper_info(&loop, out); }
+int engine_loop_hq(int on) { return looper_set_hq(&loop, on); }
+void engine_loop_level(unsigned pct) { CHECK(pct <= 100u, "loop level %u", pct); looper_set_level(&loop, pct); }
 volatile float g_meter_peak[2];
 int g_bss_writable = 1;
 void usb_audio_stats(uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d, uint8_t *e, uint8_t *f)
@@ -505,6 +527,7 @@ static const char *const kWords[] = {
     "0x20200000", "0x20207FFF", "0x20208000", "0x400F8000", "0x400F8FFF", "0x401B8000",
     "0x60000000", "0x607FFFFF", "0x60800000", "0x3FFFFF", "0x400000", "0xE000ED00", "0x40000000",
     "0xFFFFFF00", "0x60000", "0x7FFFFF", "0x800000",
+    "loop", "rec", "play", "dub", "stop", "undo", "clear", "tap", "hq",
 };
 
 static void cdc_put(const char *s, size_t n)
@@ -844,6 +867,7 @@ static void setup(void)
     }
     g_stock_factory = &fake_factory;
     g_stock = NULL;
+    looper_init(&loop);
     seed_flash();
     bank_init();
     proto_set_sender(PROTO_USB, on_frame);

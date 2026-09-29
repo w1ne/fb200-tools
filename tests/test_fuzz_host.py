@@ -46,7 +46,7 @@ FW_SRC = ["proto/proto.c", "ui/ui.c", "ui/lightbar.c", "preset/preset_check.c",
           "dsp/stock_data.c", "crc32.c", "dsp/drums.c", "dsp/eq.c", "dsp/testgen.c",
           "dsp/math.c", "dsp/delay.c", "dsp/amp.c", "dsp/tone.c", "dsp/cab.c", "dsp/conv.c",
           "dsp/conv2.c", "dsp/gate.c", "dsp/detector.c", "dsp/comp.c", "dsp/mod.c",
-          "dsp/reverb.c"]
+          "dsp/reverb.c", "dsp/looper.c"]
 
 def _is_clang(cc: str) -> bool:
     out = subprocess.run([cc, "--version"], capture_output=True, text=True, check=False).stdout

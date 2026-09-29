@@ -75,6 +75,10 @@ void drums_set_rhythm(drums_t *d, unsigned r) { d->rhythm = (uint8_t)r; }
 void drums_set_level(drums_t *d, unsigned l) { d->level = (uint8_t)l; }
 void drums_set_tempo(drums_t *d, unsigned bpm) { d->bpm = (uint16_t)bpm; }
 void drums_tap(drums_t *d, uint32_t now_ms) { d->last_tap_ms = now_ms; }
+/* engine: the looper (ui.c's looper mode), never attached here */
+int engine_loop(int action) { (void)action; return -2; }
+void engine_loop_poll(void) {}
+void engine_loop_info(looper_info_t *out) { memset(out, 0, sizeof *out); }
 
 /* ---- preset layer over the fake flash ---- */
 void preset_read(unsigned index, preset_t *out)

@@ -17,6 +17,7 @@ from fb200.mcp_server import (
     build_server,
     parse_delay,
     parse_eq,
+    parse_loop,
     parse_profile,
 )
 from fb200.pedal import MODULES, PRESET_SIZE, FB200Device
@@ -39,7 +40,34 @@ class FakeConsole:
         self.delay = {"on": "off", "time": 500, "fb": 30, "mix": 25, "lowcut": 0, "tone": 100}
         self.eq = {"on": False, "hpf": 0.0, "lpf": 0.0,
                    "bands": [[f, 0.0, 1.0] for f in (40.0, 100.0, 250.0, 800.0, 3000.0)]}
+        self.loop = {"state": "off", "hq": 0, "level": 100}
         self.closed = False
+
+    def loop_cmd(self, args: list[str]) -> str:
+        # console.c cmd_loop (the state machine reduced to what the tool sends)
+        lp = self.loop
+        err = ""
+        if args and args[0] in ("rec", "play", "dub", "stop", "undo", "clear", "tap"):
+            nxt = {("off", "rec"): "rec", ("rec", "rec"): "play", ("rec", "play"): "play",
+                   ("play", "dub"): "dub", ("dub", "play"): "play", ("play", "stop"): "stop",
+                   ("stop", "play"): "play", ("play", "clear"): "off", ("stop", "clear"): "off",
+                   ("off", "tap"): "rec", ("rec", "tap"): "play"}.get((lp["state"], args[0]))
+            if nxt is None:
+                err = f"loop {args[0]}: not allowed now\r\n"
+            else:
+                lp["state"] = nxt
+        elif len(args) > 1 and args[0] == "hq":
+            if lp["state"] != "off":
+                return "loop hq: not allowed while a loop exists (loop clear first)"
+            lp["hq"] = int(args[1] == "on")
+        elif len(args) > 1 and args[0] == "level":
+            lp["level"] = int(args[1])
+        elif args:
+            return "usage: loop [rec|play|dub|stop|undo|clear|tap] | loop hq on|off | loop level <0-100>"
+        max_ms = 8196 if lp["hq"] else 16393
+        return (err + f"loop {lp['state']}: len_ms=0 pos_ms=0 max_ms={max_ms} "
+                f"undo_max_ms={max_ms // 2} undo=none hq={lp['hq']} level={lp['level']} "
+                f"mem={int(lp['state'] != 'off')}")
 
     def eq_line(self) -> str:
         # console.c cmd_eq, with its clamps
@@ -119,6 +147,8 @@ class FakeConsole:
             return f"engine: gain={self.gain} dB mute=0 drops=0"
         if w[0] == "drums":
             return "drums on rhythm 7 bpm 120 level 60 samples 99 patterns yes"
+        if w[0] == "loop":
+            return self.loop_cmd(w[1:])
         if w[0] == "tuner":
             return f"tuner {w[1]}: valid=1 silent=0 note=4 oct=1 cents=-3 freq=41.20 Hz"
         if w[0] == "crashdump":
@@ -296,6 +326,36 @@ def test_drums_tuner_prof_crash(rig):
     con.sent.clear()
     assert tools.crash_dump(clear=True) == "no crash dump"
     assert con.sent == ["crashdump", "crashclear"]
+
+
+def test_looper_state_and_actions(rig):
+    tools, con, _ = rig
+    st = tools.looper()
+    assert con.sent == ["loop"]
+    assert st["state"] == "off" and st["max_ms"] == 16393 and not st["borrowed_memory"]
+    st = tools.looper(hq=True, level=80, action="rec")
+    assert con.sent[1:] == ["loop hq on", "loop level 80", "loop rec"]
+    assert st["state"] == "rec" and st["hq"] and st["level"] == 80 and st["borrowed_memory"]
+    assert tools.looper("tap")["state"] == "play"
+    with pytest.raises(InvalidArgumentError, match="not allowed"):
+        tools.looper(hq=False)                     # a loop exists
+    with pytest.raises(InvalidArgumentError, match="not allowed"):
+        tools.looper("rec")                        # clear first
+    assert tools.looper("clear")["state"] == "off"
+    with pytest.raises(InvalidArgumentError):
+        tools.looper(level=101)
+    with pytest.raises(InvalidArgumentError):
+        tools.looper("record")                     # type: ignore[arg-type]
+
+
+def test_parse_loop_firmware_text():
+    st = parse_loop("loop dub: len_ms=4210 pos_ms=1234 max_ms=16393 undo_max_ms=8196 undo=redo "
+                    "hq=0 level=100 mem=1")
+    assert st == {"state": "dub", "len_ms": 4210, "pos_ms": 1234, "max_ms": 16393,
+                  "undo_max_ms": 8196, "undo": "redo", "hq": False, "level": 100,
+                  "borrowed_memory": True}
+    with pytest.raises(CommunicationError):
+        parse_loop("loop what")
 
 
 def test_usage_reply_is_an_error(rig):
