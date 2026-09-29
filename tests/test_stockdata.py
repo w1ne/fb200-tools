@@ -188,3 +188,48 @@ def test_formats_from_reply():
     assert sd.formats_from_reply("fwstock formats: 1 2\n") == [1, 2]
     # firmware before 0.7 prints only the usage line: it accepts version 1 only
     assert sd.formats_from_reply("usage: fwbegin|fwrec|fwstock <len> <crc32>\n") == [1]
+
+
+CHECK_FACTORY = r"""
+#include <stdio.h>
+#include "stock_host.h"
+#include "preset/preset.h"
+int main(void)
+{
+    stock_from_env();
+    if (!g_stock_factory) return 2;
+    for (unsigned i = 0; i <= STOCK_FACTORY_NAMED; i++) {
+        preset_t p;
+        memcpy(p.b, g_stock_factory->preset[i], PRESET_SIZE);
+        unsigned fixed = preset_sanitize(&p);
+        printf("%u %.20s %u\n", i, (const char *)p.b, fixed);
+    }
+    settings_t s;
+    memcpy(s.b, settings_default, SETTINGS_SIZE);
+    printf("settings %u\n", settings_sanitize(&s));
+    return 0;
+}
+"""
+
+
+def test_stock_factory_presets_pass_the_preset_checks(tmp_path):
+    """preset_check.c changes nothing in a record the stock itself made: the
+    21 factory presets of the user's stock .mr (and the stock default
+    settings) come out unchanged, so the checks only touch erased/corrupt
+    records."""
+    from stock_emu import find_stock_mr
+    mr = find_stock_mr()
+    if mr is None or shutil.which("cc") is None:
+        pytest.skip("fb200-stock.mr not found (set FB200_STOCK_MR) or no host compiler")
+    src, exe, blob = tmp_path / "check.c", tmp_path / "check", tmp_path / "stock.blob"
+    src.write_text("#include <string.h>\n" + CHECK_FACTORY)
+    subprocess.run(["cc", "-O1", "-Wall", "-Wextra", "-Werror", "-I", str(FW / "src"),
+                    "-I", str(FW / "tests"), str(src), str(FW / "src" / "preset" / "preset_check.c"),
+                    *map(str, STOCK_SRC), "-o", str(exe)], check=True)
+    blob.write_bytes(sd.build(mr.read_bytes()))
+    r = subprocess.run([str(exe)], capture_output=True, text=True, check=False,
+                       env={"FB200_STOCK_BLOB": str(blob)})
+    assert r.returncode == 0, r.stdout + r.stderr
+    rows = [ln.split() for ln in r.stdout.splitlines()]
+    assert len(rows) == 22 and rows[-1] == ["settings", "0"]
+    assert all(row[-1] == "0" for row in rows[:-1]), r.stdout
