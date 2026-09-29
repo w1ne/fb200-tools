@@ -381,3 +381,31 @@ def test_rejects_foreign_host_header(http):
     client = http[0]
     assert client.get("/api/status", headers={"Host": "evil.example"}).status_code == 400
     assert client.get("/api/status").status_code == 200
+
+
+def test_http_status_says_the_console_port_is_busy(tmp_path, monkeypatch):
+    pty = pytest.importorskip("pty")
+    import os
+
+    from fb200_app.server import create_app
+    from starlette.testclient import TestClient
+
+    from fb200.console import Console
+
+    master, slave = pty.openpty()
+    port = os.ttyname(slave)
+    holder = Console(port)
+    try:
+        hid = AppHid()
+        host = ToolHost(PedalTools(Pedal(port, device_factory=lambda: FB200Device(hid))))
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        app = create_app(host, Config(tmp_path / "app.json"), client_factory=lambda: None,
+                         upload_dir=tmp_path)
+        with TestClient(app) as client:
+            status = client.get("/api/status").json()
+        assert status["connected"] and status["console"] is False
+        assert f"{port} is busy" in status["error"] and "Close it" in status["error"]
+    finally:
+        holder.close()
+        os.close(master)
+        os.close(slave)

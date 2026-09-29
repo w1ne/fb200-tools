@@ -150,3 +150,31 @@ def test_stock_loader_crc_matches_the_stock_image():
 
     b0 = MrFile.from_path(mr).blocks[0].data
     assert zlib.crc32(b0[console.LOADER_OFF:console.LOADER_END]) == console.STOCK_LOADER_CRC
+
+
+def test_second_opener_gets_a_busy_message(pedal):
+    con, _ = pedal
+    with pytest.raises(CommunicationError, match="busy: another program"):
+        console.Console(con.port)
+
+
+def test_missing_port_is_a_clear_error(tmp_path):
+    with pytest.raises(CommunicationError, match="no such console"):
+        console.Console(str(tmp_path / "cu.usbmodemGONE"))
+
+
+def test_pedal_reset_mid_command_fails_fast():
+    """The device vanishes (pty master closed = USB gone): a clear error, no hang."""
+    import time
+
+    master, slave = pty.openpty()
+    con = console.Console(os.ttyname(slave))
+    try:
+        os.close(master)
+        t0 = time.monotonic()
+        with pytest.raises(CommunicationError, match="went away|timeout"):
+            con.command("stats", [b"bss_writable"], timeout=2.0)
+        assert time.monotonic() - t0 < 2.5
+    finally:
+        con.close()
+        os.close(slave)

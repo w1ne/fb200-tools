@@ -106,3 +106,31 @@ def test_io_before_open_raises():
         transport.write_report(b"\x00")
     with pytest.raises(CommunicationError, match="not open"):
         transport.read_report()
+
+
+def test_device_gone_mid_command_is_a_clear_error(monkeypatch):
+    """A pedal reset: hidapi raises OSError("read error"/"write error")."""
+    created = install_fake_hid(monkeypatch)
+    transport = HidapiTransport().open()
+    dev = created[0]
+
+    def gone(*_args):
+        raise OSError("read error")
+
+    dev.read = gone
+    with pytest.raises(CommunicationError, match="reset or was unplugged"):
+        transport.read_report()
+    dev.write = gone
+    with pytest.raises(CommunicationError, match="reset or was unplugged"):
+        transport.write_report(b"\x00")
+
+
+def test_read_timeout_is_never_zero(monkeypatch):
+    """hidapi read(n, 0) on a blocking device waits forever: never pass 0."""
+    created = install_fake_hid(monkeypatch)
+    transport = HidapiTransport().open()
+    seen = []
+    created[0].read = lambda size, timeout_ms: seen.append(timeout_ms) or []
+    transport.read_report(0)
+    transport.read_report(-5)
+    assert seen == [1, 1]

@@ -526,3 +526,32 @@ def test_server_call_and_tool_error(rig):
     assert rig[1].sent[-1] == "delay on 250"
     with pytest.raises(_sdk()[1], match="fb200 update"):   # the client sees isError
         asyncio.run(server.call_tool("console", {"command": "fwbegin 1 2"}))
+
+
+def test_busy_console_port_is_a_clear_tool_error():
+    """Another program holds the console: the tool says which port and what to do,
+    and the next call works once the port is free."""
+    pty = pytest.importorskip("pty")
+    import os
+
+    from fb200.console import Console
+
+    master, slave = pty.openpty()
+    port = os.ttyname(slave)
+    holder = Console(port)
+    try:
+        tools = PedalTools(Pedal(port))
+        with pytest.raises(CommunicationError, match=f"{port} is busy.*Close it and retry"):
+            tools.pedal.run("stats", timeout=0.2)
+        server = build_server(tools)
+        with pytest.raises(Exception, match="is busy"):
+            asyncio.run(server.call_tool("pedal_status", {}))
+        holder.close()
+        holder = None
+        assert tools.pedal.run("stats", timeout=0.2) == ""     # opens now (no pedal answers)
+        tools.pedal.close()
+    finally:
+        if holder is not None:
+            holder.close()
+        os.close(master)
+        os.close(slave)

@@ -19,6 +19,9 @@ _HID_HINT = (
 )
 
 
+_GONE_HINT = " (the pedal reset or was unplugged? reconnect and retry)"
+
+
 class HidapiTransport:
     def __init__(
         self, path: bytes | None = None, vid: int = protocol.VID, pid: int = protocol.PID_APP
@@ -53,20 +56,30 @@ class HidapiTransport:
         except Exception as exc:
             with contextlib.suppress(Exception):
                 device.close()
-            raise CommunicationError(f"failed to open FB200 HID device: {exc}") from exc
+            raise CommunicationError(f"failed to open FB200 HID device: {exc} (another program, "
+                                     "e.g. the official editor, may have it open)") from exc
         self._dev = device
         return self
 
     def write_report(self, report: bytes) -> None:
         if self._dev is None:
             raise CommunicationError("transport is not open")
-        if self._dev.write(list(report)) < 0:
-            raise CommunicationError("HID write failed")
+        try:
+            written = self._dev.write(list(report))
+        except (OSError, ValueError) as exc:     # hidapi: device gone
+            raise CommunicationError(f"HID write failed: {exc}{_GONE_HINT}") from exc
+        if written < 0:
+            raise CommunicationError(f"HID write failed{_GONE_HINT}")
 
     def read_report(self, timeout_ms: int = 500) -> bytes | None:
         if self._dev is None:
             raise CommunicationError("transport is not open")
-        data = self._dev.read(REPORT_SIZE, timeout_ms)
+        # hidapi: timeout 0 on a blocking device is hid_read(), which waits
+        # forever. Always pass a real timeout.
+        try:
+            data = self._dev.read(REPORT_SIZE, max(1, int(timeout_ms)))
+        except (OSError, ValueError) as exc:     # hidapi: "read error" once the device is gone
+            raise CommunicationError(f"HID read failed: {exc}{_GONE_HINT}") from exc
         return bytes(data) if data else None
 
     def close(self) -> None:
