@@ -76,7 +76,7 @@ Expected result:
 ```
 PASS  4/4 checks · smoke · 2000000 steps · 0.27s
 PASS  24/24 checks · stock-boot · 90000000 steps · 15.26s
-PASS  20/20 checks · stock-knobs · 3400000000 steps · 2058.64s
+PASS  20/20 checks · stock-knobs · 3400000000 steps · 4754.33s
 PASS  11/11 checks · stock-first-boot · 6800000000 steps · 3669.59s
 ```
 
@@ -166,8 +166,9 @@ IN9 battery) stay fixed levels.
 The stock firmware scans the knobs only from its main loop. On a blank
 flash the main loop starts at about 3.22 G cycles (factory reset, then a
 fixed 3 s delay, see the first-boot timeline below), so this gate runs
-3.4 G cycles. It took 34 min of wall time (Apple M4, three such runs in parallel); on a
-busy Mac, 79 min. It is not in the default loop.
+3.4 G cycles. It took 34 to 79 min of wall time on an Apple M4 (three such runs in
+parallel, on a Mac with other builds running). It is not in the default
+loop.
 
 **Where the firmware keeps the knob values, and how this was found.**
 
