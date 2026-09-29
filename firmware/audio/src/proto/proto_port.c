@@ -63,8 +63,10 @@ void proto_hook_bt_enable(bool on)
 
 void proto_hook_bt_name(const uint8_t name[20])
 {
+    /* the name goes into AT command lines: stop at a control byte (a CR/LF
+     * in the name would start a second AT command) */
     size_t len = 0;
-    while (len < 20 && name[len]) len++;
+    while (len < 20 && name[len] >= 0x20u && name[len] != 0x7Fu) len++;
     char cmd[40];
     memcpy(cmd, "AT+BD", 5);
     memcpy(cmd + 5, name, len);

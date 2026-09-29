@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Host fuzzing of the firmware parsers** (`tests/test_fuzz_host.py`,
+  `firmware/audio/tests/fuzz_host_test.c`): the app protocol (HID/BLE frames,
+  every command incl. IR upload, preset writes, rename, settings), the console
+  (every command's arguments), presets/settings from flash and the stock data
+  blob, under ASan/UBSan with clang (edge coverage) and gcc 14 (docker). A short
+  fixed-seed run is in the default suite; `pytest -m fuzz` runs long ones.
+- **Soak test** `tools/soak.py`: minutes of preset changes, parameter writes,
+  console commands, IR lists and audio captures on a pedal; fails on skipped
+  blocks, SAI over/underruns, new crumbs, missing replies or a low stack.
+- **Console `stack`**: high-water of the 8 kB stack reserve (painted at boot).
+  `firmware/tools/stack_usage.py` bounds the worst case from `-fstack-usage`
+  and the call graph; the image tests keep 512 B of headroom.
+
+### Fixed
+
+- **Erased or corrupt presets/settings played as they were:** a power loss
+  during a save erases a whole sector (8 presets, or the settings). An erased
+  preset played every module at 655 % (a reverb that ran away to NaN); now it
+  loads as the stock blank preset, and out-of-range fields are clamped to the
+  stock's limits, also for whole-preset writes from the app (0x97). Erased
+  settings load the stock defaults (they played at full master volume).
+- **Stock data blob:** a CRC-valid blob with bad drum tables or NaN/Inf
+  coefficients is refused (the drums walked past their event lists).
+- **Console:** `peek`/`dumpmem`/`crc` checked only the ends of a range (reads
+  of the unmapped ITCM/DTCM space, a `crc` spanning ITCM to flash: bus fault);
+  `poke` wrote into the flash window; `gain`/`testgen` took values that
+  overflow (infinite gain); commands without an argument read a NULL pointer.
+- **Update session:** after an app update the pedal resets by itself when the
+  host is gone (it stayed half alive until a power cycle).
+- **Host tools:** a pedal reset mid-command gives a clear error at once, not a
+  hang (a sub-ms HID timeout blocked forever); a busy console port says which
+  port and what to do; read-only queries retry once.
+- **BT name:** a control byte ends the name sent in AT commands.
+
 ## [0.9.1] - 2026-09-29
 
 ### Fixed
