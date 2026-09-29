@@ -112,6 +112,7 @@ static void load(unsigned b, unsigned s)
     slot = s & 3u;
     browsing = false;
     preset_read(bank * 4u + slot, &edit);
+    unsigned fixed = preset_sanitize(&edit);   /* erased/corrupt flash plays safe values */
     for (int k = 0; k < KNOB_COUNT; k++) caught[k] = (kKnob[k].field == 0xFF);   /* master is global */
     settings.b[S_BANK] = (uint8_t)bank;
     settings.b[S_SLOT] = (uint8_t)slot;
@@ -123,6 +124,8 @@ static void load(unsigned b, unsigned s)
     memcpy(name, edit.b, 20);
     name[20] = 0;
     log_printf("preset %u%c \"%s\"\r\n", bank, "AbCd"[slot], name);
+    if (fixed) log_printf("preset %u%c: %s\r\n", bank, "AbCd"[slot],
+                          fixed == PRESET_SIZE ? "erased in flash, playing it blank" : "out-of-range fields clamped");
 }
 
 /* Stock rhythm settings at F:0x81000: on, -, rhythm, level, bpm (u16 LE).
@@ -174,6 +177,9 @@ void ui_init(void)
 {
     rhythm_settings_load();
     settings_read(&settings);
+    unsigned fixed = settings_sanitize(&settings);
+    if (fixed) log_printf("settings: %s\r\n", fixed == SETTINGS_SIZE ? "erased in flash, stock defaults"
+                                                               : "out-of-range fields reset");
     stomp = settings.b[S_STOMP] == 1;
     load(settings.b[S_BANK], settings.b[S_SLOT]);
     settings_dirty = false;
@@ -514,12 +520,6 @@ void ui_flush_settings(void)
     }
 }
 
-/* Stock default settings (0x20004E00, written by its factory reset). */
-static const uint8_t kSettingsDefault[SETTINGS_SIZE] = {
-    'B', '1', [S_BT] = 1, [0x19] = 1, [S_IN_GAIN] = 13, 13, 13, 13, 13,
-    [0x28] = 100, 100, 100, 100, [S_TUNER_CAL] = 5, [S_TUNER_MUTE] = 1,
-};
-
 /* The stock factory reset (0x18fe0): the 40 presets (20 factory presets, 20
  * "EMPTY"), the default settings and the default rhythm block; preset 1A is
  * loaded. Unlike the stock we keep the master volume (the stock default is
@@ -540,7 +540,7 @@ int ui_factory_reset(void)
         if (preset_write(i, &p) != 0) return -2;
     }
     settings_t def;
-    memcpy(def.b, kSettingsDefault, SETTINGS_SIZE);
+    memcpy(def.b, settings_default, SETTINGS_SIZE);   /* preset_check.c */
     memcpy(def.b + 2, settings.b + 2, 20);
     def.b[S_MASTER] = settings.b[S_MASTER];
     bool bt_off = settings.b[S_BT] == 0;
@@ -574,6 +574,7 @@ void ui_edit_write(unsigned off, const void *src, unsigned n)
 void ui_edit_load(const preset_t *p)
 {
     edit = *p;
+    (void)preset_sanitize(&edit);   /* app 0x97 [0xFF]: a whole record, unchecked by the stock */
     revision++;
 }
 
@@ -583,6 +584,7 @@ settings_t *ui_settings(void) { return &settings; }
  * at once, as on the stock. */
 void ui_settings_changed(void)
 {
+    (void)settings_sanitize(&settings);   /* app B0/B7/B8/C9 write fields unchecked */
     bool st = settings.b[S_STOMP] == 1, rh = settings.b[S_RHYTHM] == 1;
     bool redraw = st != stomp || rh != rhythm_mode;
     stomp = st;

@@ -92,7 +92,7 @@ SRC_C := \
   src/audio/i2c_probe.c \
   src/audio/usb_audio.c src/audio/engine.c src/audio/frontend.c src/audio/bt_audio.c \
   src/ui/pads.c src/ui/display.c src/ui/controls.c src/ui/power.c \
-  src/ui/ui.c src/ui/lightbar.c src/ui/rgb.c src/preset/preset.c src/bt/bt.c src/audio/codec.c \
+  src/ui/ui.c src/ui/lightbar.c src/ui/rgb.c src/preset/preset.c src/preset/preset_check.c src/bt/bt.c src/audio/codec.c \
   src/proto/proto.c src/proto/proto_port.c src/usb_hid.c \
   src/audio/sai.c src/audio/drift.c \
   $(TUSB_DIR)/src/tusb.c \
@@ -166,7 +166,7 @@ COLD_SRC := \
   src/debug/console.c src/debug/regs.c \
   src/led.c \
   src/ui/ui.c src/ui/display.c src/ui/controls.c src/ui/power.c src/ui/lightbar.c \
-  src/preset/preset.c src/proto/proto.c \
+  src/preset/preset.c src/preset/preset_check.c src/proto/proto.c \
   src/audio/i2c_probe.c src/audio/frontend.c src/dsp/stock_data.c \
   $(BOARD_DIR)/board/clock_config.c \
   $(BOARD_DIR)/board/pin_mux.c \
