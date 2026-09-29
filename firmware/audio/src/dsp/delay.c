@@ -8,6 +8,41 @@
 
 static unsigned knob(unsigned k) { return k > 100u ? 100u : k; }
 
+/* 16-bit float, see delay.h: code = sign << 15 | e << 12 | m. e = 0: the
+ * value is m * 2^-17 (truncated); e = 1..7: (4096 + m) * 2^(e - 18), the
+ * float's mantissa rounded to 12 bits (to nearest even; a carry moves into
+ * e, and past e = 7 saturates). The codes are monotonic in |v|. */
+uint16_t delay_enc(float v)
+{
+    union { float f; uint32_t u; } b = {v};
+    uint32_t sign = (b.u >> 16) & 0x8000u;
+    uint32_t mag = b.u & 0x7FFFFFFFu;
+    if (mag >= 0x40800000u) return (uint16_t)(sign | 0x7FFFu);    /* >= 4.0, inf, NaN */
+    int fe = (int)(mag >> 23) - 127;                               /* |v| = 1.m 2^fe */
+    uint32_t code;
+    if (fe < -5) {                                                 /* linear: step 2^-17 */
+        b.u = mag;
+        code = (uint32_t)(b.f * 131072.0f);                        /* truncated */
+    } else {
+        uint32_t mant = mag & 0x7FFFFFu;
+        code = ((uint32_t)(fe + 6) << 12) | (mant >> 11);
+        uint32_t rem = mant & 0x7FFu;
+        if (rem > 0x400u || (rem == 0x400u && (code & 1u))) code++;
+        if (code > 0x7FFFu) code = 0x7FFFu;
+    }
+    return (uint16_t)(sign | code);
+}
+
+float delay_dec(uint16_t c)
+{
+    uint32_t e = (c >> 12) & 7u, m = c & 0xFFFu;
+    union { float f; uint32_t u; } b;
+    if (e == 0) b.f = (float)m * (1.0f / 131072.0f);
+    else b.u = ((e - 6u + 127u) << 23) | (m << 11);
+    b.u |= (uint32_t)(c & 0x8000u) << 16;
+    return b.f;
+}
+
 float delay_lowcut_hz(unsigned lowcut)
 {
     lowcut = knob(lowcut);
@@ -112,8 +147,8 @@ void delay_process(delay_t *dl, float *x, unsigned n)
         unsigned i0 = (unsigned)rp;
         float fr = rp - (float)i0;
         unsigned i1 = i0 + 1u == DELAY_LEN ? 0u : i0 + 1u;
-        float a = (float)line[i0];
-        float y = (a + fr * ((float)line[i1] - a)) * (1.0f / DELAY_SCALE);
+        float a = delay_dec((uint16_t)line[i0]);
+        float y = a + fr * (delay_dec((uint16_t)line[i1]) - a);
         float v = x[i] + fb * y;
         if (hp) {
             float h = b0 * v + b1 * hx1 + b2 * hx2 - a1 * hy1 - a2 * hy2;
@@ -124,9 +159,7 @@ void delay_process(delay_t *dl, float *x, unsigned n)
             lz += la * (v - lz);
             v = lz;
         }
-        float s = v * DELAY_SCALE;           /* int16, truncated toward zero */
-        int16_t q = s >= 32767.0f ? 32767 : s <= -32768.0f ? -32768 : s == s ? (int16_t)s : 0;
-        line[w] = q;
+        line[w] = v == v ? (int16_t)delay_enc(v) : 0;   /* 16-bit float (delay.h) */
         if (++w == DELAY_LEN) w = 0;
         x[i] += mix * y;
     }

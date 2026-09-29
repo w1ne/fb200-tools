@@ -149,6 +149,44 @@ static void test_cab_long(void)
     assert(peak > 0.1 && maxerr < 1e-5 * peak);
 }
 
+/* tone_df1 (the amp's and tone stack's DF1 cascades) is bit-identical to
+ * CMSIS arm_biquad_cascade_df1_f32: stage counts odd and even, every block
+ * length mod 4, over several calls; and a pair whose state is not the
+ * cascade's own (B's x history != A's y history) takes the plain path. */
+static void test_tone_df1(void)
+{
+    enum { MAXS = 10, MAXN = 97 };
+    static const unsigned lens[] = {1, 2, 3, 4, 5, 6, 7, 8, 31, 32, 33, 96, 97};
+    float coef[5 * MAXS], sa[4 * MAXS], sb[4 * MAXS], xa[MAXN], xb[MAXN];
+    unsigned checked = 0;
+    for (unsigned stages = 1; stages <= MAXS; stages++) {
+        for (unsigned s = 0; s < stages; s++) {   /* stable: poles inside the unit circle */
+            float r = 0.5f + 0.45f * (frand() + 1.0f) / 2.0f, th = 3.0f * (frand() + 1.0f) / 2.0f;
+            float *c = &coef[5 * s];
+            c[0] = frand(); c[1] = frand(); c[2] = frand();
+            c[3] = 2.0f * r * cosf(th); c[4] = -r * r;
+        }
+        for (int mismatch = 0; mismatch < 2; mismatch++) {
+            arm_biquad_casd_df1_inst_f32 ref;
+            arm_biquad_cascade_df1_init_f32(&ref, (uint8_t)stages, coef, sa);
+            memset(sb, 0, sizeof sb);
+            if (mismatch && stages >= 2) {        /* a state set some other way */
+                for (unsigned i = 0; i < 4 * stages; i++) sa[i] = sb[i] = frand();
+            }
+            for (unsigned call = 0; call < 3 * sizeof lens / sizeof lens[0]; call++) {
+                unsigned n = lens[call % (sizeof lens / sizeof lens[0])];
+                for (unsigned i = 0; i < n; i++) xa[i] = xb[i] = frand();
+                arm_biquad_cascade_df1_f32(&ref, xa, xa, n);
+                tone_df1(coef, sb, stages, xb, n);
+                assert(memcmp(xa, xb, n * sizeof xa[0]) == 0);
+                assert(memcmp(sa, sb, 4 * stages * sizeof sa[0]) == 0);
+                checked += n;
+            }
+        }
+    }
+    printf("tone_df1 bit-identical to CMSIS df1: %u samples\n", checked);
+}
+
 /* double-precision reference of the stock user-IR gain */
 static double ref_gain(const float *ir)
 {
@@ -188,6 +226,7 @@ int main(void)
     test_cab_swap();
     test_cab_long();
     test_user_ir_gain();
+    test_tone_df1();
     printf("amp cab host tests OK\n");
     return 0;
 }

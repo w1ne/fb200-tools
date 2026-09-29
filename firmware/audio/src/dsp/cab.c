@@ -1,4 +1,5 @@
 #include <string.h>
+#include "cold.h"
 #include "cab.h"
 #include "arm_const_structs.h"
 #include "stock_data.h"
@@ -46,7 +47,7 @@ int cab_set_model(cab_t *c, int cab)
 #define HANN_C2 0.999924848688876
 #define HANN_S2 0.012259566653371795
 
-float cab_user_ir_gain(const float *ir)
+COLD float cab_user_ir_gain(const float *ir)
 {
     float buf[2 * 512], mag[85];
     /* stock window table: 0.5 - 0.5 cos(2 pi m / 1025) rounded to 6 decimals;

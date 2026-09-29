@@ -14,9 +14,10 @@ has no FB200 special cases.
 |------|------------|
 | `labwired/chip/mimxrt1052.yaml` | the chip: memory map, pins, peripherals |
 | `labwired/chip/peripherals/*.yaml` | register files ingested from the NXP SVD |
-| `labwired/system.yaml` | the FB200 board: ADC inputs, FlexIO2 clock, footswitches, UART, 14-segment display |
+| `labwired/system.yaml` | the FB200 board: knob multiplexers and knobs, ADC inputs, FlexIO2 clock, footswitches, UART, 14-segment display |
 | `labwired/smoke.yaml` | gate for the open smoke firmware |
 | `labwired/stock-boot.yaml` | gate for the unmodified vendor firmware, boot to USB (short) |
+| `labwired/stock-knobs.yaml` | gate for the vendor firmware: it reads all 16 knobs through the 74HC4051 muxes, and a turned knob (long: 3.4 G cycles) |
 | `labwired/stock-first-boot.yaml` | gate for the vendor firmware from a blank flash: factory reset and Bluetooth AT sequence (long: about 30 min of CPU time) |
 | `firmware/labwired-smoke/` | the open smoke firmware (bare registers, no SDK) |
 | `tools/labwired_elf.py` | puts raw blobs into one ARM ELF, one PT_LOAD per blob |
@@ -68,6 +69,7 @@ The script reads the `.mr` with `fb200.firmware.MrFile` and writes
 ```bash
 labwired test --script labwired/smoke.yaml
 labwired test --script labwired/stock-boot.yaml
+labwired test --script labwired/stock-knobs.yaml        # long, see 5
 labwired test --script labwired/stock-first-boot.yaml   # long, see 5
 ```
 
@@ -76,6 +78,7 @@ Expected result:
 ```
 PASS  5/5 checks · smoke · 40000000 steps · 36.87s
 PASS  24/24 checks · stock-boot · 90000000 steps · 15.26s
+PASS  20/20 checks · stock-knobs · 3400000000 steps · 4754.33s
 PASS  12/12 checks · stock-first-boot · 6800000000 steps · 3669.59s
 ```
 
@@ -143,10 +146,94 @@ repository. All later stages run from ITCM, so a failed copy fails them too.
 The stage 5 check counts words and finds both encodings; it does not prove
 that every word is `0xC0` or `0xFC`.
 
-The board parts are not modelled yet: NAU88L21 codec, 74HC4051 knob
-multiplexers, Bluetooth module. The 14-segment display is modelled (see
-section 6), but the stock firmware starts to refresh it only at 3.23 G
-cycles; the first-boot gate checks it.
+The board parts are not modelled yet: NAU88L21 codec, Bluetooth module. The
+knobs and their multiplexers are modelled, see the stock knob gate below,
+and so is the 14-segment display (section 6). The stock boot gate sees
+neither: the firmware scans the knobs and refreshes the display only in its
+main loop, after 3.2 G cycles; the first-boot gate checks the display.
+
+### Knobs: two 74HC4051 multiplexers
+
+`system.yaml` models the 16 knobs as generic core parts: a `potentiometer`
+per knob, behind two `74hc4051` analog multiplexers (core descriptor
+`configs/devices/74hc4051.yaml`, primitive `analog_mux`). Wiring, from
+[`UI_AND_STORAGE.md`](UI_AND_STORAGE.md) section 2 and cross-checked in the
+stock code and in our firmware (`firmware/audio/src/ui/controls.c`):
+
+| Signal | Pad | GPIO | Notes |
+|--------|-----|------|-------|
+| S0 / S1 / S2 (both muxes) | `GPIO_B1_01/02/03` | GPIO2_IO17/18/19 | the stock select routine (ITCM `0x1BAD0`) writes these three pins only |
+| mux A Z | `GPIO_AD_B0_14` | ADC1 IN3 | knobs k0..k7 on Y0..Y7 |
+| mux B Z | `GPIO_AD_B0_15` | ADC1 IN4 | knobs k8..k15 on Y0..Y7 |
+| E (enable) | - | - | no firmware write: tied to GND (no `e_pin`) |
+
+Knob `kN` is mux channel `N mod 8`; the panel names come from the measured
+table in `UI_AND_STORAGE.md`. Each knob starts at a distinct position,
+`8 + 5 N` %, so a gate can tell every knob apart. No knob starts at 50 %,
+the fixed mid-scale level that the twin used before the knobs existed.
+`position` is in %, 0 = fully left. Turn a knob in a test script with a stimulus on its id, for
+example `target: { component: "knob_k15_master", channel: "position" }`.
+
+The multiplexer re-reads its select pads inside every GPIO register write,
+so the conversion that the firmware starts two instructions after the
+select write converts the new channel. The other ADC1 inputs (IN7 supply,
+IN9 battery) stay fixed levels.
+
+### Stock knob gate (long)
+
+The stock firmware scans the knobs only from its main loop. On a blank
+flash the main loop starts at about 3.22 G cycles (factory reset, then a
+fixed 3 s delay, see the first-boot timeline below), so this gate runs
+3.4 G cycles. It took 34 to 79 min of wall time on an Apple M4 (three such runs in
+parallel, on a Mac with other builds running). It is not in the default
+loop.
+
+**Where the firmware keeps the knob values, and how this was found.**
+
+1. Static: two functions load the ADC1 base (`0x400C4000`): the ADC init
+   (ITCM `0x19DA8`) and a blocking read at ITCM `0x19D7C` (write HC0, poll
+   HS.COCO0, read R0). The read has four callers: channel 9 (battery,
+   `0x18900`), channel 7 (supply, `0x19558`) and channels 3 and 4 in one
+   function, ITCM `0x1B538`,
+   called from the main loop every 10 ms. Per call it takes scan slot
+   `i` (a counter), sets the select lines for channel `order[i]` (routine
+   ITCM `0x1BAD0`, GPIO2 pins 17..19 only), converts IN3 and IN4 8 times
+   each, drops the minimum and the maximum, averages the other 6, and
+   stores `4095 - average` (0 below 10, 4095 above 4085) as u16 at
+   DTCM `0x2001DED6 + 2 i` (IN3) and `0x2001DEE6 + 2 i` (IN4). With
+   `--watch-gpio gpio2:17` (and 18, 19) the select pins are set once at
+   0.74 M cycles (init) and then do not move until 3.22 G cycles, when the
+   main loop starts to scan.
+2. Dynamic: a 3.4 G-cycle run with the knobs at the distinct positions
+   above and `memory_value` probes on both tables. The failed probes
+   reported the values the firmware wrote (`Memory assertion failed ...
+   got`). Every value was an inverted knob reading, and slot `i` held
+   mux channel `(i + 1) mod 8`: the scan order table is `1..7, 0`, not
+   `0..7`. Slot 6 of IN4 held MASTER after the stimulus had turned it.
+   The inversion (`4095 - v`) confirms the note in `UI_AND_STORAGE.md`.
+
+A second function (ITCM `0x18838`) copies each slot to a filtered table at
+DTCM `0x2001DE84` when it moved by more than 48 counts. The gate does not
+assert it: its mux-B half is rotated by a free-running counter.
+
+**What the gate asserts.** ADC1 in 12-bit mode, the select pins as outputs,
+and all 16 slots with the value of the knob that the table above puts
+there. The expected value of a knob at P % is
+`4095 - round(trunc(3300 P / 100) mV * 4095 / 3300)`: potentiometer and
+ADC arithmetic, not bytes of the vendor image. At 3.30 G cycles a stimulus
+turns MASTER (k15) from 83 % to 20 %; at 3.40 G its slot must hold
+`0xCCC` (20 %), not `0x2B8` (83 %).
+
+Negative controls (same 3.4 G-cycle run):
+
+| Change | Result |
+|--------|--------|
+| no stimulus (MASTER stays at 83 %) | `FAIL 19/20`: only MASTER's slot fails, `expected 0xccc, got 0x2b8` |
+| no muxes and no knobs: ADC1 IN3/IN4 fixed at 1650 mV, as before this change | `FAIL 4/20`: all 16 slots fail, each `got 0x7ff` (mid-scale) |
+
+The stock firmware does not care what drives IN3/IN4: with fixed levels it
+stores one mid-scale value in every slot. Only the per-knob positions,
+routed by the select lines, give each slot its own value.
 
 ### Stock first-boot gate (long)
 

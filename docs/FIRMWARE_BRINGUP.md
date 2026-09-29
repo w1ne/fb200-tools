@@ -108,8 +108,8 @@ every build):
 | Region | Range | Contents | Free |
 |---|---|---|---|
 | ITCM | `0x00000..0x00400` | vectors | - |
-| ITCM | `0x00400..0x13D2C` | hot code + flash write path (`.blob`) | - |
-| ITCM | `0x13D30..0x1F470` | reverb state `s_rev` (`.itcm_bss`) | 2.9 kB |
+| ITCM | `0x00400..0x140CC` | hot code + flash write path (`.blob`) | - |
+| ITCM | `0x140D0..0x1F810` | reverb state `s_rev` (`.itcm_bss`) | 2.0 kB |
 | DTCM low | `0x20000000..0x20018000` | long-IR tail, 4096 taps (`.dtcm_lo`) | 2.5 kB |
 | DTCM | `0x20018A00..0x20018B44` | crash dump (survives a warm reset) | - |
 | DTCM | `0x20018B44..0x20040608` | CMSIS tables (`.dtcmdata`), `.bss` | - |

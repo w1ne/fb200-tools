@@ -106,10 +106,9 @@ static double check_stage(float fs, int type, float f0, float q, float g, int ve
 static void test_response(float fs)
 {
     printf("response @%.0f Hz:\n", fs);
-    /* float rounding in the DF1 recursion grows as f0/fs falls (long ring):
-     * worst 0.05 dB at 44.1 kHz (the pedal), 0.15 dB at 48 kHz without FMA
-     * (HPF 45 Hz, the 40 Hz Q 4 band) */
-    const double tol = fs < 44200 ? 0.1 : 0.2;
+    /* the DF1 recursion runs in double: < 0.0001 dB (in float, v0.9.1, the
+     * rounding grew as f0/fs fell: 0.05 dB at 44.1 kHz, 0.15 dB at 48 kHz) */
+    const double tol = 0.01;
     /* the defaults and the ends of every range */
     const float bands[] = {40, 100, 250, 800, 3000};
     for (unsigned i = 0; i < 5; i++) {
@@ -242,9 +241,9 @@ static void hard_switch(void)
             d[1] = d[3] + p->v * (d[1] - d[3]);
             d[2] = d[4] + p->v * (d[2] - d[4]);
         }
-        float *c = &e.c[5 * s];
-        c[0] = (float)d[0]; c[1] = (float)d[1]; c[2] = (float)d[2];
-        c[3] = (float)-d[3]; c[4] = (float)-d[4];
+        double *c = &e.c[5 * s];
+        c[0] = d[0]; c[1] = d[1]; c[2] = d[2];
+        c[3] = -d[3]; c[4] = -d[4];
         e.cur[s] = *p;
         e.ramp[s] = 0;
     }
@@ -373,6 +372,56 @@ static void test_stable(void)
            peak);
 }
 
+/* Rounding noise of settled low stages (pedal 2026-09-29: in float, HPF
+ * 30 Hz + 40 Hz +6 dB + 100 Hz -4 dB q 2 took a -15 dBFS 1 kHz sine from
+ * THD+N -80.9 to -71.4 dB). The error vs a double cascade of the same
+ * designs; the float DF1 of v0.9.1 (CMSIS arithmetic) as the control. */
+static void test_noise(void)
+{
+    enum { N = 88200 };
+    static float x[N];
+    static double ref[N], flt[N];
+    const double fs = 44100;
+    eq_init(&e, 44100);
+    eq_set_hpf(&e, 30);
+    eq_set_band(&e, 0, 40, 6, 1);
+    eq_set_band(&e, 1, 100, -4, 2);
+    eq_set_on(&e, 1);
+    settle();
+    double c[3][5];
+    eq_design(0, fs, 30, M_SQRT1_2, 0, c[0]);
+    eq_design(1, fs, 40, 1, 6, c[1]);
+    eq_design(1, fs, 100, 2, -4, c[2]);
+    for (unsigned i = 0; i < N; i++) {
+        x[i] = (float)(0.178 * sin(2 * M_PI * 1000.0 * i / fs) + 0.05 * sin(2 * M_PI * 41.0 * i / fs));
+        ref[i] = flt[i] = x[i];
+    }
+    for (unsigned k = 0; k < 3; k++) {
+        double x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+        float fx1 = 0, fx2 = 0, fy1 = 0, fy2 = 0;
+        const float b0 = (float)c[k][0], b1 = (float)c[k][1], b2 = (float)c[k][2],
+                    a1 = (float)-c[k][3], a2 = (float)-c[k][4];
+        for (unsigned i = 0; i < N; i++) {
+            double in = ref[i], y = c[k][0] * in + c[k][1] * x1 + c[k][2] * x2 - c[k][3] * y1 - c[k][4] * y2;
+            x2 = x1; x1 = in; y2 = y1; y1 = y; ref[i] = y;
+            float fi = (float)flt[i], fy = (b0 * fi) + (b1 * fx1) + (b2 * fx2) + (a1 * fy1) + (a2 * fy2);
+            fx2 = fx1; fx1 = fi; fy2 = fy1; fy1 = fy; flt[i] = fy;
+        }
+    }
+    run(x, N);
+    double sig = 0, err = 0, ferr = 0;
+    for (unsigned i = N / 2; i < N; i++) {
+        sig += ref[i] * ref[i];
+        err += (x[i] - ref[i]) * (x[i] - ref[i]);
+        ferr += (flt[i] - ref[i]) * (flt[i] - ref[i]);
+    }
+    double db = 10 * log10(err / sig + 1e-300), fdb = 10 * log10(ferr / sig + 1e-300);
+    printf("noise: HPF 30 + 40 Hz +6 + 100 Hz -4 q 2: error re the signal %.1f dB (float DF1: %.1f dB)\n",
+           db, fdb);
+    assert(db < -120.0);
+    assert(fdb > db + 20.0);                         /* the control sees the float noise */
+}
+
 static void test_clamps(void)
 {
     eq_init(&e, 44100);
@@ -395,6 +444,7 @@ int main(void)
     test_flat();
     test_no_clicks();
     test_stable();
+    test_noise();
     test_response(44100);
     test_response(48000);
     printf("eq host tests OK\n");
