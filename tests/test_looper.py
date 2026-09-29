@@ -15,7 +15,6 @@ import tempfile
 from pathlib import Path
 
 import pytest
-
 from test_dsp_host import FW
 
 pytestmark = pytest.mark.skipif(shutil.which("cc") is None, reason="host C compiler not installed")

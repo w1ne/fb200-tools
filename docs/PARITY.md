@@ -33,7 +33,7 @@ Status words:
 | Master volume, smoothed | DONE | `engine.c` (`s_master`), knob k15 |
 | Input gain (global `S+0x1a`, app, -55..+6 dB) | DONE | `dsp/gain.c` `gain_input_stock` (stock table dB steps, within 1 ulp; `dsp_host_test.c`), stock smoother in `engine.c`; 0 dB keeps the bit-parity value |
 | Delay (preset fields `0x8c..0x94`, protocol `0x85`) | BETTER | the stock DSP ignores them (emulation). Ours plays them only in presets with our marker, so stock presets sound the same: [M4 delay](#m4-bass-delay) |
-| Looper (not in the stock) | BETTER (host) | ours: ~16 s mono (8 s `hq`), overdub, one undo, single-switch looper mode (hold D + C long); borrows the delay line and the long-IR memory while a loop exists: [M8 looper](#m8-looper) |
+| Looper (not in the stock) | BETTER (host) | ours: up to 108 s mono in the flash, overdub (whole-loop dubs up to 54 s), undo/redo of the last dub, single-switch looper mode (hold D + C long); the delay and long IRs stay: [M8 looper](#m8-looper) |
 | Bass EQ (not in the stock) | BETTER (host) | ours: HPF + 5 bands + LPF after the cab, set from the console, stored in the preset with our marker (`0xc4`); stock presets keep it off: [M4 EQ](#m4-bass-eq) |
 | Module order (`0xbc`) | not needed | the stock ignores it (emulation); stored by `proto.c` `0xA0` |
 | Sample rate 44.1 kHz | DONE | `audio_config.h` `AUDIO_FS`; stock clock tree |
@@ -283,8 +283,8 @@ Budgets on this chip: 600 MHz / 44.1 kHz = 13.6k cycles per sample; RAM
   NeuralAmpModelerCore, nam-binary-loader, nam-pedal), TONE3000 browsing in
   the editor, A1 -> A2-Lite distillation tool on the host.
 - **M8 - bass effects:** mono octaver (poly later), envelope filter/synth,
-  multiband compressor; ADPCM looper (first version done: ~16 s in borrowed
-  RAM, see [below](#m8-looper)); AIDA-X/RTNeural.
+  multiband compressor; looper (done: up to 108 s in the flash, see
+  [below](#m8-looper)); AIDA-X/RTNeural.
 
 ### M5: long IRs in the cab
 
@@ -346,82 +346,137 @@ preset's cab. With `prof` it measures the real cost on the pedal. Up to
 
 ### M8: looper
 
-Status: first version on the host (2026-09-29), not tried on the pedal.
+Status: the flash looper on the host (2026-09-29), not tried on the pedal.
+It replaces the first version (16 s of ADPCM in borrowed RAM, PR #32).
 
 **Where.** `dsp/looper.c`, mono, after the reverb and before the master
 volume: it records the processed sound, the loop plays into both sides and
 the master scales it with the live signal; the USB capture has it, the drums
 are not recorded. Live sound passes at unity.
 
-**Memory (the hard part).** RAM is full
-([memory map](FIRMWARE_BRINGUP.md#memory-map-audio-app)). The looper has no
-buffer of its own: from the first record until **clear** it borrows the delay
-line (`.dtcm_hi`, 88 kB) and the long-IR tail (`.dtcm_lo`, 96 kB), 184 kB =
-1412 blocks (`dsp/loop_mem.c`). Meanwhile the delay is **off** (simple: no
-shorter delay line to manage; the preset keeps its delay settings) and the cab
-plays **512 taps** (`cab_detach_tail`: a long IR keeps its head, a long IR
-still loading is dropped; `cab long` over 512 answers "not available"). On
-clear the delay line is zeroed (`delay_clear`), the tail is cleared and
-attached again and the preset is applied again: the delay starts from a
-silent line. Never both: the engine does not run the delay while the looper
-owns the line, and a DSP reset (NaN guard) does not touch either area. Its
-state (~0.4 kB) is in the spare low DTCM.
+**Storage.** The loop is in the external NOR flash (W25Q64JV, 8 MB, JEDEC
+`ef 40 17`), F:0x510000 to the end of the chip (`flash_capacity`, from the
+JEDEC ID and the FlexSPI window; at most F:0x800000): 2.94 MB. The bounds
+are in `debug/flash_rmw.h` (`FLASH_LOOP_*`); `flash_rmw` accepts the area.
+F:0x50F000 (one sector) is kept for a later `loop save` header. RAM holds
+only two rings of 16 frames between the audio and the flash side
+(`loopstore/loopio.h`, DTCM) and the flash side's maps (OCRAM). The delay and
+the long-IR cab keep their RAM (no borrowing any more).
 
-**Format.** 4-bit IMA ADPCM in blocks of 256 samples with a 4-byte header
-(predictor, step index): every block decodes on its own, so a dub can start
-anywhere and undo is a bank switch. Default 22.05 kHz: the input decimated
-by 2 with a 27-tap half-band FIR (flat +-0.03 dB to 8 kHz, <= -64 dB from
-15 kHz), the output interpolated with the same filter: **16.4 s**. `loop hq
-on` (only with no loop): 44.1 kHz, no resampling, **8.2 s**. Samples at x
-16384: +6 dB of headroom over full scale.
+**Format.** 22.05 kHz: the input decimated by 2 with a 27-tap half-band FIR
+(flat +-0.03 dB to 8 kHz, <= -64 dB from 15 kHz), the output interpolated
+with the same filter. Frames of 32 samples in 41 bytes (`dsp/loopcodec.c`):
+a scale byte in quarter-octave steps and 32 x 10-bit mantissas, NICAM-like
+block floating point. Every frame decodes on its own; 28.3 kB/s. Why 10
+bits, not 8: an 8-bit block (even with the best scale per block) tops out at
+50 dB for a sine that fills it (1.76 + 6.02 x 8, less the scale step), 5 dB
+short of the 55 dB target at 5 kHz; prediction across frames would help but
+breaks random access (the loop start, a dub start, undo). 10 bits cost 20 %
+of the length.
+
+**Layout.** The area is 376 slots of 8 kB (2 sectors). The loop is a list
+of chunks of 199 frames (289 ms); map `cur[]` gives each chunk's slot. NOR
+cannot be rewritten in place, so a write (the first record, the closing
+crossfade, a dub) writes each chunk it touches as a new version into an
+erased slot: the frames it does not touch are copied from the old version
+(the head of the first chunk is copied last, so a dub never waits for it),
+and the new version replaces the old in the map when it is complete.
+Undo keeps the map from before the last dub (`alt[]`): undo and redo swap
+the maps; a new dub drops the redo. Chunks a dub did not touch are in both
+maps, so a short dub on a long loop needs little space. New versions go to
+the next erased slot round the area: wear levelling.
+
+**Erase ahead and the audio.** Slots in no map are erased in the background
+(64 kB blocks where 8 free slots line up, else 4 kB sectors) from looper
+mode on (or the first `loop` command). An erase runs in slices of 3 ms:
+`lsio_erase_run` runs the audio pump while the flash is busy, then suspends
+the erase (75h; SUS in status register 2) so the main loop (XIP code) runs
+again; while it is suspended the flash reads and programs other sectors,
+so the streams never wait for an erase. Page programs (256 B) wait with the
+pump running (~0.4 ms). Every other flash writer first ends a suspended
+erase (`lsio_quiesce` in `flash_cmd_init` and `fw_begin`). All of this is
+ITCM code (`tools/hot_path.py` roots `lsio_*`); the flash side's logic
+(`loopstore.c`) is cold and runs only while the flash is idle or suspended.
+Reads are IP commands (fast read 0Bh) into the rings, never through the AHB
+cache. The main loop does not sleep while the flash side has work.
+
+**Throughput** (W25Q64JV typical / max): page program 0.4 / 3 ms, sector
+erase 45 / 400 ms, 64 kB block erase 150 / 2000 ms. A record needs 28.3
+kB/s written (110 pages/s: 4 % of the time typical, 33 % at the max) and
+the same erased (6.5 % of the time typical with 64 kB blocks; at the max
+2 s per block the erase alone takes 88 %). A dub adds 28.3 kB/s of reads
+(IP reads, well under 1 %). So typical chips erase 15 times faster than a
+record fills; a chip at every datasheet maximum cannot erase and program
+28 kB/s at once. Hence the erase starts with looper mode (the whole area in
+7 s typical, 96 s at the max, simulated), and a record or a dub that finds
+no erased slot ends cleanly: the record closes at a chunk end (with the
+crossfade), the dub fades out before the chunk end. A record needs 3 erased
+slots to start (`loop rec` answers "preparing the flash" before that,
+~0.3 s after looper mode on).
+
+**Lengths.** Record: up to 375 chunks = **108.3 s** (one slot is kept for
+the closing crossfade). Dub over the whole loop: a loop up to 188 chunks =
+**54.3 s** (it needs as many free slots as it touches); a longer loop dubs
+until the free slots run out. The shortest loop is 0.5 s. Power off: the
+loop is lost (nothing is read at boot: every slot is garbage until it is
+erased and written again).
 
 **Behaviour.** First record: A press to A press sets the length
-(sample-accurate at the loop's rate: 2 samples at 44.1 kHz by default, 1 in
-`hq`; the wrap is at that sample, no drift, host test over 10 passes). The
-close crossfades: the first block (11.6 ms) fades in while what was played
-right after the close fades out, so the wrap has no click (host test: the
-second difference at the wrap equals the loop's own, a hard splice would
-step 0.3). Overdub: new = old x (1 - 0.05 g) + in x g, g the punch gain
-(5 ms ramp); old layers lose 0.45 dB per dubbed pass. **Undo:** a dub starts
-on a copy of the loop in the other half of the memory (one memcpy of up to
-92 kB between blocks), so undo and redo swap halves, faded (5 ms out, 5 ms
-in). That needs the loop to fit twice: up to 8.2 s (4.1 s `hq`); longer loops
-dub in place without undo (clear with a long hold of B). Stop and play fade
-over 5 ms; play restarts from the loop start.
+(sample-accurate at 22.05 kHz; the wrap is at that sample, no drift, host
+test over 10 passes). The close crossfades: the first 8 frames (11.6 ms) are
+written again as the loop start fading in while what was played right after
+the close fades out, so the wrap has no click. Overdub: new = old x (1 -
+0.05 g) + in x g, g the punch gain (5 ms ramp); old layers lose 0.45 dB per
+dubbed pass. Undo takes back the whole last dub (all its passes). Stop, play,
+undo and clear fade over 5 ms. While a loop exists the settings autosaves
+wait; `flash_store` refuses a write during a record or a dub (-6).
 
-**Measured on the host** (`tests/test_looper.py`, a recorded sine played back
-on the next pass, SNR = fundamental vs everything else, THD = harmonics 2-5):
+**Measured on the host** (`tests/test_looper.py`: `looper_host_test.c` on a
+simulated W25Q64, `loopflash_sim.c`, which also fails any read or program
+while busy, a program over unerased bits, an erase during a suspend and a
+read of bytes not written since boot). Codec alone: SNR >= 60.3 dB for sines
+100 Hz..5 kHz from 0 to -80 dBFS. Through the whole path (record, flash,
+play; SNR = fundamental vs everything else, THD = harmonics 2-5):
 
-| Sine | 22.05 kHz SNR / THD | hq SNR / THD |
+| Sine | SNR | THD |
 | --- | --- | --- |
-| 55 Hz, -6 dBFS | 58 / -81 dB | 64 / -86 dB |
-| 110 Hz, -6 dBFS | 52 / -70 dB | 58 / -83 dB |
-| 110 Hz, -46 dBFS | 40 / -50 dB | 41 / -48 dB |
-| 440 Hz, -6 dBFS | 40 / -60 dB | 46 / -74 dB |
-| 2 kHz, -6 dBFS | 26 / -50 dB | 32 / -54 dB |
+| 100 Hz, -6 / -46 dBFS | 62.6 / 62.5 dB | -83 / -82 dB |
+| 440 Hz, -6 / -46 dBFS | 60.7 / 61.4 dB | -84 / -85 dB |
+| 1 kHz, -6 / -46 dBFS | 61.3 / 61.1 dB | -78 / -74 dB |
+| 2 kHz, -6 / -46 dBFS | 61.1 / 61.0 dB | -80 / -78 dB |
+| 5 kHz, -6 / -46 dBFS | 60.4 / 60.4 dB | -89 / -91 dB |
 
-ADPCM noise follows the slope: -6 dB per octave. Fine for bass fundamentals,
-audible hiss on bright material; `hq` buys 6 dB.
+(The ADPCM version: 26..58 dB, falling 6 dB per octave.) Flash timing, 20 s
+record + 10 s dub + undo: typical: 0 skips, main loop blocked at most 4.0
+ms; datasheet max: 0 skips, 9.3 ms; no erase suspend: 0 skips but 150 ms
+UI stalls and 46 read underruns (the chip has suspend). Undo is bit exact
+in every case. An erase slower than the record (3.5 s per block): the record
+closes by itself at 2.0 s and plays. The whole area: the record closes at
+108.3 s; a dub over it ends when the flash is full; a 54.0 s loop dubs
+whole.
 
-**CPU** (`tools/engine_cycles.py --looper rec|play|dub [--hq]`, the M7
-model, cycles per 32-sample block): 22.05 kHz record 2.9k, play 2.0k, dub
-3.4k (worst block 3.5k); `hq` 3.2k, 2.2k, 4.2k (4.4k). The block budget is
-435k: under 1 %. Code: ~1.8 kB of ITCM (`looper_process`, `run`, the codec
-step; the control code is `COLD`), ~0.7 kB of ITCM left.
+**CPU** (`tools/engine_cycles.py --looper rec|play|dub`, the M7 model,
+cycles per 32-sample block): record 2.5k, play 2.2k, dub 2.8k (worst block
+3.5k) of 435k: under 1 %. The flash side runs in the main loop. ITCM: the
+audio side and codec ~2.8 kB, the flash operations ~0.8 kB, freed by
+moving the ADPCM code out and more control code to flash (`COLD`: the
+amp/tone/mod/comp/EQ/cab parameter setters, `fw_info`, `fw_test`, the JEDEC
+probe); 0.9 kB of ITCM left.
 
 **Controls.** Looper mode: hold D, then C long (display `LP-`; the same
 again leaves; rhythm mode and looper mode exclude each other). A acts when
 pressed (record, close, punch out, restart), a tap of A while playing dubs
 (on release: a held A is the undo), hold A = undo/redo, tap B = stop/play,
-hold B = clear. Display `rEC`, `PLY`, `odb`, `StP`, `Und`/`rdo`, `CLr`; ring
-A red/green/orange with a white flash at each loop start, ring B blue while a
-loop exists. Console `loop`, MCP `looper`. Host tests: the UI mapping
-(`test_proto_host.py`), the state machine, the handover.
+hold B = clear. Display `rEC`, `PLY`, `odb`, `StP`, `Und`/`rdo`, `CLr`,
+`PrP` (the flash is not ready yet); ring A red/green/orange with a white
+flash at each loop start, ring B blue while a loop exists. Console `loop`
+(`prep_ms` = erased flash ready), `loop stats` (JEDEC, slots, programs,
+erases, suspends, underruns), MCP `looper`. `loop hq` is gone (the flash
+format is better than hq was).
 
-Open: the pedal check (hardware checklist in the PR); drum sync (quantise the
-loop length to bars when the drums run); `loop save <n>` / `load <n>` to flash
-(a full loop is 184 kB, 45 sectors: a flash area and a background writer are
-needed, not cheap); a stereo loop; a shorter delay while looping.
+Open: the pedal check (hardware checklist in the PR); `loop save <n>` /
+`load <n>` (a header in F:0x50F000 and a copy of the maps); drum sync
+(quantise the loop length to bars); a stereo loop.
 
 ### M4: bass delay
 

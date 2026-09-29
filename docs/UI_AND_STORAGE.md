@@ -173,6 +173,8 @@ would read our copy as its data. The stock format itself has no spare room
 | 0x89000 + s x 0x2800 | 0x2800 | user IR data |
 | 0xB0000 | 8 | magic "B01" - **verified** |
 | 0xD0000 | 3286016 | model library (block 1) - **verified** (count 0x14 = 20) |
+| 0x50F000 | 0x1000 | ours: kept for a looper `loop save` header (not written yet) |
+| 0x510000 | to the chip end (0x2F0000 on 8 MB) | ours: the looper's loops (`loopstore/loopstore.h`; lost at power off) |
 
 Preset record (u16 LE fields): name[20] @0x00; module 0x80 enable/type
 0x14/0x16, params 0x18-0x1e; amp 0x2c/0x2e, params 0x30-0x3a; cab

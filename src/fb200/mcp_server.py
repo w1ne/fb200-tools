@@ -41,7 +41,8 @@ USB_ROUTE_RE = re.compile(r"route=(out|in|mix)")
 CAB_MAX_TAPS = 4096       # dsp/conv2.h CONV2_MAX_TAPS
 LOOP_ACTIONS = ("rec", "play", "dub", "stop", "undo", "clear", "tap")
 LOOP_RE = re.compile(r"loop (off|empty|rec|play|dub|stop): len_ms=(\d+) pos_ms=(\d+) max_ms=(\d+) "
-                     r"undo_max_ms=(\d+) undo=(none|undo|redo) hq=([01]) level=(\d+) mem=([01])")
+                     r"undo_max_ms=(\d+) undo=(none|undo|redo) level=(\d+) prep_ms=(\d+) "
+                     r"flash=([01])")
 PARAMETER_DOCS_URI = "fb200://parameter-docs"
 
 
@@ -52,8 +53,8 @@ def parse_loop(text: str) -> dict:
         raise CommunicationError(f"unexpected loop reply: {text!r}")
     return {"state": m.group(1), "len_ms": int(m.group(2)), "pos_ms": int(m.group(3)),
             "max_ms": int(m.group(4)), "undo_max_ms": int(m.group(5)), "undo": m.group(6),
-            "hq": m.group(7) == "1", "level": int(m.group(8)),
-            "borrowed_memory": m.group(9) == "1"}
+            "level": int(m.group(7)), "prepared_ms": int(m.group(8)),
+            "flash": m.group(9) == "1"}
 
 
 def _num_pairs(text: str) -> dict[str, int]:
@@ -234,7 +235,7 @@ class PedalTools:
           eq <band 1-5> <30-10000 Hz> <gain -15..15 dB> [q 0.3-4] (into the preset) |
           cab long <taps 0-4096> (synthetic IR for measurements, 0 = the preset's cab) |
           tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>] | stock |
-          loop [rec|play|dub|stop|undo|clear|tap] | loop hq on|off | loop level <0-100>
+          loop [rec|play|dub|stop|undo|clear|tap] | loop level <0-100> | loop stats
         ui: ui | uimon on|off | disp <text> | kled <0-15> on|off | power |
           rgb 0xRRGGBB [led] | factory [yes] (resets ALL presets)
         bt: bt | bt send <AT+...> | btaudio
@@ -477,25 +478,25 @@ class PedalTools:
         return out
 
     def looper(self, action: Literal["rec", "play", "dub", "stop", "undo", "clear", "tap"]
-               | None = None, hq: bool | None = None, level: int | None = None) -> dict:
+               | None = None, level: int | None = None) -> dict:
         """The looper (console `loop`): mono, after the reverb (records the
-        processed sound), before the master volume. Actions: rec (start the
-        first record; while recording: close the loop and play), play (close
-        a record, end a dub, or restart from stop), dub (overdub from play),
-        stop, undo (the last dub; again = redo; only for loops up to
-        undo_max_ms), clear, tap (the footswitch cycle rec -> play -> dub ->
-        play). hq: record at 44.1 kHz (half the time) instead of 22.05 kHz,
-        only with no loop. level 0..100: loop playback level. No arguments:
-        the state. While a loop exists (borrowed_memory) the delay is off
-        and long IRs play 512 taps: `clear` gives the memory back. The loop
-        runs in real time: record by playing (or `audio_test`), then close."""
+        processed sound), before the master volume; the loop is in the
+        pedal's flash (up to max_ms, ~108 s). Actions: rec (start the first
+        record; while recording: close the loop and play), play (close a
+        record, end a dub, or restart from stop), dub (overdub from play),
+        stop, undo (the whole last dub; again = redo), clear, tap (the
+        footswitch cycle rec -> play -> dub -> play). A dub over the whole
+        loop needs loops up to undo_max_ms (~54 s); a longer loop dubs until
+        the free flash runs out. level 0..100: loop playback level. No
+        arguments: the state. prepared_ms: erased flash ready for a record
+        (a `rec` before it is ready is "not allowed now: preparing the
+        flash": wait a moment). The loop runs in real time: record by
+        playing (or `audio_test`), then close."""
         if action is not None and action not in LOOP_ACTIONS:
             raise InvalidArgumentError(f"action must be one of {', '.join(LOOP_ACTIONS)}")
         if level is not None and not 0 <= level <= 100:
             raise InvalidArgumentError("level must be 0..100")
         cmds = []
-        if hq is not None:
-            cmds.append(f"loop hq {'on' if hq else 'off'}")
         if level is not None:
             cmds.append(f"loop level {level}")
         if action is not None:

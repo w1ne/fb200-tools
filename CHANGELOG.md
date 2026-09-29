@@ -9,22 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Looper** (the stock has none): mono, after the reverb, ~16 s at 22.05 kHz
-  (4-bit IMA ADPCM, half-band resampling) or ~8 s with `loop hq on`. Overdub, one
-  undo/redo level for loops up to half the memory, a crossfade at the loop point
-  (no click), faded stop/play/undo/clear. Looper mode on the footswitches: hold D,
-  then C long; A = record / play / overdub (acts when pressed), hold A = undo, B =
-  stop/play, hold B = clear; display and ring feedback. Console `loop`, MCP
-  `looper`. RAM is full, so from the first record until clear the looper borrows the
-  delay line and the long-IR memory: the delay is off and IRs play 512 taps
-  meanwhile ([`docs/PARITY.md`](docs/PARITY.md#m8-looper)). Tested on the host, not
-  yet on a pedal.
-- `tools/engine_cycles.py --looper rec|play|dub [--hq]`: the looper's cost per block.
+- **Looper** (the stock has none): mono, after the reverb, up to 108 s in the
+  external flash (F:0x510000..0x800000 on the 8 MB chip, sized from its JEDEC ID):
+  22.05 kHz (half-band resampling), 10-bit block floating point (60 dB SNR). Overdub
+  (a whole-loop dub for loops up to 54 s; longer loops dub until the flash is full),
+  undo/redo of the whole last dub, a crossfade at the loop point (no click), faded
+  stop/play/undo/clear. The flash is erased ahead in the background with erase
+  suspend, so the audio and the UI never wait; a record or a dub that runs out of
+  erased flash ends cleanly. Looper mode on the footswitches: hold D, then C long;
+  A = record / play / overdub (acts when pressed), hold A = undo, B = stop/play,
+  hold B = clear; display and ring feedback. Console `loop`, `loop stats`, MCP
+  `looper`. The delay and long IRs stay available
+  ([`docs/PARITY.md`](docs/PARITY.md#m8-looper)). Tested on the host with a
+  simulated flash, not yet on a pedal.
+- `tools/engine_cycles.py --looper rec|play|dub`: the looper's cost per block.
+- Flash: fast read, 64 kB erase, erase suspend/resume, status register 2 and JEDEC
+  ID sequences (FlexSPI LUT slots 6..11); `flash_rmw` accepts the looper's area.
 
 ### Changed
 
-- More engine control code (`engine_cab_long`, `engine_apply_settings`,
-  `engine_profile`, stats) runs from flash (`COLD`): ITCM for the looper.
+- More control code runs from flash (`COLD`): `engine_cab_long`,
+  `engine_apply_settings`, `engine_profile`, stats, the amp/tone/mod/comp/EQ/cab
+  parameter setters, `fw_info`, `fw_test`: ITCM for the looper.
+- While a loop exists, the automatic settings and rhythm saves wait; a flash store
+  during a record or a dub is refused (`flash_store` -6).
 
 ## [0.10.0] - 2026-09-29
 
