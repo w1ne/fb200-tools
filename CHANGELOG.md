@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-09-29
+
+### Fixed
+
+- **Audio drops out during flash writes:** a preset save, a settings write, an IR
+  import or delete stopped the audio for tens of ms (the main loop waited for the
+  flash, and the audio engine runs in it). The flash busy-wait now keeps the audio
+  running (`src/debug/flash_rmw.c`); drums keep time but are silent during a write
+  (their samples are in flash). Measured on the pedal: 0 skipped blocks for a save,
+  a settings write and an IR import + delete (were 13 and 38).
+
 ## [0.9.0] - 2026-09-29
 
 Bass EQ, 1 s delay that plays on the pedal, IRs up to 4096 taps on an FFT cab,

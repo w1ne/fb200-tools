@@ -55,7 +55,7 @@ void app_main(void)
     /* Launches the app (never returns) unless something says stay. */
     const char *stay = recovery_boot();
 #endif
-    log_printf("fb200-audio 0.9.0 " VARIANT "\r\n");
+    log_printf("fb200-audio 0.9.1 " VARIANT "\r\n");
 #ifdef FB200_RECOVERY
     log_printf("recovery: staying because %s\r\n", stay);
 #endif
