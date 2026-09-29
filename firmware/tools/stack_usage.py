@@ -35,7 +35,8 @@ RESERVE = 0x2000
 # Known re-entry: log_flush_ms (only on the way to a reset: console_reboot,
 # recovery_request) runs tud_task, which can run the protocol again (HID ->
 # 0xC1 -> recovery_request). recovery_request goes straight to the reset when
-# re-entered (recovery.c), so this nests once: counted as 2 x the callee.
+# re-entered (recovery.c), so this nests once: the path down to log_flush_ms
+# plus a second tud_task level that cannot re-enter again.
 REENTRY = {("log_flush_ms", "tud_task_ext")}
 EXC_FRAME = 104 + 4
 SU_RE = re.compile(r"^(.*):(\d+):(\d+):(\S+)\t(\d+)\t(\S+)")
@@ -133,11 +134,33 @@ def analyse(elf: Path, build: Path, cross: str = "arm-none-eabi-") -> Report:
     reset = img.addr.get("stage2_main")   # the entry: src/stage2.S b.w stage2_main -> app_main
     if reset is None:
         raise SystemExit(f"no stage2_main in {elf}")
-    main, main_chain = worst(reset)
-    for _, b in cut:
-        d, c = worst(b)
-        if 2 * d > main:
-            main, main_chain = 2 * d, [*c, *c]
+    # One re-entry (REENTRY): cross a cut edge once, then the nested level
+    # follows the graph without cut edges (worst).
+    memo1: dict[int, tuple[int, list[int]]] = {}
+    onstack1: set[int] = set()
+
+    def worst1(f: int) -> tuple[int, list[int]]:
+        if f in memo1:
+            return memo1[f]
+        if f in onstack1:
+            return worst(f)
+        base = worst(f)
+        onstack1.add(f)
+        best, chain = base[0] - frame(f), base[1][1:]
+        for g in callees(f):
+            d, c = worst1(g)
+            if d > best:
+                best, chain = d, c
+        for a, b in cut:
+            if a == f:
+                d, c = worst(b)
+                if d > best:
+                    best, chain = d, c
+        onstack1.discard(f)
+        memo1[f] = (frame(f) + best, [f, *chain])
+        return memo1[f]
+
+    main, main_chain = worst1(reset)
     # Driver callbacks (a code address loaded into a register, hot_path
     # "callback"): the SDK drivers call them from their interrupt handlers,
     # so each counts as an interrupt of its own.

@@ -229,8 +229,16 @@ void recovery_launch_app(int usb_up) { (void)usb_up; abort(); }
 static jmp_buf reboot_jmp;
 void recovery_request(void) { longjmp(reboot_jmp, 1); }
 void console_reboot(void) { longjmp(reboot_jmp, 1); }
-static power_state_t pwr = {1000, 2000, 3, false, false};
+static power_state_t pwr;
 const power_state_t *power_state(void) { return &pwr; }
+void power_activity(void) {}
+void power_console(int argc, char **argv) { CHECK(argc >= 1 && argv[0], "power argv"); }   /* power.c: hardware */
+void cpu_busy(uint32_t *busy, uint32_t *wakes) { *busy = 0; *wakes = 0; }
+bool cpu_sleep_enabled(void) { return true; }
+unsigned cpu_clock_mhz(void) { return 600; }
+static bool dither;
+void engine_set_dither(bool on) { dither = on; }
+bool engine_get_dither(void) { return dither; }
 int bt_at(const char *cmd) { CHECK(strlen(cmd) < 100, "bt at"); return 0; }
 void bt_status(void) {}
 void bt_audio_stats(uint32_t *b, uint32_t *f, int32_t *p) { *b = *f = 0; *p = 0; }
