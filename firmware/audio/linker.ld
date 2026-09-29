@@ -57,6 +57,7 @@ SECTIONS
   .xiptext 0x60041000 : AT(0x60041000) {
     __xiptext_start__ = .;
     INCLUDE cold.ld
+    *(.xiptext.fn)            /* COLD functions (src/cold.h) */
     . = ALIGN(32);
     __xiptext_end__ = .;
   } > XIP

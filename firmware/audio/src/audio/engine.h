@@ -50,6 +50,7 @@ extern volatile float g_meter_peak[2];
 #include "dsp/drums.h"
 void engine_set_tuner(bool on);
 bool engine_tuner_poll(tuner_result_t *out);   /* main loop */
+float engine_input_peak(void);   /* chain input peak since the last call (main loop) */
 drums_t *engine_drums(void);
 /* Our EQ (dsp/eq.h), for the console `eq` (main loop, as engine_task). */
 struct eq_s;

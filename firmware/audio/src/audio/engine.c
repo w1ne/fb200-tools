@@ -9,6 +9,7 @@
  * The DSP chain is currently a gain node plus an optional test generator;
  * the real chain (EQ, amp sim, ...) lands in later milestones. */
 #include <string.h>
+#include "cold.h"
 #include "audio/engine.h"
 #include "debug/cdc_log.h"
 #include "audio/audio_config.h"
@@ -124,8 +125,9 @@ static uint32_t s_meter_last_ms;
 static bool s_ready;          /* engine_init done: engine_pump may run */
 static drift_rs_t s_rs;       /* host playback resampler (audio/drift.h) */
 static outq_t s_outq;         /* DAC float -> int16: rounding, optional dither (dsp/outq.h) */
+static float s_in_peak;       /* chain input |L + R| peak, for the idle timer (ui/power.c) */
 
-void engine_init(void)
+COLD void engine_init(void)
 {
     usb_audio_init();
     sai_audio_init();
@@ -239,7 +241,7 @@ int engine_cab_long(unsigned taps)
     return cab_set_ir_len(&s_cab, s_ir, taps, cab_user_ir_gain(s_ir));
 }
 
-void engine_apply_preset(const preset_t *p, unsigned master)
+COLD void engine_apply_preset(const preset_t *p, unsigned master)
 {
     s_amp_en = pget(p, P_AMP_EN) != 0;
     s_cab_en = pget(p, P_CAB_EN) != 0;
@@ -287,6 +289,13 @@ void engine_apply_settings(const settings_t *s)
     unsigned cal = s->b[S_TUNER_CAL];
     tuner_set_a4(&s_tuner, 435 + (int)(cal <= 15u ? cal : 5u));
     s_tuner_mute = s->b[S_TUNER_MUTE] != 0;
+}
+
+float engine_input_peak(void)
+{
+    float p = s_in_peak;
+    s_in_peak = 0.0f;
+    return p;
 }
 
 bool engine_tuner_poll(tuner_result_t *out) { return tuner_poll(&s_tuner, out) != 0; }
@@ -456,7 +465,13 @@ void engine_task(void)
         testgen_process(&s_testgen, &s_block, n);
         for (size_t i = 0; i < n; i++) s_block.data[1][i] = 0.0f;   /* mono source on L */
     }
-    for (size_t i = 0; i < n; i++) x[i] = s_block.data[0][i] + s_block.data[1][i];
+    float pk = s_in_peak;
+    for (size_t i = 0; i < n; i++) {
+        x[i] = s_block.data[0][i] + s_block.data[1][i];
+        float a = x[i] < 0.0f ? -x[i] : x[i];
+        if (a > pk) pk = a;
+    }
+    s_in_peak = pk;
     PROF(P_IN);
     tuner_feed(&s_tuner, x, n);
     PROF(P_TUNER);

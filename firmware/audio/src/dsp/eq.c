@@ -1,5 +1,6 @@
 /* Bass EQ: see eq.h. */
 #include <string.h>
+#include "cold.h"
 #include "eq.h"
 
 #define PI_D 3.14159265358979323846
@@ -198,7 +199,7 @@ int eq_set_band(eq_t *e, unsigned band, float hz, float gain_db, float q)
     return 0;
 }
 
-void eq_load(eq_t *e, const uint8_t *r)
+COLD void eq_load(eq_t *e, const uint8_t *r)
 {
     static const uint8_t def[EQ_REC] = {0, 0, 0, 0, 40, 0, 0, 50, 100, 0, 0, 50,
                                         250, 0, 0, 50, 0x20, 3, 0, 50, 0xb8, 0x0b, 0, 50};

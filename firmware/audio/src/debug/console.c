@@ -34,6 +34,7 @@
 #include "dsp/delay.h"
 #include "dsp/eq.h"
 #include "proto/proto.h"
+#include "cpu_power.h"
 #endif
 
 #define STR_(x) #x
@@ -120,7 +121,8 @@ static void cmd_help(void)
              "          usb in = reamping: host playback into the chain (mix: + instrument, out: default)\r\n"
              "          meters on|off | x | cpu | prof | cab long <0-" XSTR(ENGINE_IR_TAPS) "> | dither [on|off]\r\n"
              "  led   : led on|off|scan | ledpin <gpio> <pin>\r\n"
-             "  ui    : ui | uimon on|off | disp <text> | kled <0-15> on|off | power\r\n"
+             "  ui    : ui | uimon on|off | disp <text> | kled <0-15> on|off\r\n"
+             "  power : power [sleep on|off | clock 600|528|396 | led 100|66|33 | idle <min> | log <s>]\r\n"
              "          preset [0-39] | save | factory [yes] | rgb 0xRRGGBB [led] | rgb cfg 0xIIS0S1\r\n"
              "  bt    : bt | bt send <AT+...> | btaudio\r\n"
              "  music : stock | tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>]\r\n"
@@ -636,6 +638,11 @@ static void dispatch(char *cmd)
         log_printf("cpu: engine block avg %lu max %lu cycles of %lu (%lu%% / %lu%%)\r\n",
                    (unsigned long)avg, (unsigned long)max, (unsigned long)budget,
                    (unsigned long)(100u * avg / budget), (unsigned long)(100u * max / budget));
+        uint32_t busy, wakes;
+        cpu_busy(&busy, &wakes);   /* since the last `cpu` */
+        log_printf("cpu: loop busy %lu.%lu%% (sleep %s, %lu wakes/s, core %u MHz)\r\n",
+                   (unsigned long)(busy / 10u), (unsigned long)(busy % 10u),
+                   cpu_sleep_enabled() ? "on" : "off", (unsigned long)wakes, cpu_clock_mhz());
     }
     else if (streq(argv[0], "mute") || streq(argv[0], "m")) cmd_mute(argv[1]);
     else if (streq(argv[0], "dither")) {   /* TPDF dither on the 16-bit DAC/USB output (dsp/outq.h) */
@@ -751,12 +758,7 @@ static void dispatch(char *cmd)
             }
         }
     }
-    else if (streq(argv[0], "power")) {
-        const power_state_t *p = power_state();
-        log_printf("power: battery=%u (level %u) supply=%u%s charging=%u\r\n",
-                   (unsigned)p->battery_raw, (unsigned)p->level, (unsigned)p->supply_raw,
-                   p->supply_low ? " LOW" : "", (unsigned)p->charging);
-    }
+    else if (streq(argv[0], "power")) power_console(argc, argv);
     else if (streq(argv[0], "uimon")) {
         ui_set_log(argc > 1 && streq(argv[1], "on"));
         log_printf("ui monitor %s\r\n", (argc > 1 && streq(argv[1], "on")) ? "on" : "off");
