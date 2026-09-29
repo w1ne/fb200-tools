@@ -142,7 +142,8 @@ that every word is `0xC0` or `0xFC`.
 
 The board parts are not modelled yet: NAU88L21 codec, 74HC4051 knob
 multiplexers, Bluetooth module. The 14-segment display is modelled (see
-section 6), but the stock firmware does not refresh it inside 90 M cycles.
+section 6), but the stock firmware starts to refresh it only at 3.23 G
+cycles; the first-boot gate checks it.
 
 ### Stock first-boot gate (long)
 
@@ -161,6 +162,7 @@ Timeline, measured on the twin (SysTick is 1 ms = 600 000 cycles):
 | 0.03 .. 1.40 G | 0.05 .. 2.3 s | factory reset: storage format through FlexSPI IP commands (sector erase `0x20`, quad page program `0x32`, status poll `0x05`) |
 | 1.40 .. 3.20 G | 2.3 .. 5.3 s | a fixed `delay_ms(3000)` before the main loop (ITCM `0x17774`; the wait loop is `0x1A01A..0x1A020`, it polls the SysTick ms counter) |
 | 3.20 .. 6.15 G | 5.3 .. 10.3 s | main loop; a software countdown starts the Bluetooth bring-up |
+| 3.23 G | 5.4 s | the display shows `P.0.A.` (then `0.5.0.` at 3.42 G) |
 | 6.15 .. 6.70 G | 10.3 .. 11.2 s | Bluetooth AT sequence on LPUART5, 150 ms apart |
 
 A run that stops before 6.2 G cycles sees no AT command. (A 3 G probe
@@ -171,6 +173,7 @@ stopped inside the 3 s delay. That is why its `uart.log` was empty.)
 | sector erase and page program of the settings sector F:0x82000 and of F:0xB0000 | `peripheral_log` FlexSPI `ip`: `cmd 0x20 addr 0x00082000`, `cmd 0x32 addr 0x00082000`, same for `0x000b0000` |
 | magic `FB200` at F:0x82000 and `B01` at F:0xB0000 | `memory_value` at `0x60082000`, `0x60082004`, `0x600B0000` (the NOR array, read through the FlexSPI AHB window) |
 | Bluetooth AT sequence `AT+TM`, `AT+BD..`, `AT+BM..`, `AT+CN00`, `AT+B501`, `AT+B401`, in this order | `uart_ordered`, `uart_contains "AT+B401"` |
+| the first display screen of the main loop, `P.0.A.` | `peripheral_log` display `text`: `"P.0.A."` |
 | no fidelity gap, run not stopped early | `fidelity_clean`, stop reason `max_cycles` |
 
 The Bluetooth module is not modelled: nothing answers the AT commands. The
@@ -222,7 +225,28 @@ It records two logs for `peripheral_log`:
 
 A failed `peripheral_log` check prints the last lines of the log.
 
-STOCK_DISPLAY_PLACEHOLDER
+### What the stock firmware shows
+
+In the first-boot run the `text` log has three lines:
+
+```
+"P.0.A." at cycle 3228000001
+"0.?.?." at cycle 3408000001
+"0.5.0." at cycle 3420000001
+```
+
+- `P0A` is preset bank 0, slot A (`P<bank><slot>`, UI_AND_STORAGE.md
+  section 1). `050` follows 180 ms later.
+- The dp is on after every digit. This is what the firmware drives, not a
+  model error: the stock glyph writer (the code switch) never writes the dp
+  line GPIO4_IO23; a separate routine holds it high in this mode (and blinks
+  it, or clears it, in others; the tuner uses it as the sharp sign). The
+  model shows a segment that is lit under every select.
+- `0.?.?.` is one 20 ms window in which the screen changed from `P0A` to
+  `050`: the two texts share the window, and some segments are lit for less
+  than half of it. It is visible for 20 ms only.
+
+A run with a second display instance at `threshold_pct: 95` DIAG_PLACEHOLDER
 
 ## 7. SVD provenance
 
