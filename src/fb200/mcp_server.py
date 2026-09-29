@@ -25,7 +25,7 @@ INSTRUCTIONS = """\
 Tools for the FLAMMA FB200 bass pedal with the open firmware, on USB.
 Effect edits change the live edit buffer of the current preset; `save_preset`
 stores it (also the delay and the EQ). Chain: in -> gate -> comp -> amp -> cab
--> eq -> mod -> delay -> reverb -> master -> USB capture / DAC (USB playback:
+-> eq -> mod -> delay -> reverb -> looper -> master -> USB capture / DAC (USB playback:
 to the DAC, or with `usb_route` "in" into the chain input instead of the
 instrument - reamping). To hear a change, run `audio_test` (default: the
 firmware test signal into the chain input, captured over USB audio) before
@@ -39,7 +39,21 @@ ERROR_MARKERS = ("usage:", "unknown command", "bad ", "not allowed", "not availa
 CHAIN_SIGNALS = {"sine": "sine", "noise": "white", "impulse": "impulse"}
 USB_ROUTE_RE = re.compile(r"route=(out|in|mix)")
 CAB_MAX_TAPS = 4096       # dsp/conv2.h CONV2_MAX_TAPS
+LOOP_ACTIONS = ("rec", "play", "dub", "stop", "undo", "clear", "tap")
+LOOP_RE = re.compile(r"loop (off|empty|rec|play|dub|stop): len_ms=(\d+) pos_ms=(\d+) max_ms=(\d+) "
+                     r"undo_max_ms=(\d+) undo=(none|undo|redo) hq=([01]) level=(\d+) mem=([01])")
 PARAMETER_DOCS_URI = "fb200://parameter-docs"
+
+
+def parse_loop(text: str) -> dict:
+    """Parse the `loop` console state line (console.c cmd_loop)."""
+    m = LOOP_RE.search(text)
+    if m is None:
+        raise CommunicationError(f"unexpected loop reply: {text!r}")
+    return {"state": m.group(1), "len_ms": int(m.group(2)), "pos_ms": int(m.group(3)),
+            "max_ms": int(m.group(4)), "undo_max_ms": int(m.group(5)), "undo": m.group(6),
+            "hq": m.group(7) == "1", "level": int(m.group(8)),
+            "borrowed_memory": m.group(9) == "1"}
 
 
 def _num_pairs(text: str) -> dict[str, int]:
@@ -219,7 +233,8 @@ class PedalTools:
           eq [on|off] | eq hpf <20-200 Hz|0> | eq lpf <2000-20000 Hz|0> |
           eq <band 1-5> <30-10000 Hz> <gain -15..15 dB> [q 0.3-4] (into the preset) |
           cab long <taps 0-4096> (synthetic IR for measurements, 0 = the preset's cab) |
-          tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>] | stock
+          tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>] | stock |
+          loop [rec|play|dub|stop|undo|clear|tap] | loop hq on|off | loop level <0-100>
         ui: ui | uimon on|off | disp <text> | kled <0-15> on|off | power |
           rgb 0xRRGGBB [led] | factory [yes] (resets ALL presets)
         bt: bt | bt send <AT+...> | btaudio
@@ -461,6 +476,37 @@ class PedalTools:
         out["text"] = text
         return out
 
+    def looper(self, action: Literal["rec", "play", "dub", "stop", "undo", "clear", "tap"]
+               | None = None, hq: bool | None = None, level: int | None = None) -> dict:
+        """The looper (console `loop`): mono, after the reverb (records the
+        processed sound), before the master volume. Actions: rec (start the
+        first record; while recording: close the loop and play), play (close
+        a record, end a dub, or restart from stop), dub (overdub from play),
+        stop, undo (the last dub; again = redo; only for loops up to
+        undo_max_ms), clear, tap (the footswitch cycle rec -> play -> dub ->
+        play). hq: record at 44.1 kHz (half the time) instead of 22.05 kHz,
+        only with no loop. level 0..100: loop playback level. No arguments:
+        the state. While a loop exists (borrowed_memory) the delay is off
+        and long IRs play 512 taps: `clear` gives the memory back. The loop
+        runs in real time: record by playing (or `audio_test`), then close."""
+        if action is not None and action not in LOOP_ACTIONS:
+            raise InvalidArgumentError(f"action must be one of {', '.join(LOOP_ACTIONS)}")
+        if level is not None and not 0 <= level <= 100:
+            raise InvalidArgumentError("level must be 0..100")
+        cmds = []
+        if hq is not None:
+            cmds.append(f"loop hq {'on' if hq else 'off'}")
+        if level is not None:
+            cmds.append(f"loop level {level}")
+        if action is not None:
+            cmds.append(f"loop {action}")
+        text = ""
+        for cmd in cmds or ["loop"]:
+            text = self.pedal.check(cmd)
+        out = parse_loop(text)
+        out["text"] = text
+        return out
+
     def tuner(self, on: bool = True) -> dict:
         """Tuner on (with one reading: note, octave, cents, frequency) or off."""
         text = self.pedal.check("tuner on" if on else "tuner off")
@@ -601,7 +647,7 @@ class PedalTools:
 
     TOOLS = ("pedal_status", "pedal_info", "console", "preset", "save_preset", "get_effects",
              "set_amp", "set_cab", "set_comp", "set_gate", "set_mod", "set_reverb", "set_delay",
-             "set_eq", "set_output", "usb_route", "cab_long", "drums", "tuner", "cpu_profile",
+             "set_eq", "set_output", "usb_route", "cab_long", "drums", "looper", "tuner", "cpu_profile",
              "crash_dump", "ir_list", "ir_import", "audio_test", "preset_list", "rename_preset",
              "ir_delete", "settings", "parameter_docs")
 

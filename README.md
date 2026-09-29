@@ -58,6 +58,8 @@ save blink, rhythm tempo flash). On the pedal so far: the light ring of the sele
 - The display names the knob you turn (`GAn`, `CAb`, …) and marks knobs that have not
   picked up yet.
 - Hold **A** and turn LEVEL / RATE / MOD to change drum level, tempo or rhythm live.
+- A looper (the stock has none): ~16 s mono (8 s in `hq`), overdub with one undo,
+  single-switch control ([Looper](#looper)). Tested on the host, not yet on a pedal.
 - Drums are included in the USB recording.
 - Choosing an empty IR slot never silences the pedal.
 - Drum hits start on time (the stock plays each one up to 31 ms early).
@@ -119,6 +121,7 @@ The controls work as on the stock firmware:
 | **hold B, then A long** | tuner (display: flat arrow, note, sharp arrow; knob LEDs off); any switch exits |
 | **hold C, then B long** | rhythm mode (`d<rhythm>`): A / B previous / next rhythm, C tap tempo (two taps or more), D play/stop |
 | **hold A + turn LEVEL / RATE / MOD** | drum level / tempo / rhythm, live. Start turning within 1 s: holding A alone saves. |
+| **hold D, then C long** | looper mode (ours, display `LP-`), see [Looper](#looper); same again to leave |
 
 **Knobs**, left to right: MASTER, LEVEL (reverb), REVERB, MIX, RATE, MOD, CAB, VOL,
 BASS, MID, TREBLE, GAIN, AMP, LEVEL (comp), THRESH, GATE.
@@ -132,6 +135,37 @@ plus drums, and plays computer audio through the pedal. For reamping, `fb200 con
 "usb in"` sends the computer audio through the effects instead of the instrument: play
 a DI track, record the processed result (`usb mix` adds it to the instrument, `usb out`
 is the default).
+
+### Looper
+
+Ours (the stock has none). Enter looper mode: **hold D, then hold C for 1 s**; the
+same again leaves it (rhythm mode and looper mode exclude each other; the tuner chord
+works in both). In looper mode:
+
+| Switch | What it does |
+| --- | --- |
+| **A** (acts when pressed) | empty: record (`rEC`, ring A red). Recording: close the loop and play it (`PLY`, green). Dubbing: back to play. Stopped: play from the start. |
+| **A** (tap while playing) | overdub (`odb`, orange); starts when you release A |
+| **hold A (1 s)** | undo the last overdub (`Und`); again = redo (`rdo`). `no` = nothing to undo |
+| **B** (tap) | stop (`StP`) / play from the start |
+| **hold B (1 s)** | clear the loop (`CLr`) |
+
+Ring A flashes white at each loop start; ring B is blue while a loop exists. The loop
+length is set by the first record (A press to A press). Leaving looper mode keeps the
+loop playing: presets and knobs work as usual, come back to stop or clear it.
+
+- **What it records:** the processed sound (after the reverb, before the master
+  volume), mono. The drums are not recorded. Overdubs mix the new take with the loop;
+  each dubbed pass keeps the older layers at x0.95 (-0.45 dB).
+- **Length:** ~16.4 s at 22.05 kHz (default), ~8.2 s with `loop hq on` (44.1 kHz).
+  Undo works for loops up to half of that (8.2 s / 4.1 s); longer loops dub without
+  undo.
+- **Memory:** RAM is full, so the looper borrows the delay line and the long-IR
+  memory from the first record until **clear**: meanwhile the delay is off and
+  `cab long` works up to 512 taps. After clear both come back, silent.
+- **Console:** `loop` (state), `loop rec|play|dub|stop|undo|clear|tap`,
+  `loop hq on|off` (with no loop), `loop level <0-100>` (loop playback level).
+  MCP: the `looper` tool.
 
 ## Host tools
 
@@ -147,6 +181,7 @@ fb200 console "factory yes"         # factory reset: presets, settings, IR list
 fb200 console "delay on 350"        # bass delay: [on|off] [time] [fb] [mix] [lowcut] [tone]
 fb200 console "eq 1 40 3"           # bass EQ: eq [on|off] | hpf <hz> | lpf <hz> | <band 1-5> <hz> <dB> [q]
 fb200 console prof                  # CPU cycles per chain stage
+fb200 console "loop rec"            # looper: loop [rec|play|dub|stop|undo|clear|tap] | hq on|off | level <n>
 fb200 console "usb in"              # reamping: computer playback into the effects (out: default)
 fb200 update app latest             # open-firmware USB update (or a file)
 fb200 update stock FB200.mr         # write the stock sound data (once)
@@ -203,6 +238,7 @@ claude mcp add fb200 -- fb200 mcp
 | `set_amp`, `set_cab`, `set_comp`, `set_gate`, `set_mod`, `set_reverb` | change fields of one block (app protocol, HID); returns the block read back |
 | `set_delay`, `set_eq` | bass delay; bass EQ (on/off, HPF, LPF, band 1-5 freq/gain/q), returns the EQ state; both go into the edit buffer (`save_preset` stores them) |
 | `set_output`, `drums`, `tuner` | output gain and mute, drum machine, tuner |
+| `looper` | looper state and actions (rec, play, dub, stop, undo, clear, tap), `hq`, playback `level` |
 | `usb_route` | USB playback to the output (`out`), into the chain input (`in`, reamping) or summed (`mix`) |
 | `cpu_profile`, `crash_dump`, `cab_long` | CPU cycles per chain stage (`prof`); the last crash dump; a synthetic N-tap cab IR for measurements (0 = the preset's cab) |
 | `ir_list`, `ir_import`, `ir_delete` | user IR slots; import a WAV into a slot (with the `process_ir` options); delete a slot |

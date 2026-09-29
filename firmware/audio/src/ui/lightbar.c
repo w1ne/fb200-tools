@@ -1,6 +1,7 @@
 #include <string.h>
 #include "ui/lightbar.h"
 #include "ui/rgb.h"
+#include "dsp/looper.h"
 
 /* First LED of each footswitch's ring, A..D: switch s is LEDs 10*s..10*s+9,
  * as the stock addresses them (0x19414; rhythm ring A = switch A at 0x68ca).
@@ -76,6 +77,14 @@ void lightbar_rings(uint32_t now_ms, const lightbar_in_t *in, uint32_t ring[4])
         if (beat >= 60000u) { beat_ms = now_ms; beat = 0; }   /* the next beat */
         if (beat >= 30000u) ring[2] = RED;
         if (in->playing) ring[3] = RED;
+        break;
+    }
+    case LB_LOOPER: {
+        static const uint32_t kLoop[] = {[LOOPER_REC] = RED, [LOOPER_PLAY] = 0x00FF00,
+                                         [LOOPER_DUB] = 0xFF6400, [LOOPER_STOP] = 0};
+        bool playing = in->loop == LOOPER_PLAY || in->loop == LOOPER_DUB;
+        if (in->loop <= LOOPER_STOP) ring[0] = playing && in->loop_top ? 0xFFFFFF : kLoop[in->loop];
+        if (in->loop >= LOOPER_PLAY) ring[1] = 0x0000FF;
         break;
     }
     }

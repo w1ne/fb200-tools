@@ -1,4 +1,5 @@
 #include <string.h>
+#include "cold.h"
 #include "conv2.h"
 
 /* Tail timing (frame f = the 256 samples being filled now, in[cur]):
@@ -165,6 +166,23 @@ void conv2_reset(conv2_t *c)
     conv_reset(&c->head);
     tail_clear(c);                            /* restarts the frame clock */
     if (c->load == CONV2_LOAD_HEAD) head_swap(c);   /* its tail is live, y is 0 */
+}
+
+COLD void conv2_detach_tail(conv2_t *c)
+{
+    if (c->load == CONV2_LOAD_HEAD) head_swap(c);   /* its head is staged: live now */
+    c->load = CONV2_LOAD_IDLE;               /* a load still in its FFTs: dropped */
+    c->parts = 0;
+    c->t = NULL;
+    tail_clear(c);                           /* t NULL: the frame counters only */
+}
+
+COLD void conv2_attach_tail(conv2_t *c, conv2_tail_t *tail)
+{
+    conv2_detach_tail(c);
+    c->t = tail;
+    (void)arm_rfft_fast_init_512_f32(&c->fft);   /* conv2_init(c, NULL) skipped it */
+    tail_clear(c);
 }
 
 int conv2_set_ir(conv2_t *c, const float *ir, size_t taps)

@@ -75,6 +75,30 @@ void drums_set_rhythm(drums_t *d, unsigned r) { d->rhythm = (uint8_t)r; }
 void drums_set_level(drums_t *d, unsigned l) { d->level = (uint8_t)l; }
 void drums_set_tempo(drums_t *d, unsigned bpm) { d->bpm = (uint16_t)bpm; }
 void drums_tap(drums_t *d, uint32_t now_ms) { d->last_tap_ms = now_ms; }
+/* engine: the looper (ui.c's looper mode): the real state machine on a
+ * small memory, attached and detached as the engine does; one audio block
+ * of silence per ui_task pass. `loop` prints the state and the actions. */
+static looper_t loop;
+static uint8_t loop_mem[2][LOOPER_BLK_BYTES * 8];
+static char loop_log[256];
+int engine_loop(int a)
+{
+    static const char *const kName[] = {"tap", "rec", "play", "dub", "stop", "undo", "clear"};
+    if (loop.state == LOOPER_OFF && (a == LOOPER_REC_A || a == LOOPER_TAP))
+        looper_attach(&loop, loop_mem[0], sizeof loop_mem[0], loop_mem[1], sizeof loop_mem[1]);
+    int r = looper_cmd(&loop, a);
+    size_t n = strlen(loop_log);
+    snprintf(loop_log + n, sizeof loop_log - n, "%s%s ", kName[a], r ? "!" : "");
+    return r;
+}
+void engine_loop_poll(void)
+{
+    float l[DSP_BLOCK] = {0}, r[DSP_BLOCK] = {0};
+    looper_process(&loop, l, r, DSP_BLOCK);
+    looper_poll(&loop);
+    if (loop.state == LOOPER_EMPTY) looper_detach(&loop);
+}
+void engine_loop_info(looper_info_t *out) { looper_info(&loop, out); }
 
 /* ---- preset layer over the fake flash ---- */
 void preset_read(unsigned index, preset_t *out)
@@ -166,6 +190,7 @@ static uint32_t unhex(const char *s, uint8_t *out, uint32_t cap)
 int main(void)
 {
     seed();
+    looper_init(&loop);
     ui_init();
     proto_init();
     proto_set_sender(PROTO_USB, tx_usb);
@@ -210,6 +235,11 @@ int main(void)
         } else if (!strcmp(cmd, "tick")) {
             clock_ms += (uint32_t)atoi(a);
             ui_task(clock_ms);
+        } else if (!strcmp(cmd, "loop")) {
+            looper_info_t in;
+            looper_info(&loop, &in);
+            printf("LOOP %d %d %s\n", in.state, in.undo, loop_log);
+            loop_log[0] = 0;
         } else if (!strcmp(cmd, "disp")) {
             printf("DISP %s\n", disp);
         } else if (!strcmp(cmd, "drums")) {
