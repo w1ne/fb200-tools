@@ -116,12 +116,14 @@ class M7Model:
 
     ALU, MUL, LOAD, STORE, FP, FPDIV, BRANCH = range(7)
 
-    def __init__(self, fp_lat: int = 3, mispredict: int = 6, fma_lat: int = 0):
+    def __init__(self, fp_lat: int = 3, mispredict: int = 6, fma_lat: int = 0,
+                 fpmem_pair: bool = True, vldr_lat: int = 2, mem_occ: int = 1):
         from capstone import CS_ARCH_ARM, CS_MODE_MCLASS, CS_MODE_THUMB, Cs
         self.cs = Cs(CS_ARCH_ARM, CS_MODE_THUMB | CS_MODE_MCLASS)
         self.cs.detail = True
         self.fp_lat, self.mispredict = fp_lat, mispredict
         self.fma_lat = fma_lat or fp_lat
+        self.fpmem_pair, self.vldr_lat, self.mem_occ = fpmem_pair, vldr_lat, mem_occ
         self.cache: dict[int, tuple] = {}
         self.reset()
 
@@ -131,6 +133,7 @@ class M7Model:
         self.pending = None           # (addr, fallthrough) of the last branch
         self.bht: dict[int, int] = {}
         self.fpdiv_free = 0
+        self.mem_free = 0             # the load/store unit takes a new access from here
 
     @staticmethod
     def _regs(insn, ids) -> list[str]:
@@ -161,8 +164,10 @@ class M7Model:
         if "pc" in [insn.reg_name(r) for r in wr] or m in ("b", "bl", "bx", "blx", "cbz",
                                                            "cbnz", "tbb", "tbh"):
             cls = self.BRANCH
-        elif m.startswith(("ldr", "ldm", "pop", "vldr", "vldm", "vpop")):
+        elif m.startswith(("ldr", "ldm", "pop")):
             cls, lat = self.LOAD, 2
+        elif m.startswith(("vldr", "vldm", "vpop")):
+            cls, lat = self.LOAD, self.vldr_lat
         elif m.startswith(("str", "stm", "push", "vstr", "vstm", "vpush")):
             cls = self.STORE
         elif m in ("vdiv", "vsqrt"):
@@ -185,7 +190,7 @@ class M7Model:
         elif m in ("mul", "mla", "mls", "smull", "umull", "smlal", "umlal", "smulbb"):
             cls, lat = self.MUL, 2
         rd_regs = rd_regs if m == "vmrs" else self._regs(insn, rd)
-        info = (cls, tuple(rd_regs), tuple(wr_regs), lat, occ, addr + size)
+        info = (cls, tuple(rd_regs), tuple(wr_regs), lat, occ, addr + size, m[0] == "v")
         self.cache[addr] = info
         return info
 
@@ -199,24 +204,28 @@ class M7Model:
             self.paired = True                        # a taken branch ends the pair
             self.bht[baddr] = min(3, ctr + 1) if taken else max(0, ctr - 1)
             self.pending = None
-        cls, rd, wr, lat, occ, fall = self.decode(uc, addr, size)
+        cls, rd, wr, lat, occ, fall, vfp = self.decode(uc, addr, size)
         t = max((self.ready.get(r, 0) for r in rd), default=0)
         p = self.prev
         pair = not self.paired and p is not None and p[4] == 1 and occ == 1 and not (
             (p[0] in (self.LOAD, self.STORE) and cls in (self.LOAD, self.STORE))
             or (p[0] in (self.FP, self.FPDIV) and cls in (self.FP, self.FPDIV))
-            or (p[0] == self.MUL and cls == self.MUL) or p[0] == self.BRANCH)
+            or (p[0] == self.MUL and cls == self.MUL) or p[0] == self.BRANCH
+            or (not self.fpmem_pair and p[5] and vfp))
         issue = max(self.cyc if pair else self.cyc + 1, t)
         if cls == self.FPDIV:
             issue = max(issue, self.fpdiv_free)
             self.fpdiv_free = issue + lat
+        if cls in (self.LOAD, self.STORE):            # TCM wait states: mem_occ per word
+            issue = max(issue, self.mem_free)
+            self.mem_free = issue + self.mem_occ * occ
         self.paired = issue == self.cyc
         self.cyc = issue + occ - 1
         if occ > 1:
             self.paired = True
         for r in wr:
             self.ready[r] = issue + (lat if cls != self.LOAD else lat + occ - 1)
-        self.prev = (cls, rd, wr, lat, occ)
+        self.prev = (cls, rd, wr, lat, occ, vfp)
         if cls == self.BRANCH:
             self.pending = (addr, fall)
 
@@ -360,7 +369,9 @@ def annotate(b: Bench, cross: str, elf: Path, func: str, blocks: int) -> None:
 def do_profile(args, cross: str) -> int:
     import numpy as np
     elf, syms, funcs = build(cross, FW / "src", FW / "build" / "engine_bench" / "new")
-    model = M7Model(fp_lat=args.fp_lat, mispredict=args.mispredict, fma_lat=args.fma_lat)
+    model = M7Model(fp_lat=args.fp_lat, mispredict=args.mispredict, fma_lat=args.fma_lat,
+                    fpmem_pair=not args.no_fp_pair, vldr_lat=args.vldr_lat,
+                    mem_occ=args.mem_occ)
     b = Bench(elf.with_name("bench.bin"), syms, funcs, load_blob(), model)
     setting = next(s for s in SETTINGS if s[0] == args.model)
     setting = (*setting[:7], args.cab, args.taps)
@@ -456,6 +467,11 @@ def main() -> int:
     ap.add_argument("--fp-lat", type=int, default=3)
     ap.add_argument("--fma-lat", type=int, default=0, help="VFMA latency (default: --fp-lat)")
     ap.add_argument("--mispredict", type=int, default=6)
+    ap.add_argument("--no-fp-pair", action="store_true",
+                    help="no dual issue of two FPU instructions (VLDR/VSTR/VMOV with FP ops)")
+    ap.add_argument("--vldr-lat", type=int, default=2)
+    ap.add_argument("--mem-occ", type=int, default=1,
+                    help="cycles a TCM access holds the load/store unit (2: FlexRAM wait states)")
     ap.add_argument("--ocram-miss", type=int, default=0)
     ap.add_argument("--compare", metavar="REV")
     ap.add_argument("--annotate", metavar="FUNC", help="cycles per instruction of FUNC")
