@@ -26,12 +26,11 @@ has no FB200 special cases.
 ## 2. Get the LabWired CLI
 
 The i.MX RT parts, the `peripheral_log` and `fidelity_clean` assertions,
-the NAU88L21 codec part with device logs (PR #1272) and the 14-segment
+the NAU88L21 codec part with device logs (PR #1272), the 14-segment
 display part `segment-display-mux` (PR
-[#1273](https://github.com/w1ne/labwired-core/pull/1273)) are on core
-`main` and are not released yet. The Bluetooth module (`bt201`) needs core
-PR #1274 (branch `feat/bt201-module`) until it is merged. Until the next
-core release, build the CLI from `main`:
+[#1273](https://github.com/w1ne/labwired-core/pull/1273)) and the BT201
+Bluetooth module `bt201` (PR #1274) are on core `main` and are not
+released yet. Until the next core release, build the CLI from `main`:
 
 ```bash
 git clone https://github.com/w1ne/labwired-core.git
