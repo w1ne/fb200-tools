@@ -25,7 +25,7 @@ INSTRUCTIONS = """\
 Tools for the FLAMMA FB200 bass pedal with the open firmware, on USB.
 Effect edits change the live edit buffer of the current preset; `save_preset`
 stores it (also the delay and the EQ). Chain: in -> gate -> comp -> amp -> cab
--> eq -> mod -> delay -> reverb -> master -> USB capture / DAC (USB playback:
+-> eq -> mod -> delay -> reverb -> looper -> master -> USB capture / DAC (USB playback:
 to the DAC, or with `usb_route` "in" into the chain input instead of the
 instrument - reamping). To hear a change, run `audio_test` (default: the
 firmware test signal into the chain input, captured over USB audio) before

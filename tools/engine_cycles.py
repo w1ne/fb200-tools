@@ -371,7 +371,7 @@ def annotate(b: Bench, cross: str, elf: Path, func: str, blocks: int) -> None:
 def do_looper(args, b: Bench) -> int:
     """the looper's cost per engine block: recording, playing, dubbing"""
     import numpy as np
-    rec, play, dub = 1, 2, 3                  # dsp/looper.h LOOPER_REC_A, _PLAY_A, _DUB_A
+    rec, dub = 1, 3                           # dsp/looper.h LOOPER_REC_A (closes), LOOPER_DUB_A
     b.call("bench_loop_setup", 1 if args.hq else 0)
     x = signal(np.random.default_rng(1), 300 + args.blocks)
     k = 0

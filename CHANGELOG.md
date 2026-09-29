@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Looper** (the stock has none): mono, after the reverb, ~16 s at 22.05 kHz
+  (4-bit IMA ADPCM, half-band resampling) or ~8 s with `loop hq on`. Overdub, one
+  undo/redo level for loops up to half the memory, a crossfade at the loop point
+  (no click), faded stop/play/undo/clear. Looper mode on the footswitches: hold D,
+  then C long; A = record / play / overdub (acts when pressed), hold A = undo, B =
+  stop/play, hold B = clear; display and ring feedback. Console `loop`, MCP
+  `looper`. RAM is full, so from the first record until clear the looper borrows the
+  delay line and the long-IR memory: the delay is off and IRs play 512 taps
+  meanwhile ([`docs/PARITY.md`](docs/PARITY.md#m8-looper)). Tested on the host, not
+  yet on a pedal.
+- `tools/engine_cycles.py --looper rec|play|dub [--hq]`: the looper's cost per block.
+
+### Changed
+
+- More engine control code (`engine_cab_long`, `engine_apply_settings`,
+  `engine_profile`, stats) runs from flash (`COLD`): ITCM for the looper.
+
 ## [0.10.0] - 2026-09-29
 
 Faster, cleaner, safer and easier on the battery. Measured on a pedal: the DSP
