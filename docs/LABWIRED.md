@@ -107,6 +107,9 @@ model's `text` log:
 The display runs for 40 M cycles, because the model decides what is visible
 once per 20 ms window (12 M cycles).
 
+Negative control: with `"LAB"` in place of `"LAb"` the gate fails that
+check (`FAIL 4/5`): `B` and `b` are different glyphs.
+
 ### Stock boot gate
 
 The unmodified vendor firmware V1.0.1 runs for 90 M cycles from a cold
