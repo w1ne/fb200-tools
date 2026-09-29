@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fb200-tools"
-version = "0.8.0"
+version = "0.9.1"
 description = "Open-source tools for the FLAMMA FB200 (Mooer-based) bass multi-effects pedal: IR management, firmware inspection, patching and flashing"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,14 +19,18 @@ ir = ["numpy>=1.26"]
 # `fb200 mcp`: MCP server for AI agents (audio_test also needs numpy + sounddevice)
 mcp = ["mcp>=1.0", "hidapi>=0.14"]
 dev = ["pytest>=8", "ruff>=0.6", "numpy>=1.26", "scipy>=1.11", "sounddevice>=0.4.6"]
+# `fb200-app`: desktop app PoC (local web UI + Claude agent over the MCP tools)
+app = ["mcp>=1.0", "hidapi>=0.14", "anthropic>=1.0", "starlette>=0.40", "uvicorn>=0.30",
+       "numpy>=1.26", "sounddevice>=0.4.6"]
 # stock-DSP parity tests (pytest -m stock, tools/nightly_stock.sh; also need fb200-stock.mr)
 stock = ["unicorn>=2.1", "capstone>=5.0", "numpy>=1.26", "pytest-xdist>=3"]
 
 [project.scripts]
 fb200 = "fb200.cli:main"
+fb200-app = "fb200_app.__main__:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/fb200"]
+packages = ["src/fb200", "app/fb200_app"]
 
 [tool.ruff]
 line-length = 100
@@ -34,6 +38,7 @@ target-version = "py310"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src", "app"]
 markers = [
     "hardware: requires a connected FB200 pedal",
     "stock: slow stock-DSP emulation (unicorn + fb200-stock.mr); nightly: pytest -m stock",

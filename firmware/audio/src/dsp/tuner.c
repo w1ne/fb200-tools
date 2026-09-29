@@ -1,4 +1,5 @@
 #include "tuner.h"
+#include "cold.h"
 #include <string.h>
 
 #define LP_A        0.05f
@@ -93,7 +94,7 @@ void tuner_feed(tuner_t *t, const float *x, size_t n)
 }
 
 /* stock 0x3728: YIN over 500 samples, lags MIN_LAG..499 */
-float tuner_yin(tuner_t *t, const float *x, float fs, float *confidence)
+COLD float tuner_yin(tuner_t *t, const float *x, float fs, float *confidence)
 {
     float *acf = t->acf, *d = t->d, *dn = t->dn;
     float e0 = 0.0f;
@@ -226,7 +227,7 @@ static void post(tuner_t *t, float f, float conf)
     }
 }
 
-int tuner_poll(tuner_t *t, tuner_result_t *out)
+COLD int tuner_poll(tuner_t *t, tuner_result_t *out)
 {
     int b = t->full[0] == 1 ? 0 : t->full[1] == 1 ? 1 : -1;
     if (b < 0) return 0;

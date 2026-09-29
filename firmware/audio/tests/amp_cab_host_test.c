@@ -112,6 +112,9 @@ static void test_cab_long(void)
     for (int t = 0; t < 2; t++)
         for (unsigned i = 0; i < taps[t]; i++) ir[t][i] = frand() * expf(-(float)i / (700.0f + 300 * t));
     for (int i = 0; i < LEN; i++) x[i] = y[i] = frand();
+    cab_init(&cab);                          /* no tail (the firmware with long IRs off) */
+    assert(cab_set_ir_len(&cab, ir[0], CAB_TAPS, 1.0f) == 0);
+    assert(cab_set_ir_len(&cab, ir[0], CAB_TAPS + 1, 1.0f) != 0 && cab.conv.t == NULL);
     cab_init_long(&cab, &tail);
     assert(cab_set_ir_len(&cab, ir[0], CAB_MAX_TAPS + 1, 1.0f) != 0);
     const float one = 1.0f;

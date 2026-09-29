@@ -7,8 +7,15 @@
  * read of flash, including a speculative one, hangs the core. Seen on
  * hardware 2026-09-27.)
  *
- * All code runs from ITCM and all data lives in DTCM, so flash can be erased
- * and programmed while the application runs. */
+ * This file runs from ITCM and its data lives in DTCM, so flash can be
+ * erased and programmed while the application runs. The app's cold code runs
+ * from flash (XIP, linker.ld .xiptext, in the app slot's data area):
+ * nothing that runs while the flash is busy may be there, and an app update
+ * erases that very code. So fw_begin(FW_APP) never returns to its caller: it
+ * ends in fw_session(), which runs only RAM code until the reset.
+ * firmware/tools/hot_path.py checks both (flash-write roots).
+ * While the flash is busy, flash_wait_idle (flash_rmw.c) keeps the audio
+ * running (flash_pump below; hot_path.py flash-busy roots). */
 #include <stdint.h>
 #include <string.h>
 #include "fsl_device_registers.h"
@@ -17,6 +24,12 @@
 #include "cdc_log.h"
 #include "selfupdate.h"
 #include "recovery.h"
+#include "console.h"
+#include "flash_rmw.h"
+#ifndef FB200_RECOVERY
+#include "audio/engine.h"
+#include "audio/usb_audio.h"
+#endif
 
 #define FLASH_AHB    0x60000000u
 /* Regions (flash offsets, docs/BOOTLOADER.md §4): the app slot, the
@@ -29,8 +42,8 @@ static const struct { uint32_t base, limit; } regions[] = {
 };
 #define FCB_TAG      0x42464346u   /* "FCFB" */
 #define FCB_LUT      0x80u         /* FCB offset of the lookup table */
-#define SECTOR       4096u
-#define PAGE         256u
+#define SECTOR       FLASH_SECTOR
+#define PAGE         FLASH_PAGE
 #define FW_IDLE_MS   3000u
 
 #define SEQ_WREN     12u
@@ -44,6 +57,9 @@ static uint32_t page_buf[PAGE / 4];
 static uint32_t fw_off, fw_len, fw_crc, fw_rx, page_fill, last_rx_ms;
 static int active;
 static int lut_ready;
+static volatile int xip_gone;   /* an app update has erased the cold code */
+
+int fw_xip_gone(void) { return xip_gone; }
 
 /* Read-command word 0 of FCB sequence 0: opcode0 = command, opcode1 = RADDR
  * with the address width in operand1. */
@@ -108,23 +124,52 @@ static int write_enable(void)
     return read_status(&sr) && (sr & 0x02u);   /* WEL */
 }
 
-static int wait_idle(uint32_t timeout_ms)
+/* ---- flash_rmw.h primitives ---- */
+int flash_cmd_init(void) { return lut_init(); }
+int flash_write_enable(void) { return write_enable(); }
+int flash_cmd_erase(uint32_t sector)
 {
-    uint32_t t0 = tusb_time_millis_api(), sr;
-    do {
-        if (!read_status(&sr)) return 0;
-        if (!(sr & 0x01u)) return 1;           /* WIP clear */
-    } while (tusb_time_millis_api() - t0 < timeout_ms);
-    return 0;
+    return ip(SEQ_ERASE, sector, kFLEXSPI_Command, NULL, 0) == kStatus_Success;
+}
+int flash_cmd_program(uint32_t page, const uint32_t *data)
+{
+    return ip(SEQ_PROGRAM, page, kFLEXSPI_Write, (uint32_t *)data, PAGE) == kStatus_Success;
+}
+int flash_read_status(uint32_t *sr) { return read_status(sr); }
+const void *flash_map(uint32_t offset) { return (const void *)(FLASH_AHB + offset); }
+uint32_t flash_now_ms(void) { return tusb_time_millis_api(); }
+
+/* While the flash is busy (flash_wait_idle): the watchdog and the audio.
+ * engine_pump is RAM code that reads no flash (hot_path.py flash-busy
+ * roots); the drums, whose samples are in flash, keep time silently. Not
+ * tud_task: the USB audio endpoints run in the USB ISR (audiod_xfer_isr),
+ * and a flash write can itself run inside tud_task (HID -> proto_feed). */
+void flash_pump(void)
+{
+    wdog_feed();
+#ifndef FB200_RECOVERY
+    engine_pump();
+#endif
 }
 
-/* Drop stale AHB prefetch/cache lines so reads see the new contents. */
-static void refresh_ahb(uint32_t offset, uint32_t len)
+/* Drop stale AHB prefetch/cache lines so reads see the new contents. While
+ * the flash was busy, a speculative fetch or prefetch of any flash address
+ * (XIP code included) may have cached garbage: reset the FlexSPI AHB
+ * buffers, and drop the whole I-cache and the D-cache lines of the XIP code
+ * as well as of the written range. */
+void flash_refresh(uint32_t offset, uint32_t len)
 {
+#ifndef FB200_RECOVERY
+    extern uint8_t __xiptext_start__[], __xiptext_end__[];
+#endif
     FLEXSPI->MCR0 |= FLEXSPI_MCR0_SWRESET_MASK;
     while (FLEXSPI->MCR0 & FLEXSPI_MCR0_SWRESET_MASK) {
     }
     SCB_InvalidateDCache_by_Addr((void *)(FLASH_AHB + offset), (int32_t)len);
+#ifndef FB200_RECOVERY
+    SCB_InvalidateDCache_by_Addr(__xiptext_start__, (int32_t)(__xiptext_end__ - __xiptext_start__));
+#endif
+    SCB_InvalidateICache();
 }
 
 void fw_info(void)
@@ -168,17 +213,24 @@ void fw_begin(fw_target_t target, uint32_t len, uint32_t crc)
     log_printf("fw: erasing 0x%08x..0x%08x\r\n", (unsigned)(FLASH_AHB + base),
                (unsigned)(FLASH_AHB + end));
     cdc_log_task();
+#ifndef FB200_RECOVERY
+    if (target == FW_APP) xip_gone = 1;   /* from here on: fw_session(), never return */
+#endif
     for (uint32_t a = base; a < end; a += SECTOR) {
         wdog_feed();
         if (!write_enable() || ip(SEQ_ERASE, a, kFLEXSPI_Command, NULL, 0) != kStatus_Success ||
-            !wait_idle(2000u)) {
+            !flash_wait_idle(2000u)) {
             log_printf("fw: erase FAILED at 0x%08x\r\n", (unsigned)a);
+            flash_refresh(base, end - base);
+#ifndef FB200_RECOVERY
+            if (xip_gone) fw_session();
+#endif
             return;
         }
         tud_task();
         cdc_log_task();
     }
-    refresh_ahb(base, end - base);
+    flash_refresh(base, end - base);
     fw_off = base;
     fw_len = len;
     fw_crc = crc;
@@ -187,7 +239,49 @@ void fw_begin(fw_target_t target, uint32_t len, uint32_t crc)
     last_rx_ms = tusb_time_millis_api();
     active = 1;
     log_printf("fw ready\r\n");
+#ifndef FB200_RECOVERY
+    if (xip_gone) fw_session();
+#endif
 }
+
+#ifndef FB200_RECOVERY
+/* The rest of an app update: the stream, then `reset`. Runs only RAM code
+ * (hot_path.py): the main loop's cold tasks are gone with the old slot, and
+ * the new slot's cold code belongs to the new app. The audio keeps running
+ * (engine_task and usb_audio_task are ITCM code). HID reports are dropped
+ * (usb_hid.c). */
+__attribute__((noreturn)) void fw_session(void)
+{
+    static char line[16];
+    unsigned n = 0;
+    for (;;) {
+        wdog_feed();
+        tud_task();
+        if (active) {
+            fw_rx_task();
+        } else {
+            while (tud_cdc_available()) {
+                char c = (char)tud_cdc_read_char();
+                if (c != '\r' && c != '\n') {
+                    if (n < sizeof line - 1u) line[n++] = c;
+                    continue;
+                }
+                line[n] = 0;
+                if ((n == 5u && memcmp(line, "reset", 5) == 0) || (n == 6u && memcmp(line, "reboot", 6) == 0)) {
+                    log_printf("rebooting\r\n");
+                    cdc_log_task();
+                    console_reboot();
+                }
+                if (n) log_printf("fw: app update in progress: only `reset` works now\r\n");
+                n = 0;
+            }
+        }
+        cdc_log_task();
+        usb_audio_task();
+        engine_task();
+    }
+}
+#endif
 
 int fw_active(void) { return active; }
 
@@ -198,7 +292,7 @@ static int program_page(void)
     page_fill = 0;
     if (!write_enable() ||
         ip(SEQ_PROGRAM, off, kFLEXSPI_Write, page_buf, PAGE) != kStatus_Success ||
-        !wait_idle(100u)) {
+        !flash_wait_idle(100u)) {
         log_printf("fw: program FAILED at 0x%08x\r\n", (unsigned)off);
         return 0;
     }
@@ -208,7 +302,7 @@ static int program_page(void)
 static void finish(void)
 {
     active = 0;
-    refresh_ahb(fw_off, fw_len);
+    flash_refresh(fw_off, fw_len);
     uint32_t got = crc32_ieee((const uint8_t *)(FLASH_AHB + fw_off), fw_len);
     log_printf("fw done crc=%08x %s\r\n", (unsigned)got, got == fw_crc ? "ok" : "BAD");
 }
@@ -236,38 +330,17 @@ void fw_rx_task(void)
     }
 }
 
-/* Data store: rewrite part of one 4 KB sector (read-modify-write, as the
- * stock does) inside the preset/settings/IR region F:0x71000..0xA1800:
- * presets, settings, rhythm, BT name, update flag, IR names/flags and the
- * 9 user IR slots at 0x89000 + slot * 0x2800 (docs/UI_AND_STORAGE.md §5,
- * docs/PROTOCOL.md). Verifies by reading back. 0 on success. */
-#define STORE_BASE  0x00071000u
-#define STORE_LIMIT 0x000A1800u
-static uint32_t sector_buf[SECTOR / 4];
+/* Data store: rewrite part of one 4 KB sector (flash_rmw.c) inside the
+ * preset/settings/IR region F:0x71000..0xA1800: presets, settings, rhythm,
+ * BT name, update flag, IR names/flags and the 9 user IR slots at 0x89000 +
+ * slot * 0x2800 (docs/UI_AND_STORAGE.md §5, docs/PROTOCOL.md). Not during an
+ * update stream or after an app update erased the cold code. 0 on success. */
+static int store_blocked;
+void flash_store_block(int on) { store_blocked = on; }
 
 int flash_store(uint32_t offset, const void *data, uint32_t len)
 {
-    uint32_t sector = offset & ~(SECTOR - 1u);
-    /* Never the vendor bootloader's update-flag sector (F:0x86000): the
-     * A+D recovery depends on it. */
-    if (sector == 0x00086000u) return -1;
-    if (offset < STORE_BASE || offset + len > STORE_LIMIT || len == 0u ||
-        offset + len > sector + SECTOR || active) {
-        return -1;
-    }
-    memcpy(sector_buf, (const void *)(FLASH_AHB + sector), SECTOR);
-    memcpy((uint8_t *)sector_buf + (offset - sector), data, len);
-    if (!lut_init() || !write_enable() ||
-        ip(SEQ_ERASE, sector, kFLEXSPI_Command, NULL, 0) != kStatus_Success || !wait_idle(2000u)) {
-        return -2;
-    }
-    for (uint32_t p = 0; p < SECTOR; p += PAGE) {
-        if (!write_enable() ||
-            ip(SEQ_PROGRAM, sector + p, kFLEXSPI_Write, sector_buf + p / 4u, PAGE) != kStatus_Success ||
-            !wait_idle(100u)) {
-            return -3;
-        }
-    }
-    refresh_ahb(sector, SECTOR);
-    return memcmp((const void *)(FLASH_AHB + offset), data, len) == 0 ? 0 : -4;
+    if (active || xip_gone) return -1;
+    if (store_blocked) return -5;   /* battery critical: no erase at brown-out risk */
+    return flash_rmw(offset, data, len);
 }

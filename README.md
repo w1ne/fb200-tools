@@ -25,7 +25,7 @@ Its firmware is closed and frozen. This project aims to:
   See [`docs/PARITY.md`](docs/PARITY.md) and
   [`docs/ROADMAP_RESEARCH.md`](docs/ROADMAP_RESEARCH.md).
 
-## Status (v0.8)
+## Status (v0.9)
 
 Verified on a real pedal:
 
@@ -37,6 +37,7 @@ Verified on a real pedal:
 | **Drums & tuner** | Stock drum machine (40 rhythms, played from the samples already in your pedal's flash) and stock YIN tuner |
 | **USB** | Class-compliant audio interface (record and play back, 44.1 kHz). The stock USB identity and control protocol, so `fb200 info` and IR import work. |
 | **Bluetooth** | Module link. The Bluetooth audio input runs; playback from a phone is not yet checked by ear. The app protocol is implemented and tested on the host, but not yet with the Flamma Manager phone app. |
+| **Our additions** | Bass delay up to 1 s, bass EQ (HPF, 5 bands, LPF; saved in the preset), cab IRs up to 4096 taps (`cab long` for tests), reamping over USB (`usb in`). Measured on the pedal: echo times, EQ response, CPU (engine 14% average with a 4096-tap IR). |
 | **Power** | Battery level, charger sense, status LED |
 | **Updates & recovery** | USB updates with no button combo. A resident recovery keeps the USB console after a crash or hang. Crash dumps survive a reset. |
 
@@ -50,7 +51,8 @@ save blink, rhythm tempo flash). On the pedal so far: the light ring of the sele
 - A bass delay (the stock has none: its delay settings do nothing): 20-1000 ms, feedback,
   mix, low cut on the repeats, tone. Stock presets keep their sound
   ([`docs/PARITY.md`](docs/PARITY.md#m4-bass-delay)).
-- A bass EQ (the stock has none): HPF, 5 bands, LPF, after the cab; console only for now
+- A bass EQ (the stock has none): HPF, 5 bands, LPF, after the cab; set from the console
+  or MCP and stored in the preset (stock presets keep it off)
   ([`docs/PARITY.md`](docs/PARITY.md#m4-bass-eq)).
 - Updates over USB without holding A+D.
 - The display names the knob you turn (`GAn`, `CAb`, …) and marks knobs that have not
@@ -194,11 +196,16 @@ claude mcp add fb200 -- fb200 mcp
 | `pedal_status`, `pedal_info` | firmware, engine stats, current preset, USB audio state; versions |
 | `console` | run one console command (the tool description lists the command set) |
 | `preset`, `save_preset` | show or select preset 0..39; store the edit buffer |
+| `preset_list`, `rename_preset` | the 40 preset names; rename and store a preset |
+| `parameter_docs` | every field's range, unit and sound meaning, and tone recipes (also the resource `fb200://parameter-docs`) |
+| `settings` | global settings: input gain, global cab switch, BT audio, light ring |
 | `get_effects` | all effect blocks of the edit buffer |
 | `set_amp`, `set_cab`, `set_comp`, `set_gate`, `set_mod`, `set_reverb` | change fields of one block (app protocol, HID); returns the block read back |
-| `set_delay`, `set_output`, `drums`, `tuner` | bass delay, output gain and mute, drum machine, tuner |
-| `cpu_profile`, `crash_dump` | CPU cycles per chain stage (`prof`); the last crash dump |
-| `ir_list`, `ir_import` | user IR slots; import a WAV into a slot |
+| `set_delay`, `set_eq` | bass delay; bass EQ (on/off, HPF, LPF, band 1-5 freq/gain/q), returns the EQ state; both go into the edit buffer (`save_preset` stores them) |
+| `set_output`, `drums`, `tuner` | output gain and mute, drum machine, tuner |
+| `usb_route` | USB playback to the output (`out`), into the chain input (`in`, reamping) or summed (`mix`) |
+| `cpu_profile`, `crash_dump`, `cab_long` | CPU cycles per chain stage (`prof`); the last crash dump; a synthetic N-tap cab IR for measurements (0 = the preset's cab) |
+| `ir_list`, `ir_import`, `ir_delete` | user IR slots; import a WAV into a slot (with the `process_ir` options); delete a slot |
 | `audio_test` | play a test signal, capture the USB audio, return RMS, peak, THD (sine) or an octave-band response; can save a WAV |
 
 `audio_test` uses the firmware test generator (`tin`, into the chain input) by default,
@@ -208,6 +215,9 @@ test and restores the routing after, and returns the round-trip `delay_ms`.
 
 The tools do not flash firmware (use `fb200 update`). One lock serializes all access to
 the pedal. Edits change the live preset until `save_preset`.
+
+A desktop app (PoC) with editors and an assistant chat on top of these tools:
+[`app/README.md`](app/README.md) (`pip install '.[app]'`, `fb200-app`).
 
 ## Documentation
 

@@ -168,6 +168,7 @@ sector through FlexSPI IP commands.
 | 0x61000 | 0x10000 | ours: stock sound data (`FBSD`, written once from the user's `.mr`) |
 | 0x71000 + i x 0x200 | 0x100 | 40 presets (10 banks x 4) - **verified** ("Fat Bass", "Clean Pick") |
 | 0x80000 | 0x31 | global settings - **verified** ("B1", name, preset, BT, volume) |
+| 0x80100 | 4 | ours: power settings (`PW`, idle minutes, LED level; [POWER.md](POWER.md)) |
 | 0x81000 | 6 | rhythm settings (tempo 110?) |
 | 0x82000 | 0x20 | magic "FB200" - **verified** |
 | 0x83000 | 20 | BLE name - **verified** |
@@ -183,7 +184,8 @@ Preset record (u16 LE fields): name[20] @0x00; module 0x80 enable/type
 0x14/0x16, params 0x18-0x1e; amp 0x2c/0x2e, params 0x30-0x3a; cab
 0x44/0x46, params 0x48-0x4e; module 0x81 0x5c-0x60; mod 0x74/0x76, params
 0x78-0x80; module 0x85 (delay: en, type, mix, feedback, time ms) 0x8c-0x94, our delay marker and params 0x96-0x9a (PARITY.md M4); reverb 0xa4/0xa6, params
-0xa8-0xae; effect order[8] @0xbc.
+0xa8-0xae; effect order[8] @0xbc; our EQ marker and settings 0xc4-0xdd
+(PARITY.md M4); 0xde-0xff unused.
 
 Global settings: +0x00 "B1", +0x02 BLE name, +0x16 current preset, +0x17 BT
 on, +0x18 master volume, +0x1f stomp mode, +0x20 rhythm mode, +0x21 slot,

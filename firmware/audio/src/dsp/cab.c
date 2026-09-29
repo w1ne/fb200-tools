@@ -1,4 +1,5 @@
 #include <string.h>
+#include "cold.h"
 #include "cab.h"
 #include "arm_const_structs.h"
 #include "stock_data.h"
@@ -10,7 +11,12 @@ void cab_init_long(cab_t *c, conv2_tail_t *tail)
     c->scale = 1.0f;
 }
 
-void cab_init(cab_t *c) { cab_init_long(c, NULL); }
+void cab_init(cab_t *c)
+{
+    memset(c, 0, sizeof *c);
+    (void)conv2_init_head(&c->conv);         /* unit impulse; no 512-point FFT linked */
+    c->scale = 1.0f;
+}
 
 int cab_set_ir_len(cab_t *c, const float *ir, unsigned taps, float gain)
 {
@@ -41,7 +47,7 @@ int cab_set_model(cab_t *c, int cab)
 #define HANN_C2 0.999924848688876
 #define HANN_S2 0.012259566653371795
 
-float cab_user_ir_gain(const float *ir)
+COLD float cab_user_ir_gain(const float *ir)
 {
     float buf[2 * 512], mag[85];
     /* stock window table: 0.5 - 0.5 cos(2 pi m / 1025) rounded to 6 decimals;

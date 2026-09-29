@@ -9,7 +9,7 @@
 #include "dsp/delay.h"
 #include "preset/preset.h"
 
-#define LSB (1.0f / DELAY_SCALE)
+#define LSB (1.0f / 4096.0f)                /* the line's step for |v| in [1, 2) */
 
 static delay_t dl;
 static int16_t line[DELAY_LEN];
@@ -49,13 +49,14 @@ static void test_impulse(float fs)
            fs, D, ms, x[D], r2, r3);
     free(x);
 
-    /* 20 ms and 1000 ms: the ends of the range */
+    /* DELAY_MS_MIN and DELAY_MS_MAX: the ends of the range; the line holds the
+     * longest at DELAY_FS_MAX */
     const unsigned ends[2] = {DELAY_MS_MIN, DELAY_MS_MAX};
     for (int k = 0; k < 2; k++) {
         unsigned d = (unsigned)(ends[k] * fs / 1000.0f + 0.5f);
         float *y = calloc(d + 64, sizeof *y);
         delay_init(&dl, fs, line);
-        delay_set_params(&dl, ends[k] + (k ? 500u : 0u), 0, 100, 0, 100);   /* 1500 clamps */
+        delay_set_params(&dl, ends[k] + (k ? 500u : 0u), 0, 100, 0, 100);   /* max + 500 clamps */
         y[0] = 1.0f;
         run(y, d + 64);
         for (unsigned i = 1; i < d + 64; i++) assert(i == d ? fabsf(y[i] - 1.0f) <= LSB : y[i] == 0.0f);
@@ -133,15 +134,15 @@ static void test_glide(float fs)
     delay_set_params(&dl, 100, 0, 100, 0, 100);
     float blk[DSP_BLOCK];
     for (int b = 0; b < 50; b++) { for (int i = 0; i < DSP_BLOCK; i++) blk[i] = 0.1f; delay_process(&dl, blk, DSP_BLOCK); }
-    delay_set_params(&dl, 400, 0, 100, 0, 100);
+    delay_set_params(&dl, 300, 0, 100, 0, 100);
     assert(dl.d != dl.d_t);                            /* not a jump */
     for (unsigned b = 0; b < (unsigned)fs / DSP_BLOCK; b++) {
         memset(blk, 0, sizeof blk);
         delay_process(&dl, blk, DSP_BLOCK);
         for (int i = 0; i < DSP_BLOCK; i++) assert(isfinite(blk[i]) && fabsf(blk[i]) <= 0.1f + LSB);
     }
-    assert(dl.d == (float)(unsigned)(0.4f * fs + 0.5f));
-    printf("glide %.0f Hz: 100 -> 400 ms settles on %u samples\n", fs, (unsigned)dl.d);
+    assert(dl.d == (float)(unsigned)(0.3f * fs + 0.5f));
+    printf("glide %.0f Hz: 100 -> 300 ms settles on %u samples\n", fs, (unsigned)dl.d);
 }
 
 /* Stock presets never play the delay: every factory preset has the stock
@@ -179,11 +180,71 @@ static int check_presets(void)
     return on != 0;
 }
 
+/* The line's 16-bit float (delay.h): exact round trips, monotonic codes,
+ * relative error <= 2^-13 from 2^-5 up, truncation below, saturation. */
+static void test_format(void)
+{
+    assert(delay_enc(0.0f) == 0 && delay_dec(0) == 0.0f);
+    const float exact[] = {1.0f, 0.5f, -0.5f, 2.0f, 0.03125f, 3.0f, 1.0f / 131072.0f, -1.5f};
+    for (unsigned i = 0; i < sizeof exact / sizeof exact[0]; i++)
+        assert(delay_dec(delay_enc(exact[i])) == exact[i]);
+    for (uint32_t c = 1; c < 0x8000u; c++) {           /* every code: decode, encode back */
+        float v = delay_dec((uint16_t)c);
+        assert(v > delay_dec((uint16_t)(c - 1)));
+        assert(delay_enc(v) == c && delay_enc(-v) == (c | 0x8000u));
+    }
+    double worst = 0;
+    for (float v = 0.03125f; v < 3.99f; v *= 1.0001234f) {
+        double e = fabs((double)delay_dec(delay_enc(v)) - v) / v;
+        if (e > worst) worst = e;
+    }
+    assert(worst <= 1.0 / 8192.0 + 1e-9);
+    for (float v = 1e-7f; v < 0.03125f; v *= 1.01f) {
+        float q = delay_dec(delay_enc(v));
+        assert(q <= v && v - q < 1.0f / 131072.0f);    /* truncated: a tail dies out */
+    }
+    assert(delay_dec(delay_enc(100.0f)) > 3.99f && delay_dec(delay_enc(-100.0f)) < -3.99f);
+    assert(delay_enc(1.0f / 262144.0f) == 0);
+    printf("format: every code round-trips, relative error <= %.2e (2^-13)\n", worst);
+}
+
+/* First repeat of a 200 Hz sine vs the dry sine: the line's error re the
+ * signal, and the v0.9.1 line (int16 x 16384, truncated) as the control. */
+static void test_repeat_quality(void)
+{
+    const float fs = 44100.0f;
+    const unsigned D = 4410, N = 3 * D;
+    float *x = calloc(N, sizeof *x), *s = calloc(N, sizeof *s);
+    const int levels[3] = {-6, -20, -40};
+    for (int k = 0; k < 3; k++) {
+        double a = pow(10.0, levels[k] / 20.0);
+        for (unsigned i = 0; i < N; i++) s[i] = x[i] = i < D ? (float)(a * sin(2 * M_PI * 200.0 * i / fs)) : 0.0f;
+        delay_init(&dl, fs, line);
+        delay_set_params(&dl, 100, 0, 100, 0, 100);    /* fb 0, mix 1, filters off */
+        run(x, N);
+        double sig = 0, err = 0, old = 0;
+        for (unsigned i = 0; i < D; i++) {
+            double want = s[i], got = x[D + i];
+            double o = (double)(int16_t)(s[i] * 16384.0f) / 16384.0;
+            sig += want * want; err += (got - want) * (got - want); old += (o - want) * (o - want);
+        }
+        double db = 10 * log10(err / sig), odb = 10 * log10(old / sig);
+        printf("repeat %d dBFS 200 Hz: line error %.1f dB re the signal (v0.9.1 int16 line %.1f dB)\n",
+               levels[k], db, odb);
+        assert(db < -60.0);                           /* -40 dBFS: the truncated linear range */
+        assert(db < odb - (levels[k] <= -20 ? 10.0 : 0.0));
+    }
+    free(x);
+    free(s);
+}
+
 int main(int argc, char **argv)
 {
     if (argc > 1 && strcmp(argv[1], "--presets") == 0) return check_presets();
     test_preset_rule();
-    const float rates[2] = {44100.0f, 48000.0f};
+    test_format();
+    test_repeat_quality();
+    const float rates[2] = {(float)DELAY_FS_MAX, 32000.0f};   /* the pedal runs 44.1 kHz */
     for (int k = 0; k < 2; k++) {
         test_impulse(rates[k]);
         test_lowcut(rates[k]);

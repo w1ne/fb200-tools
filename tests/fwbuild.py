@@ -9,10 +9,10 @@ from pathlib import Path
 
 
 @functools.cache
-def build(fw: Path) -> Path:
+def build(fw: Path, variant: str = "app") -> Path:
     """Returns the build directory (BUILD=) this process built into."""
     out = Path(tempfile.mkdtemp(prefix="fwbuild_"))
     subprocess.run(["make", f"BUILD={out}", "deps"], cwd=fw, check=True)
-    subprocess.run(["make", f"BUILD={out}", f"-j{os.cpu_count() or 1}", "build", "layout"],
-                    cwd=fw, check=True)
+    subprocess.run(["make", f"BUILD={out}", f"VARIANT={variant}", f"-j{os.cpu_count() or 1}",
+                    "build", "layout"], cwd=fw, check=True)
     return out

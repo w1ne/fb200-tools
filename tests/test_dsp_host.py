@@ -114,8 +114,8 @@ def test_eq_suite():
     no clicks on a change, stable at the extremes."""
     out = _build_dir() / "eq_host_test"
     subprocess.run(
-        # -ffp-contract=off: the pedal's biquad loop (CMSIS FilteringFunctions)
-        # has no FMA; the same numbers on every host (clang on arm64 fuses)
+        # -ffp-contract=off: the same numbers on every host (clang on arm64
+        # fuses); the EQ runs in double, FMA or not is far below its tolerances
         ["cc", "-O2", "-ffp-contract=off", "-Wall", "-Wextra", "-Werror", "-I", str(FW / "src"),
          str(FW / "tests" / "eq_host_test.c"), str(FW / "src" / "dsp" / "eq.c"),
          *cmsis_dsp_args(), "-lm", "-o", str(out)],
@@ -144,17 +144,21 @@ def test_fx_suite():
 
 
 def test_engine_drift_suite():
+    """Host playback resampler (audio/drift.c drift_rs): no repeated or dropped
+    frame at +-500 ppm, no step in a sine, fallbacks; the `usb in|mix` input."""
     out = _build_dir() / "engine_host_test"
     subprocess.run(
-        ["cc", "-O2", "-Wall", "-Wextra", "-I", str(FW / "src"),
+        ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-I", str(FW / "src"),
          str(FW / "tests" / "engine_host_test.c"),
-         str(FW / "src" / "audio" / "drift.c"), "-o", str(out)],
+         str(FW / "src" / "audio" / "drift.c"), "-lm", "-o", str(out)],
         check=True,
     )
     result = subprocess.run([str(out)], capture_output=True, text=True,
                             check=False)
     assert result.returncode == 0, result.stdout + result.stderr
+    print(result.stdout)
     assert "drift host tests OK" in result.stdout
+    assert "drift_rs  +500 ppm: inserts 0 drops 0" in result.stdout
 
 
 def test_led_pattern_suite():
@@ -168,3 +172,32 @@ def test_led_pattern_suite():
                             check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "led host tests OK" in result.stdout
+
+
+def test_memfuncs_suite():
+    """The firmware's memcpy/memset/memmove (word fast paths) vs byte-wise
+    references: all alignments, lengths 0..80, overlaps."""
+    out = _build_dir() / "memfuncs_host_test"
+    subprocess.run(
+        ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-fno-builtin", "-I", str(FW / "src"),
+         str(FW / "tests" / "memfuncs_host_test.c"), "-o", str(out)],
+        check=True,
+    )
+    result = subprocess.run([str(out)], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "memfuncs host tests OK" in result.stdout
+
+
+def test_outq_suite():
+    """16-bit output stage (dsp/outq.h): rounding beats the v0.9.1 truncation on
+    a low-level sine, dither moves the harmonics into noise, 0 stays 0."""
+    out = _build_dir() / "outq_host_test"
+    subprocess.run(
+        ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-I", str(FW / "src"),
+         str(FW / "tests" / "outq_host_test.c"), "-lm", "-o", str(out)],
+        check=True,
+    )
+    result = subprocess.run([str(out)], capture_output=True, text=True, check=False)
+    print(result.stdout)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "outq host tests OK" in result.stdout
