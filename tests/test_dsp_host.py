@@ -113,6 +113,27 @@ def test_amp_cab_suite():
     assert "tone_df1 bit-identical to CMSIS df1" in result.stdout
 
 
+def test_whole_blocks_suite():
+    """SAI rings (audio/sai_ring.h): the engine gets whole 32-frame blocks
+    only, through odd input chunks, overruns and main-loop stalls; the DAC
+    stays on the ADC block grid, the latency comes back after a stall, and
+    the cab runs one FFT step per block (no re-phase)."""
+    out = _build_dir() / "blocks_host_test"
+    mods = [FW / "src" / "dsp" / f for f in ("cab.c", "conv2.c", "conv.c")] + STOCK_SRC
+    subprocess.run(
+        ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-I", str(FW / "src"),
+         str(FW / "tests" / "blocks_host_test.c"), *map(str, mods), *cmsis_dsp_args(),
+         "-lm", "-o", str(out)],
+        check=True,
+    )
+    result = subprocess.run([str(out)], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    print(result.stdout)
+    assert "blocks host tests OK" in result.stdout
+    for name in ("edma blocks", "odd chunks", "tiny chunks"):
+        assert f"{name}: " in result.stdout
+
+
 def test_eq_suite():
     """Our bass EQ (dsp/eq.c): response vs the RBJ cookbook, flat = bit-exact,
     no clicks on a change, stable at the extremes."""

@@ -49,10 +49,6 @@
 #define RING_FRAMES 512
 #define MAX_RING_FILL (RING_FRAMES - ENGINE_FRAMES)
 #define FAULT_MUTE_MS 100u
-/* DAC latency bound. At start-up the RX ring overflows before the engine
- * runs; draining that backlog filled the TX ring (511 frames = 10.6 ms) and,
- * with equal rates, it stayed full. Above the target, skip a block. */
-#define TX_TARGET_FILL (2u * SAI_BLOCK_FRAMES + ENGINE_FRAMES)
 
 volatile float g_meter_peak[2];
 
@@ -83,6 +79,7 @@ static cab_t s_cab __attribute__((section(".ocram")));
 #define ENGINE_LONG_IR (ENGINE_IR_TAPS > CAB_TAPS)
 _Static_assert(ENGINE_IR_TAPS >= CAB_TAPS && ENGINE_IR_TAPS <= CAB_MAX_TAPS, "ENGINE_IR_TAPS");
 _Static_assert(AUDIO_FS <= DELAY_FS_MAX, "the delay line is sized for DELAY_FS_MAX");
+_Static_assert(SAI_BLOCK_FRAMES == ENGINE_FRAMES, "sai_pull_block moves one engine block");
 #if ENGINE_LONG_IR
 /* long IRs (M5): 96 kB, in the low DTCM (linker.ld .dtcm_lo) */
 static conv2_tail_t s_cab_tail __attribute__((section(".dtcm_lo")));
@@ -430,10 +427,10 @@ void engine_task(void)
 
     check_sai_faults();
 
-    size_t n = sai_pull(in, ENGINE_FRAMES);
-    if (n == 0) {
-        return;
-    }
+    /* Whole blocks only (audio/sai_ring.h): the chain always runs n =
+     * DSP_BLOCK. No block yet: the main loop comes back. */
+    if (!sai_pull_block(in)) return;
+    const size_t n = ENGINE_FRAMES;
     for (size_t i = 0; i < n; i++) {
         s_block.data[0][i] = (float)in[i * 2 + 0] * (1.0f / 32768.0f);
         s_block.data[1][i] = (float)in[i * 2 + 1] * (1.0f / 32768.0f);
@@ -561,10 +558,8 @@ void engine_task(void)
     if (dt > s_cyc_max) s_cyc_max = dt;
     if (s_drop_tx_blocks != 0) {
         s_drop_tx_blocks--; /* `x` underrun check: skip the refill */
-    } else if (sai_tx_fill() > TX_TARGET_FILL) {
+    } else if (!sai_push_block(out, SAI_TX_TARGET_FILL)) {
         s_stats.latency_skips++;
-    } else {
-        (void)sai_push(out, n);
     }
 }
 
