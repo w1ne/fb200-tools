@@ -76,7 +76,7 @@ Expected result:
 ```
 PASS  4/4 checks · smoke · 2000000 steps · 0.27s
 PASS  24/24 checks · stock-boot · 90000000 steps · 15.26s
-PASS  20/20 checks · stock-knobs · 3400000000 steps · GATE_TIME
+PASS  20/20 checks · stock-knobs · 3400000000 steps · 2058.64s
 PASS  11/11 checks · stock-first-boot · 6800000000 steps · 3669.59s
 ```
 
@@ -166,7 +166,8 @@ IN9 battery) stay fixed levels.
 The stock firmware scans the knobs only from its main loop. On a blank
 flash the main loop starts at about 3.22 G cycles (factory reset, then a
 fixed 3 s delay, see the first-boot timeline below), so this gate runs
-3.4 G cycles. It took about GATE_MIN min on an idle Mac.
+3.4 G cycles. It took 34 min of wall time (Apple M4, three such runs in parallel); on a
+busy Mac, 79 min. It is not in the default loop.
 
 **Where the firmware keeps the knob values, and how this was found.**
 
@@ -206,7 +207,14 @@ turns MASTER (k15) from 83 % to 20 %; at 3.40 G its slot must hold
 
 Negative controls (same 3.4 G-cycle run):
 
-NEG_RESULTS
+| Change | Result |
+|--------|--------|
+| no stimulus (MASTER stays at 83 %) | `FAIL 19/20`: only MASTER's slot fails, `expected 0xccc, got 0x2b8` |
+| no muxes and no knobs: ADC1 IN3/IN4 fixed at 1650 mV, as before this change | `FAIL 4/20`: all 16 slots fail, each `got 0x7ff` (mid-scale) |
+
+The stock firmware does not care what drives IN3/IN4: with fixed levels it
+stores one mid-scale value in every slot. Only the per-knob positions,
+routed by the select lines, give each slot its own value.
 
 ### Stock first-boot gate (long)
 
