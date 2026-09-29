@@ -16,17 +16,25 @@ void drift_play_to_input(float *l, float *r, const int16_t *play, size_t n,
 
 /* ---- adaptive resampler (drift.h) ---- */
 
-/* PI gains on the fill error (frames): 30 ppm per frame, and the integral
- * removes the offset. With fs: s^2 + fs KP s + fs KI, w0 0.8 rad/s, damping
- * 0.8, settled in ~5 s; well below the fill low-pass (0.2 s = 5 rad/s),
- * which smooths the 1 ms USB packet sawtooth (+-20 frames) to < 1 frame. */
-#define RS_KP 3.0e-5f
-#define RS_KI 1.5e-5f
-#define RS_LP_S 0.2f
+/* The loop must be slow. The raw fill is a sawtooth of +-20 frames (1 ms USB
+ * packets against 32-frame blocks) whose sampled pattern has components down
+ * to a few Hz; any of it in `ratio` is a phase modulation of the playback.
+ * v1 (0.2 s low-pass, 30 ppm per frame) had it: on the pedal a reamped 1 kHz
+ * sine read THD+N -37 dB in the first 1.5 s after the stream start, and the
+ * phase wandered +-0.16 rad after that. Now: the fill through two one-pole
+ * low-passes (1 s each: the sawtooth at >= 3 Hz is down > 50 dB), a PI loop
+ * with 10 ppm per frame (crossover 0.44 rad/s) and the integral zero at
+ * 0.11 rad/s. A 100 ppm clock error moves the fill by < 10 frames; up to
+ * +-200 ppm nothing repeats even at the start (host model). At the start the
+ * filters take the fill as it is: no initial correction. */
+#define RS_KP 1.0e-5f
+#define RS_KI 1.1e-6f
+#define RS_LP_S 1.0f
 
 void drift_rs_init(drift_rs_t *rs, float fs)
 {
-    *rs = (drift_rs_t){.ratio = 1.0f, .fs = fs, .fill_lp = (float)DRIFT_RS_TARGET};
+    *rs = (drift_rs_t){.ratio = 1.0f, .fs = fs, .fill_lp = (float)DRIFT_RS_TARGET,
+                       .fill_lp2 = (float)DRIFT_RS_TARGET};
 }
 
 static float clamp_ppm(float r)
@@ -51,7 +59,7 @@ size_t drift_rs_pull(drift_rs_t *rs, const int16_t *ring, uint32_t cap, uint32_t
         *tail = (*tail + skip) % cap;
         *drops += skip;
         fill = DRIFT_RS_TARGET;
-        rs->fill_lp = (float)fill;
+        rs->fill_lp = rs->fill_lp2 = (float)fill;
     }
     if (!rs->running) {
         if (fill < DRIFT_RS_TARGET) {             /* prefill: silence */
@@ -62,11 +70,13 @@ size_t drift_rs_pull(drift_rs_t *rs, const int16_t *ring, uint32_t cap, uint32_t
         drift_rs_init(rs, fs);
         rs->running = 1;
         rs->frac = 1.0f;                          /* the first frame comes in at once */
+        rs->fill_lp = rs->fill_lp2 = (float)fill; /* start from the fill as it is */
     }
     /* steer the ratio: more fill than the target -> read faster */
     const float dt = (float)frames / rs->fs;
     rs->fill_lp += (dt / RS_LP_S) * ((float)fill - rs->fill_lp);
-    float e = rs->fill_lp - (float)DRIFT_RS_TARGET;
+    rs->fill_lp2 += (dt / RS_LP_S) * (rs->fill_lp - rs->fill_lp2);
+    float e = rs->fill_lp2 - (float)DRIFT_RS_TARGET;
     rs->integ += e * dt;
     const float ilim = DRIFT_RS_MAX_PPM * 1e-6f / RS_KI;
     if (rs->integ > ilim) rs->integ = ilim; else if (rs->integ < -ilim) rs->integ = -ilim;

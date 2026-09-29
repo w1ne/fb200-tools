@@ -111,10 +111,10 @@ input, so also the playback. The route is not saved (reboot: `out`).
 Latency, USB playback -> USB capture, inside the pedal:
 
 - Playback ring (`usb_audio.c`, drained by the engine): the resampler
-  starts when the fill reaches `DRIFT_RS_TARGET` = 96 frames and then holds
-  the fill there (it moves between ~40 and ~90 frames with the 1 ms USB
-  packets and the 32-frame blocks): 1-2 ms at 44.1 kHz. `usb` shows the
-  current `play_fill`.
+  starts when the fill reaches `DRIFT_RS_TARGET` = 128 frames and then
+  holds the fill there (it moves between ~60 and ~130 frames with the 1 ms
+  USB packets and the 32-frame blocks): about 2-3 ms at 44.1 kHz. `usb`
+  shows the current `play_fill`.
 - Engine: 0. The pull, the chain and the capture push run in the same
   32-frame block; the effects buffer nothing (the cab convolver included):
   only filter group delay, e.g. the amp's 3x oversampling interpolation
@@ -122,7 +122,7 @@ Latency, USB playback -> USB capture, inside the pedal:
 - Capture: the capture ring is drained on every main-loop pass (up to 64
   frames per pass) into the TinyUSB FIFO: about one USB frame (~1 ms).
 
-So the pedal adds roughly 2-3 ms. The host (CoreAudio / driver
+So the pedal adds roughly 3-4 ms. The host (CoreAudio / driver
 buffers) adds more. Do not align with a constant: `audio_test` (MCP) returns
 `delay_ms` from the cross-correlation of the played and captured signal
 (`fb200.audio.delay_frames`).
@@ -137,11 +137,25 @@ when it overfilled: a step in the waveform each time. Measured 2026-09-29
 
 Now `drift_rs` (`src/audio/drift.c`) reads the ring at a fractional position
 (4-point Catmull-Rom interpolation) that advances by `ratio` frames per output
-frame; a PI loop on the low-passed fill steers `ratio` (+-2000 ppm) so the
-fill stays at the target. Host model (`tests/test_dsp_host.py`
-test_engine_drift_suite, the host clock -500..+500 ppm off): no frame
-repeated or dropped, the worst 10 ms window of a 1 kHz sine -83 dB, of an
-8 kHz sine -75 dB (the interpolation). The fallbacks stay and are counted
-(`stats`: inserts, drops): ring dry -> the last frame repeats; fill above
-480 frames -> restart at the target.
+frame; a slow PI loop on the low-passed fill steers `ratio` (+-2000 ppm) so
+the fill stays at the target.
 
+The loop must be slow: the raw fill is a +-20 frame sawtooth (1 ms packets
+against 32-frame blocks), and whatever of it reaches `ratio` phase-modulates
+the playback. The first version (0.2 s low-pass, 30 ppm per frame) did that
+on the pedal: after each stream start the reamped 1 kHz sine read THD+N
+-37 dB for ~1.5 s, and 66 ticks in 18.5 s by the `sound_check` detector.
+Now two 1 s low-passes and 10 ppm per frame; the filters start from the fill
+as it is.
+
+Host model (`tests/test_dsp_host.py` test_engine_drift_suite: packets
++-0.3 ms jitter, every 16th engine block late together with the next, the
+host clock -500..+500 ppm off; the metrics of `tools/sound_check.py`): up to
++-200 ppm no frame repeated or dropped from the start, THD+N of a 1 kHz sine
+< -76 dB in the first 0.4..1.9 s and -83 dB settled, the worst 10 ms window
+-83 dB; 8 kHz: -59 dB (the interpolation). At +-500 ppm the first second can
+repeat frames; settled it is clean. v1 in the same model: THD+N about -68 dB
+throughout. The fallbacks stay and are counted (`stats`: inserts, drops):
+ring dry -> the last frame repeats; fill above 480 frames -> restart at the
+target. `inserts` also counts while the host has stopped sending but the
+stream is still open (silence).

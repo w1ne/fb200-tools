@@ -5,9 +5,11 @@
  *
  * v0.9.1 cast `(int16_t)(v * 32767)`: truncation toward zero. That is a
  * dead zone of +-1 LSB around 0 (crossover distortion): a -60 dBFS sine came
- * back with THD -32 dB (pedal, USB reamp, 2026-09-29). Rounding to the
- * nearest step leaves only the 16-bit quantisation: THD of the same sine
- * about -50 dB, and no DC shift of -0.5 LSB.
+ * back with THD -31 dB (pedal, USB reamp, 2026-09-29), -35.8 dB rounded
+ * (the rest is the 16-bit quantisation by the host and at the capture: a
+ * model of both matches the pedal to 0.6 dB). A float sine at -60 dBFS
+ * rounded once: THD -54.6 dB vs -41.5 dB truncated (outq_host_test). No
+ * DC shift of -0.5 LSB.
  *
  * Optional TPDF dither (+-1 LSB triangular, console `dither on`, off by
  * default): the quantisation error becomes a signal-independent noise

@@ -21,8 +21,9 @@ noise, the digital chain by reamping (`usb in`, the Mac plays into the chain)
 and by the test generator (`tin`), the capture. Preset 1, all effects off
 unless noted, master 42 % (-7.5 dB). The analog path (instrument jack -> ADC
 front end, DAC -> output jack) needs a cable and an interface: not measured.
-"after" = the host models in `tests/test_dsp_host.py` / `tests/test_delay.py`
-(the pedal numbers need the new image; run the tool again after flashing).
+"imp/sound" = the pedal with the first imp/sound slot (run 2) where it was
+measured, else the host models in `tests/test_dsp_host.py` /
+`tests/test_delay.py` (marked "model").
 
 | Metric | v0.9.1 (pedal) | imp/sound | How |
 | --- | --- | --- | --- |
@@ -31,10 +32,12 @@ front end, DAC -> output jack) needs a cable and an interface: not measured.
 | Hum 50/100 Hz | -72.5 / -77.6 dBFS | unchanged | `idle` |
 | ADC DC offset | -11.7 LSB (-69 dBFS) | unchanged (stock) | `idle` |
 | Dry gain | -7.5 dB = master 42 %; no other gain | unchanged | `dry` |
-| -60 dBFS 1 kHz sine, THD | -31.2 dB | -54.6 dB (model: truncation -> rounding) | `dry`, `outq_host_test` |
-| -40 dBFS 1 kHz sine, THD | -52.4 dB | -86.4 dB (model) | same |
-| Reamp ticks (1 kHz, 18.5 s) | 8, worst 10 ms window -25 dB | 0, worst -83 dB (model, +-500 ppm) | `glitch`, `engine_host_test` |
-| EQ low bands, THD+N of a -15 dBFS 1 kHz sine | -71.4 dB (EQ off: -80.3) | EQ error -69 -> -138 dB re signal (model) | `eq`, `eq_host_test` |
+| -60 dBFS sine, THD, 100 Hz / 1 kHz | -28.0 / -31.2 dB | -29.8 / -35.8 dB (pedal, settled) | `dry` |
+| same, model of host int16 -> x 0.42 -> capture | trunc -28.0 / -31.2 dB | round -29.7 / -35.2 dB | the limit: 16-bit in and out |
+| -60 dBFS float sine, one conversion, THD | -41.5 dB (truncated) | -54.6 dB (rounded) | `outq_host_test` |
+| Reamp ticks (1 kHz, 18.5 s) | 8, worst 10 ms window -25 dB | run 2 (v1 loop): 66, worst -40.6 dB; v2 loop: 0, worst -83 dB (model) | `glitch`, `engine_host_test` |
+| Reamp 1 kHz THD+N 0.4..1.9 s after the stream start | no resampler (ticks only) | run 2 (v1): -37 dB; v2: < -76 dB (model) | `engine_host_test` |
+| EQ low bands, THD+N of a -15 dBFS 1 kHz sine | -71.4 dB (EQ off: -80.3) | -82.0 dB = EQ off (pedal); error -69 -> -138 dB (model) | `eq`, `eq_host_test` |
 | Delay repeat error, -40 / -20 / -6 dBFS | -46.2 / -66.1 / -80.3 dB | -64.2 / -84.7 / -86.4 dB (model) | `delay_host_test` |
 | Amp gain 100, 3 kHz, inharmonic (aliasing) | model 1 -27.8, 4 -47.7, 10 -23.6 dB | parity (stock amp) | `amp` |
 | Gate type 1 thr 60, decaying 55 Hz note | 4 open/close changes | parity (stock gate) | `gate` |

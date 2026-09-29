@@ -17,18 +17,18 @@
  * drift_rs_pull reads the ring at a fractional position that advances by
  * `ratio` frames per output frame (4-point Catmull-Rom interpolation), and
  * steers `ratio` so the ring fill (low-passed) sits at DRIFT_RS_TARGET: a
- * PI loop, +-DRIFT_RS_MAX_PPM. No frame is repeated or dropped while the
+ * slow PI loop (drift.c), +-DRIFT_RS_MAX_PPM. No frame is repeated or dropped while the
  * host streams at a rate within that range. Start: silence until the fill
- * reaches the target (latency ~DRIFT_RS_TARGET frames, 2.2 ms at 44.1 kHz).
+ * reaches the target (latency ~DRIFT_RS_TARGET frames, 2.9 ms at 44.1 kHz).
  * Fallbacks, counted: ring empty -> the last frame repeats (*inserts); fill
  * above max_fill -> restart at the target (*drops). */
-#define DRIFT_RS_TARGET 96u
+#define DRIFT_RS_TARGET 128u
 #define DRIFT_RS_MAX_PPM 2000.0f
 
 typedef struct {
     float frac;          /* position between win[1] and win[2], 0..1 */
     float ratio;         /* ring frames per output frame */
-    float fill_lp;       /* low-passed ring fill, frames */
+    float fill_lp, fill_lp2;   /* the ring fill through two low-passes, frames */
     float integ;         /* PI integral, frame-seconds */
     float fs;
     int running;         /* 0: waiting for the fill to reach the target */

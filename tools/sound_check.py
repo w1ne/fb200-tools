@@ -132,7 +132,8 @@ class Check:
         out = {}
         for f0 in (100, 1000):
             for lv in (-60, -40, -20, -6, 0):
-                r = self.reamp(A.make_signal("sine", 2.0, f0, lv))[int(0.4 * FS):int(1.9 * FS)]
+                # 2.5..4.9 s: the playback resampler has settled (`glitch` checks the start)
+                r = self.reamp(A.make_signal("sine", 5.0, f0, lv))[int(2.5 * FS):int(4.9 * FS)]
                 d = tone(r, f0)
                 d["gain_db"] = round(d["level_dbfs"] - lv, 2)
                 out[f"dry_{f0}hz_{lv}dbfs"] = d
@@ -140,8 +141,11 @@ class Check:
 
     def glitch(self) -> dict:
         self.fx_off()
-        r = self.reamp(A.make_signal("sine", 20.0, 1000, -10))[int(1 * FS):int(19.5 * FS)]
-        return {"reamp_ticks_1k": steps(r, 1000.0), "stats": self.c("stats").splitlines()[1]}
+        r = self.reamp(A.make_signal("sine", 20.0, 1000, -10))
+        return {"reamp_ticks_1k": steps(r[int(1 * FS):int(19.5 * FS)], 1000.0),
+                "reamp_start_1k": tone(r[int(0.4 * FS):int(1.9 * FS)], 1000.0),
+                "reamp_end_1k": tone(r[int(17 * FS):int(19.5 * FS)], 1000.0),
+                "stats": self.c("stats").splitlines()[1]}
 
     def eq(self) -> dict:
         self.fx_off()
