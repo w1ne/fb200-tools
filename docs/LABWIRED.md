@@ -74,7 +74,7 @@ Expected result:
 ```
 PASS  4/4 checks · smoke · 2000000 steps · 0.27s
 PASS  24/24 checks · stock-boot · 90000000 steps · 15.26s
-PASS  11/11 checks · stock-first-boot · 6800000000 steps · 3669.59s
+PASS  23/23 checks · stock-first-boot · 6800000000 steps · 8190.29s
 ```
 
 The stock gate asserts `fidelity_clean: true`: an unmapped MMIO access or an
@@ -179,7 +179,16 @@ drives the display dot. It does not check `OK`. It compares the `AT+TM`
 answer with `FB200` to skip the name commands, which never matches a BT201
 (`TM+<name>`), so it sends the whole sequence at every boot.
 
-Negative control: the same run with each new expected value changed (an
+Negative control for the Bluetooth checks (2026-09-29): the same run
+without the phone stimuli and with `AT+TM -> TM+FB200FB200` expected (a name
+the module uses only after a reset) fails exactly the six checks that need
+the module or the phone (`FAIL 17/23`): the `AT+TM` answer, `TS+01` and
+`TL+03`, the `TS` byte (still `'0'`, from the module's `TS+00` at power-on),
+and both `air` lines (the phone's frame is logged `phone->mcu dropped (no ble
+link)`). The passing run took 8190 s of wall time (2033 s CPU, 1.15 GB peak)
+on a loaded Mac.
+
+Negative control (earlier): the same run with each new expected value changed (an
 erase and a program of F:0x10000 and F:0xB1000, `FB21`, `1`, `B02`,
 `AT+BD` before `AT+TM`, `AT+B402`) fails all nine of these checks
 (`FAIL 2/11`; only `fidelity_clean` and the stop reason pass).

@@ -2,9 +2,9 @@
 #
 # LONG GATE. Boots the UNMODIFIED vendor firmware (V1.0.1) from a blank
 # flash (no presets, no magics), as a board fresh from the factory, for
-# 6.8 G cycles (11.3 s of device time at 600 MHz). It needs about 29 min
-# of CPU time (Apple M4) and 1.1 GB of memory at peak; on a busy Mac it took
-# 61 min of wall time. Run it by hand or nightly, not in the default loop.
+# 6.8 G cycles (11.3 s of device time at 600 MHz). It needs about 30 to 34
+# min of CPU time (Apple M4) and 1.15 GB of memory at peak; on a busy Mac it
+# took 61 to 137 min of wall time. Run it by hand or nightly, not in the default loop.
 # Build build/labwired/stock.elf first (docs/LABWIRED.md).
 #
 # What the firmware does in this window (measured on the twin, SysTick
