@@ -43,14 +43,13 @@ static void status_led(uint8_t io0, uint8_t io1, uint8_t io3)
     GPIO_PinWrite(GPIO2, 3u, io3);
 }
 
-/* Front-panel light for the mode: rings, display, knob LEDs (and the knob
- * LED supply, GPIO1_IO2, docs/UI_AND_STORAGE.md §3). */
+/* Front-panel light for the mode: rings, display, knob LEDs. The knob LED
+ * supply (GPIO1_IO2) stays on: it may also feed the knob pots. */
 static void apply_mode(void)
 {
     bool dark = mode == MODE_STANDBY || mode == MODE_CRITICAL;
     lightbar_set_level(dark ? 0u : led_pct);
     display_set_level(led_pct);
-    GPIO_PinWrite(GPIO1, 2u, dark ? 0u : 1u);
     if (mode == MODE_STANDBY) display_override(" .", 150u, 3000u);      /* a slow dot: still on */
     else if (mode == MODE_CRITICAL) display_override("LOb", 500u, 1000u);
     else if (mode == MODE_LOW) display_override("LOb", LOW_SHOW_MS, LOW_SHOW_MS);
@@ -140,7 +139,7 @@ void power_task(uint32_t now_ms)
 {
     /* between ticks: controls and app edits wake the panel at once */
     if (ui_revision() != seen_revision) { seen_revision = ui_revision(); activity = true; }
-    if (activity && idle_activity(&idle)) set_mode(MODE_NORMAL);
+    if (activity && idle_activity(&idle) && !gauge.critical) set_mode(low_until ? MODE_LOW : MODE_NORMAL);
     if (now_ms - last_ms < POWER_TICK_MS) return;
     last_ms = now_ms;
     st.battery_raw = adc1_read(9u);

@@ -86,12 +86,14 @@ Status words:
 | PC editor (official Electron app) | UNKNOWN | same protocol; not tried with the official app |
 | USB audio 44.1 kHz, 2 in / 2 out | DONE, BETTER | UAC2 (stock UAC1), `audio/usb_audio.c`; recording and playback on the pedal (M1) |
 | USB OTG recording to a phone | UNKNOWN | class-compliant, not tried on a phone; the stock "OTG volume" setting is not identified |
-| Battery level (4 steps) and charger sense, `BB` to the app | DONE | `ui/power.c`, `proto_port.c` `proto_battery` |
+| Battery level (4 steps) and charger sense, `BB` to the app | DONE | `ui/power.c`, `proto_port.c` `proto_battery`; the stock thresholds on a filtered reading with hysteresis (`ui/power_logic.c`) |
 | Battery notification on change | DONE | `ui/power.c`: `BB` when the level or the charger changes (stock 0x18a5e); level 4 while charging (0x1897c) |
 | Power-fail settings save | DONE (different) | the switch is a hard cut (checked on the pedal); settings are written 3 s after a change |
 | Firmware update | DONE, BETTER | USB recovery + app slot, `fb200 update`, browser updater (v0.6.0); no A+D. The official PC updater (`C1`) goes to our recovery, not the vendor DFU: going back to stock needs A+D |
 
 Not in the stock (so not gaps): looper, MIDI, auto power-off. (Delay: ours, M4.)
+Ours, off by default: idle standby (panel dark), LED level, clock switch; on:
+CPU sleep, unused clocks off, low/critical battery handling ([POWER.md](POWER.md)).
 
 ## Gaps, ranked by user impact
 

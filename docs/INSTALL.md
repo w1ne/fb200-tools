@@ -110,11 +110,11 @@ Useful commands:
 | Command | Does |
 | --- | --- |
 | `preset [n]` | show or select a preset |
-| `cpu` | CPU load of the audio chain |
+| `cpu` | CPU load of the audio chain and of the main loop |
 | `stock` | is the stock sound data present and in use |
 | `tuner on` | turn the tuner on |
 | `drums on` | start the drum machine |
-| `power` | battery and charger state |
+| `power` | battery, charger, sleep, clock, LED level, idle standby ([POWER.md](POWER.md)) |
 | `ui` / `uimon on` | knob and footswitch state, live |
 | `tin sine 110` | send a test tone into the effects chain |
 | `crumbs` / `crashdump` | crash diagnostics |
