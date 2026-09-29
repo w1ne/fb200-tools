@@ -220,6 +220,11 @@ size_t sai_push(const int16_t *src, size_t frames)
     return n;
 }
 
+uint32_t sai_rx_fill(void)
+{
+    return (s_rx_head + RING_FRAMES - s_rx_tail) % RING_FRAMES;
+}
+
 uint32_t sai_tx_fill(void)
 {
     return (s_tx_head + RING_FRAMES - s_tx_tail) % RING_FRAMES;

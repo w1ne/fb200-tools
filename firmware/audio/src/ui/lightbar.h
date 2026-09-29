@@ -29,4 +29,6 @@ void lightbar_save(uint32_t now_ms);                       /* start the save bli
 /* Build the frame and send it (rgb_show) only when it changed, at most every
  * 20 ms: the DMA frame must not disturb the audio. */
 void lightbar_task(uint32_t now_ms, const lightbar_in_t *in);
+/* Global brightness on top of the stock level, 0..100 % (0 = dark). */
+void lightbar_set_level(unsigned pct);
 #endif
