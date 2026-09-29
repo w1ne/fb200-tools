@@ -33,23 +33,14 @@ void tone_set(tone_t *t, int bass, int mid, int midfreq, int treble)
 
 #define DF1 TONE_DF1
 
-/* one stage over the block, two samples per iteration */
+/* one stage over the block (odd stage counts; a pair's state set another way) */
 static void df1_one(const float *restrict c, float *restrict state, float *restrict x, unsigned n)
 {
     float x1 = state[0], x2 = state[1], y1 = state[2], y2 = state[3];
-    unsigned i = 0;
-    for (; i + 1 < n; i += 2) {
-        float xa = x[i], xb = x[i + 1];
-        float a = DF1(c, xa, x1, x2, y1, y2);
-        float b = DF1(c, xb, xa, x1, a, y1);
-        x[i] = a;
-        x[i + 1] = b;
-        x2 = xa; x1 = xb; y2 = a; y1 = b;
-    }
-    if (i < n) {
-        float xa = x[i], a = DF1(c, xa, x1, x2, y1, y2);
-        x[i] = a;
-        x2 = x1; x1 = xa; y2 = y1; y1 = a;
+    for (unsigned i = 0; i < n; i++) {
+        float x0 = x[i], y0 = DF1(c, x0, x1, x2, y1, y2);
+        x[i] = y0;
+        x2 = x1; x1 = x0; y2 = y1; y1 = y0;
     }
     state[0] = x1; state[1] = x2; state[2] = y1; state[3] = y2;
 }

@@ -16,7 +16,7 @@
 #define CAB_MAX_TAPS CONV2_MAX_TAPS
 
 typedef struct {
-    conv2_t conv;                            /* head spectra in here (DTCM) */
+    conv2_t conv;                            /* head only: head spectra in here */
     float scale;                             /* gain * 1.15 */
     float next_scale;                        /* for a long IR still loading */
     int scale_due;

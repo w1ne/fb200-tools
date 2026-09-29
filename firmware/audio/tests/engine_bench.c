@@ -16,7 +16,7 @@ static conv2_tail_t s_tail;
 static float s_ir[CAB_MAX_TAPS];
 float bench_buf[DSP_BLOCK];
 /* model, gain, bass, mid, midfreq, treble, volume, cab, long-IR taps (0:
- * the stock cab, head only): written by Python */
+ * the stock 512-tap cab): written by Python */
 volatile int32_t bench_args[9];
 
 void bench_setup(const stock_data_t *blob)
@@ -27,13 +27,12 @@ void bench_setup(const stock_data_t *blob)
     amp_set_params(&s_amp, bench_args[1], bench_args[2], bench_args[3], bench_args[4],
                    bench_args[5], bench_args[6]);
     unsigned taps = (unsigned)bench_args[8];
+    cab_init_long(&s_cab, &s_tail);          /* as the engine (ENGINE_LONG_IR) */
     if (!taps) {
-        cab_init(&s_cab);
         if (bench_args[7]) (void)cab_set_model(&s_cab, bench_args[7]);
         return;
     }
     /* long IR (as `cab long` on the pedal): the stock cab, then a decaying tail */
-    cab_init_long(&s_cab, &s_tail);
     const float *h = g_stock->cab_taps[bench_args[7] > 0 ? bench_args[7] - 1 : 0];
     for (unsigned i = 0; i < taps && i < CAB_MAX_TAPS; i++)
         s_ir[i] = h[i % CAB_TAPS] * (1.0f - (float)i / CAB_MAX_TAPS);

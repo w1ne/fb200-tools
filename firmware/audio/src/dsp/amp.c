@@ -59,8 +59,9 @@ static void oversample(amp_t *a, const float *ws, float *x, unsigned n)
     float *st = a->aa_state;
     float x1 = st[0], x2 = st[1], y1 = st[2], y2 = st[3];
     unsigned last = n - 1;
-    float prev = a->prev, d = (x[0] - prev) / 3.0f, v = prev + d;
-    float s0 = shape(ws, prev), s1 = shape(ws, v), s2 = shape(ws, v + d);
+    float prev = a->prev, d = (x[0] - prev) / 3.0f, v = prev, s[3];
+    for (unsigned k = 0; k < 3; k++, v += d) s[k] = shape(ws, v);   /* sample 0 */
+    float s0 = s[0], s1 = s[1], s2 = s[2];
     d = (x[last ? 1 : 0] - x[0]) / 3.0f;                 /* sample 1 */
     for (unsigned i = 0; i < n; i++) {
         float xi = x[i], w = xi + d;                      /* sample i + 1 */

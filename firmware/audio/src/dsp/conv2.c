@@ -60,7 +60,7 @@ static void mac(conv2_t *c, unsigned p0, unsigned p1)
 /* The staged head goes live (as conv_set_ir: the head keeps its history). */
 __attribute__((noinline)) static void head_swap(conv2_t *c)   /* cold: out of the block path */
 {
-    arm_copy_f32(c->t->hs[0], c->hh[0], CONV2_HEAD_PARTS * CONV_N);
+    arm_copy_f32(c->u.tl.hs[0], c->head.h[0], CONV2_HEAD_PARTS * CONV_N);
     c->head.parts = CONV2_HEAD_PARTS;
     c->load = CONV2_LOAD_IDLE;
     c->swap_n = c->n;
@@ -93,8 +93,8 @@ static void run_slice(conv2_t *c, unsigned k)
             c->parts = c->lparts;
             c->load = CONV2_LOAD_HEAD;
         }
-        arm_copy_f32(t->in[(c->cur + 1) % 3], t->work, CONV2_B);
-        arm_copy_f32(t->in[(c->cur + 2) % 3], t->work + CONV2_B, CONV2_B);
+        arm_copy_f32(c->u.tl.in[(c->cur + 1) % 3], t->work, CONV2_B);
+        arm_copy_f32(c->u.tl.in[(c->cur + 2) % 3], t->work + CONV2_B, CONV2_B);
         c->xhead = (c->xhead + 1) % XROWS;
         arm_rfft_fast_f32(&c->fft, t->work, t->x[c->xhead], 0);
         c->mac = 0;
@@ -129,7 +129,7 @@ static void tail_clear(conv2_t *c)
     conv2_tail_t *t = c->t;
     if (t) {
         arm_fill_f32(0.0f, t->x[0], XROWS * CONV2_N);
-        arm_fill_f32(0.0f, t->in[0], 3 * CONV2_B);
+        arm_fill_f32(0.0f, c->u.tl.in[0], 3 * CONV2_B);
         arm_fill_f32(0.0f, t->acc, CONV2_N);
         arm_fill_f32(0.0f, t->y, CONV2_B);
     }
@@ -146,7 +146,7 @@ static int init_start(conv2_t *c)
 int conv2_init_head(conv2_t *c)
 {
     memset(c, 0, sizeof *c);
-    if (conv_init(&c->head, c->hh, c->hx, CONV2_HEAD_PARTS) != 0) return -1;
+    if (conv_init(&c->head, c->u.own.hh, c->u.own.hx, CONV2_HEAD_PARTS) != 0) return -1;
     return init_start(c);
 }
 
@@ -154,9 +154,10 @@ int conv2_init(conv2_t *c, conv2_tail_t *tail)
 {
     memset(c, 0, sizeof *c);
     c->t = tail;
-    if (conv_init(&c->head, c->hh, c->hx, CONV2_HEAD_PARTS) != 0) return -1;
+    if (!tail) return conv2_init_head(c);
+    if (conv_init(&c->head, tail->hh, tail->hx, CONV2_HEAD_PARTS) != 0) return -1;
     /* size-specific init: links only the 512-point tables */
-    if (tail && arm_rfft_fast_init_512_f32(&c->fft) != ARM_MATH_SUCCESS) return -1;
+    if (arm_rfft_fast_init_512_f32(&c->fft) != ARM_MATH_SUCCESS) return -1;
     return init_start(c);
 }
 
@@ -181,7 +182,7 @@ int conv2_set_ir(conv2_t *c, const float *ir, size_t taps)
     /* the tail already switched to the previous IR: its head goes live now
      * (early by less than a frame), hs is needed for this one */
     if (c->load == CONV2_LOAD_HEAD) head_swap(c);
-    (void)conv_spectra(&c->head, ir, CONV2_HEAD_TAPS, t->hs);
+    (void)conv_spectra(&c->head, ir, CONV2_HEAD_TAPS, c->u.tl.hs);
     unsigned parts = (unsigned)((taps - CONV2_HEAD_TAPS + CONV2_B - 1) / CONV2_B);
     for (unsigned p = 0; p < parts; p++) {   /* taps into the idle g[] rows */
         size_t off = CONV2_HEAD_TAPS + (size_t)p * CONV2_B;
@@ -215,7 +216,7 @@ void conv2_process(conv2_t *c, const float *in, float *out, size_t n)
     while (n) {
         size_t m = CONV2_B - c->pos < n ? CONV2_B - c->pos : n;
         const float *y = c->t->y + c->pos;
-        arm_copy_f32(in, c->t->in[c->cur] + c->pos, (uint32_t)m);   /* before in place */
+        arm_copy_f32(in, c->u.tl.in[c->cur] + c->pos, (uint32_t)m);   /* before in place */
         conv_process(&c->head, in, out, m);
         for (size_t i = 0; i < m; i++) out[i] += y[i];
         c->n += (uint32_t)m;
