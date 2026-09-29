@@ -170,7 +170,8 @@ class StockFirmware:
         self.mr = MrFile.from_path(mr_path or find_stock_mr())
         uc = Uc(UC_ARCH_ARM, UC_MODE_THUMB | UC_MODE_MCLASS)
         uc.ctl_set_cpu_model(UC_CPU_ARM_CORTEX_M7)
-        for base, size in [(0, 0x200000), (0x20000000, 0x100000), (0x20200000, 0x100000),
+        # the pedal's RAM (ITCM 128 kB, DTCM 352 kB, OCRAM 32 kB; stock_emu_fx._MAP)
+        for base, size in [(0, 0x20000), (0x20000000, 0x58000), (0x20200000, 0x8000),
                            (0x40000000, 0x10000000), (0x60000000, 0x800000),
                            (0xE0000000, 0x100000)]:
             uc.mem_map(base, size)

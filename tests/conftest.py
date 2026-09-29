@@ -1,4 +1,6 @@
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -7,6 +9,16 @@ from fb200.protocol import pack_frame
 from fb200.transport import MockTransport
 
 sys.path.insert(0, str(Path(__file__).parent))
+
+# Firmware and host-harness builds (fwbuild, *_host tests) go to mkdtemp()
+# dirs of tens of MB each. One base dir per test process (each xdist worker
+# has its own), removed at the end, so runs do not fill the disk.
+_TMP = tempfile.mkdtemp(prefix="fb200_pytest_")
+tempfile.tempdir = _TMP
+
+
+def pytest_sessionfinish(session, exitstatus):
+    shutil.rmtree(_TMP, ignore_errors=True)
 
 
 def make_report(frame: bytes) -> bytes:

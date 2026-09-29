@@ -15,6 +15,11 @@ typedef struct {
 
 void engine_init(void);
 void engine_task(void);
+/* One pass of the main loop's audio work (usb_audio_task + engine_task) for
+ * a flash write that blocks the main loop (debug/flash_rmw.h flash_pump):
+ * the flash is busy, so the drums (samples in flash) advance silently.
+ * Nothing before engine_init. */
+void engine_pump(void);
 void engine_get_stats(engine_stats_t *out);
 
 void engine_set_gain_db(float db);
@@ -54,7 +59,15 @@ void engine_apply_preset(const preset_t *p, unsigned master);
 void engine_apply_settings(const settings_t *s);
 void engine_dsp_reset(void);
 bool engine_needs_reapply(void);   /* after a DSP reset: apply the preset again */
-/* `cab long <taps>`: synthetic long IR in the cab (0: the preset's cab). 0 on success. */
+/* User IR staging in taps, a RAM budget (engine.c; memory map:
+ * docs/FIRMWARE_BRINGUP.md). 512 (CAB_TAPS, the stock and user slot size) =
+ * long IRs off: no conv2 tail (~96 kB), no 512-point FFT tables (~4.9 kB);
+ * `cab long` over 512 is "not available". Up to 4096 (CAB_MAX_TAPS) = long
+ * IRs on (docs/PARITY.md M5). */
+#define ENGINE_IR_TAPS 4096
+/* `cab long <taps>`: synthetic long IR in the cab (0: the preset's cab). 0 on
+ * success, -2 when taps is over what this build has RAM for (long IRs off:
+ * 512, engine.c ENGINE_IR_TAPS), -1 on other bad taps. */
 int engine_cab_long(unsigned taps);
 
 #endif

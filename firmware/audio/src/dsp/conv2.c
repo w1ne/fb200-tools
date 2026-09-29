@@ -136,6 +136,20 @@ static void tail_clear(conv2_t *c)
     c->pos = c->slice = c->mac = c->cur = c->xhead = 0;
 }
 
+static int init_start(conv2_t *c)
+{
+    conv2_reset(c);
+    const float one = 1.0f;
+    return conv2_set_ir(c, &one, 1);
+}
+
+int conv2_init_head(conv2_t *c)
+{
+    memset(c, 0, sizeof *c);
+    if (conv_init(&c->head, c->hh, c->hx, CONV2_HEAD_PARTS) != 0) return -1;
+    return init_start(c);
+}
+
 int conv2_init(conv2_t *c, conv2_tail_t *tail)
 {
     memset(c, 0, sizeof *c);
@@ -143,9 +157,7 @@ int conv2_init(conv2_t *c, conv2_tail_t *tail)
     if (conv_init(&c->head, c->hh, c->hx, CONV2_HEAD_PARTS) != 0) return -1;
     /* size-specific init: links only the 512-point tables */
     if (tail && arm_rfft_fast_init_512_f32(&c->fft) != ARM_MATH_SUCCESS) return -1;
-    conv2_reset(c);
-    const float one = 1.0f;
-    return conv2_set_ir(c, &one, 1);
+    return init_start(c);
 }
 
 void conv2_reset(conv2_t *c)

@@ -23,7 +23,7 @@ typedef struct {
     int active;
 } cab_t;
 
-void cab_init(cab_t *c);                     /* <= 512 taps */
+void cab_init(cab_t *c);                     /* <= 512 taps; links no long-IR code */
 /* With the tail storage (~96 kB, OCRAM): IRs up to CAB_MAX_TAPS. */
 void cab_init_long(cab_t *c, conv2_tail_t *tail);
 int cab_set_model(cab_t *c, int cab);        /* 1..10; 0 on success */

@@ -168,3 +168,17 @@ def test_led_pattern_suite():
                             check=False)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "led host tests OK" in result.stdout
+
+
+def test_memfuncs_suite():
+    """The firmware's memcpy/memset/memmove (word fast paths) vs byte-wise
+    references: all alignments, lengths 0..80, overlaps."""
+    out = _build_dir() / "memfuncs_host_test"
+    subprocess.run(
+        ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-fno-builtin", "-I", str(FW / "src"),
+         str(FW / "tests" / "memfuncs_host_test.c"), "-o", str(out)],
+        check=True,
+    )
+    result = subprocess.run([str(out)], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "memfuncs host tests OK" in result.stdout

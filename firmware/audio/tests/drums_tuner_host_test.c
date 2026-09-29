@@ -64,6 +64,43 @@ static int selftest(void)
     CHECK(drums_init(&dr, bank, NULL) != 0 || dr.data != NULL, "init result");
     CHECK(dr.n_samples == 2 && dr.smp[1] == e1 && dr.smp_len[0] == 4, "bank header parse");
 
+    /* no_flash (the flash is busy, engine_pump): the voices keep time but do
+     * not read the samples. A synthetic rhythm: note 1 every 60 ticks. */
+    {
+        enum { SMP = 3000, N = 8192, W0 = 1024, W1 = 1024 + 96 * 32 };
+        static uint32_t bank2[128 + SMP];
+        static float ref[N], got[N];
+        memset(bank2, 0, sizeof bank2);
+        bank2[0] = 1; bank2[1] = 0; bank2[2] = 1; bank2[3] = SMP * 4;
+        float *smp = (float *)((uint8_t *)bank2 + 512);
+        for (int i = 0; i < SMP; i++) smp[i] = (float)(i + 1) * 1e-4f;
+        static const uint32_t ev[] = {0x017Fu, (60u << 16) | 0x0140u, (60u << 16) | 0xFF00u};
+        static uint16_t lens[90];
+        static uint8_t rhythm[DRUMS_RHYTHMS], beats[90];
+        lens[0] = 3;
+        for (int i = 0; i < 90; i++) beats[i] = 4;
+        drums_data_t data = {ev, 3, lens, 90, rhythm, DRUMS_RHYTHMS, beats};
+        for (int pass = 0; pass < 2; pass++) {
+            float *out = pass ? got : ref;
+            CHECK(drums_init(&dr, bank2, &data) == 0, "synthetic drums init");
+            drums_set_tempo(&dr, 200);
+            drums_start(&dr);
+            for (int i = 0; i < N; i += 32) {
+                dr.no_flash = (uint8_t)(pass && i >= W0 && i < W1);
+                drums_render(&dr, out + i, 32);
+            }
+        }
+        int sound = 0, same = 1, silent = 1;
+        for (int i = 0; i < N; i++) {
+            if (ref[i] != 0.0f) sound++;
+            if (i >= W0 && i < W1) { if (got[i] != 0.0f) silent = 0; }
+            else if (got[i] != ref[i]) same = 0;
+        }
+        CHECK(sound > N / 2, "synthetic rhythm plays (%d non-zero samples)", sound);
+        CHECK(silent, "no_flash: silent while the flash is busy");
+        CHECK(same, "no_flash: the voices keep time (identical output after the busy window)");
+    }
+
     /* tuner: 110 Hz sine -> A (12), in tune; silence -> silent */
     tuner_init(&tu, 440);
     tuner_result_t r = {0};

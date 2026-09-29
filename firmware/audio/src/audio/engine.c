@@ -109,19 +109,34 @@ static bool s_tuner_mute = true;        /* S+0x2e, stock default 1 */
 static dsp_knob_t s_in_gain;            /* S+0x1a, smoothed like the stock */
 /* the stock chain (docs/PARITY.md M2): amp (+ tone stack) -> cab, mono */
 static amp_t s_amp;
-static cab_t s_cab;
-static conv2_tail_t s_cab_tail __attribute__((section(".ocram")));   /* long IRs (M5) */
+static cab_t s_cab __attribute__((section(".ocram")));
+/* RAM (memory map: docs/FIRMWARE_BRINGUP.md): CPU-only state moved out of
+ * DTCM to make room for the delay line: the cab's head spectra and s_ir to
+ * OCRAM (cached), the reverb to the ITCM above the code, the long-IR tail to
+ * the low DTCM. Sizes: ENGINE_IR_TAPS (engine.h) and DELAY_MS_MAX
+ * (dsp/delay.h); the link fails if they do not fit. */
+#define ENGINE_LONG_IR (ENGINE_IR_TAPS > CAB_TAPS)
+_Static_assert(ENGINE_IR_TAPS >= CAB_TAPS && ENGINE_IR_TAPS <= CAB_MAX_TAPS, "ENGINE_IR_TAPS");
+_Static_assert(AUDIO_FS <= DELAY_FS_MAX, "the delay line is sized for DELAY_FS_MAX");
+#if ENGINE_LONG_IR
+/* long IRs (M5): 96 kB, in the low DTCM (linker.ld .dtcm_lo) */
+static conv2_tail_t s_cab_tail __attribute__((section(".dtcm_lo")));
+#define CAB_INIT(c) cab_init_long((c), &s_cab_tail)
+#else
+#define CAB_INIT(c) cab_init(c)
+#endif
 static gate_t s_gate;
 static comp_t s_comp;
 static mod_t s_mod;
-static reverb_t s_rev;
-/* Our bass delay (docs/PARITY.md M4). Its 96 kB line does not fit in DTCM:
- * OCRAM, linker.ld .ocram (cached; one line access per sample). */
+static reverb_t s_rev __attribute__((section(".itcm_bss")));
+/* Our bass delay (docs/PARITY.md M4). Its line (DELAY_LEN int16, 88 kB for
+ * 1 s): the DTCM between .bss and the stack (linker.ld .dtcm_hi). */
 static delay_t s_dly;
-static int16_t s_dly_line[DELAY_LEN] __attribute__((section(".ocram")));
+static int16_t s_dly_line[DELAY_LEN] __attribute__((section(".dtcm_hi")));
 static bool s_dly_en;
-/* Our bass EQ (docs/PARITY.md M4), after the cab. Not in the preset: off
- * after boot, set from the console. Off (or flat) = bypassed, bit-exact.
+/* Our bass EQ (docs/PARITY.md M4), after the cab. In the preset with our
+ * marker (preset.h P_EQ_DATA); without it (every stock preset) off. Set from the
+ * console (`eq`, into the edit buffer). Off (or flat) = bypassed, bit-exact.
  * OCRAM (cached): in .bss its 508 B push the 2 kB-aligned USB buffer
  * (_dcd_data) up by 2 kB and DTCM overflows. The EQ touches ~70 words of it
  * per block. */
@@ -129,9 +144,8 @@ static eq_t s_eq __attribute__((section(".ocram")));
 static bool s_amp_en, s_cab_en, s_gate_en, s_comp_en, s_mod_en, s_rev_en;
 static int s_amp_model = -1, s_cab_type = -1;
 static float s_master = 1.0f, s_master_target = 1.0f;
-/* user IR staging, read only when a slot loads: OCRAM, so DTCM keeps the
- * cab's convolver spectra (dsp/cab.h) */
-static float s_ir[CAB_MAX_TAPS] __attribute__((section(".ocram")));   /* + `cab long` */
+/* user IR staging, read only when a slot loads: OCRAM. Also `cab long`. */
+static float s_ir[ENGINE_IR_TAPS] __attribute__((section(".ocram")));
 static bool s_testgen_in;               /* testgen feeds the chain input */
 static int s_usb_route;                 /* ENGINE_USB_OUT / _IN / _MIX */
 static uint32_t s_cyc_max, s_cyc_sum, s_cyc_n;   /* DWT cycles per block */
@@ -143,6 +157,7 @@ static uint32_t s_prof[P_COUNT], s_prof_n, s_prof_t;
                          s_prof_t = now_; } while (0)
 static uint32_t s_drop_tx_blocks;
 static uint32_t s_meter_last_ms;
+static bool s_ready;          /* engine_init done: engine_pump may run */
 
 void engine_init(void)
 {
@@ -164,7 +179,7 @@ void engine_init(void)
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;   /* cycle counter for `stats` */
     DWT->CYCCNT = 0;
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
-    cab_init_long(&s_cab, &s_cab_tail);
+    CAB_INIT(&s_cab);
     bt_audio_init();
     gate_init(&s_gate, (float)AUDIO_FS);
     comp_init(&s_comp, (float)AUDIO_FS);
@@ -175,6 +190,16 @@ void engine_init(void)
     static drums_data_t rhythms;
     if (g_stock) drums_data_from_stock(&rhythms, g_stock);
     drums_init(&s_drums, (const void *)DRUMS_BANK_ADDR, g_stock ? &rhythms : NULL);  /* NULL: silent */
+    s_ready = true;
+}
+
+void engine_pump(void)
+{
+    if (!s_ready) return;
+    s_drums.no_flash = 1;
+    usb_audio_task();
+    engine_task();
+    s_drums.no_flash = 0;
 }
 
 void engine_set_tuner(bool on) { s_tuner_on = on; }
@@ -186,13 +211,13 @@ static volatile bool s_reapply;
 void engine_dsp_reset(void)
 {
     amp_init(&s_amp, (float)AUDIO_FS);
-    cab_init_long(&s_cab, &s_cab_tail);
+    CAB_INIT(&s_cab);
     gate_init(&s_gate, (float)AUDIO_FS);
     comp_init(&s_comp, (float)AUDIO_FS);
     mod_init(&s_mod, (float)AUDIO_FS);
     reverb_init(&s_rev, (float)AUDIO_FS);
     delay_init(&s_dly, (float)AUDIO_FS, s_dly_line);
-    eq_reset(&s_eq);            /* the settings stay (not in the preset) */
+    eq_reset(&s_eq);            /* the settings come back with the preset */
     s_amp_model = s_cab_type = -1;
     s_reapply = true;
 }
@@ -226,7 +251,8 @@ static bool s_cab_bypass;   /* user IR slot selected but empty */
 
 /* `cab long <taps>` (console, for `prof` on the pedal): the first taps of
  * a synthetic IR (noise, -60 dB at 4096) in the cab until the next cab
- * change; 0 goes back to the preset's cab. */
+ * change; 0 goes back to the preset's cab. More than ENGINE_IR_TAPS: -2
+ * (long IRs off). */
 int engine_cab_long(unsigned taps)
 {
     if (taps == 0) {
@@ -234,9 +260,10 @@ int engine_cab_long(unsigned taps)
         s_reapply = true;
         return 0;
     }
+    if (taps > ENGINE_IR_TAPS) return -2;
     uint32_t seed = 1;
     float env = 1.0f;
-    for (unsigned i = 0; i < CAB_MAX_TAPS; i++, env *= 0.99832f) {
+    for (unsigned i = 0; i < ENGINE_IR_TAPS; i++, env *= 0.99832f) {
         seed = seed * 1664525u + 1013904223u;
         s_ir[i] = (float)(int32_t)seed * (1.0f / 2147483648.0f) * env;
     }
@@ -278,6 +305,7 @@ void engine_apply_preset(const preset_t *p, unsigned master)
     delay_set_params(&s_dly, pget(p, P_DLY_TIME), pget(p, P_DLY_FB), pget(p, P_DLY_MIX),
                      pget(p, P_DLY_LOWCUT), pget(p, P_DLY_TONE));
     s_dly_en = dly;
+    eq_load(&s_eq, preset_eq(p));   /* glides; unchanged stages keep going */
     s_master_target = (float)(master > 100u ? 100u : master) * 0.01f;
 }
 void engine_apply_settings(const settings_t *s)
