@@ -85,7 +85,7 @@ SRC_C := \
   src/dsp/dsp.c src/dsp/math.c src/dsp/gain.c src/dsp/testgen.c \
   src/dsp/conv.c src/dsp/conv2.c src/dsp/biquad.c src/dsp/detector.c src/dsp/gate.c src/dsp/comp.c \
   src/dsp/mod.c src/dsp/reverb.c src/dsp/delay.c src/dsp/eq.c \
-  src/dsp/drums.c src/dsp/tuner.c \
+  src/dsp/drums.c src/dsp/tuner.c src/dsp/looper.c src/dsp/loop_mem.c \
   src/dsp/amp.c src/dsp/tone.c src/dsp/cab.c src/dsp/stock_data.c \
   src/debug/log_fmt.c src/debug/cdc_log.c src/debug/console.c \
   src/debug/selfupdate.c src/debug/flash_rmw.c src/debug/recovery.c src/debug/regs.c \

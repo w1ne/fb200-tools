@@ -30,8 +30,9 @@ static const int16_t kStep[89] = {
 };
 static const int8_t kIdx[8] = {-1, -1, -1, -1, 2, 4, 6, 8};
 
-/* the decoder step, shared by the encoder so both track the same state */
-static inline int adpcm_step(adpcm_t *s, unsigned n)
+/* the decoder step, shared by the encoder so both track the same state
+ * (not inlined: ITCM is scarce, docs/FIRMWARE_BRINGUP.md) */
+__attribute__((noinline)) static int adpcm_step(adpcm_t *s, unsigned n)
 {
     int step = kStep[s->idx];
     int d = step >> 3;
@@ -101,14 +102,6 @@ static inline void nib_put(uint8_t *p, uint32_t o, unsigned n)
     *b = (o & 1u) ? (uint8_t)((*b & 0x0Fu) | n << 4) : (uint8_t)((*b & 0xF0u) | n);
 }
 
-static inline int to_i16(float v)
-{
-    v *= SCALE;
-    if (v > 32767.0f) return 32767;
-    if (v < -32768.0f) return -32768;
-    return (int)v;
-}
-
 static inline float ramp(float g, float t, float step)
 {
     float e = t - g;
@@ -131,57 +124,55 @@ static void close_rec(looper_t *lp)
     lp->state = LOOPER_PLAY;
 }
 
-/* k samples at the loop's rate: x in, y out (the loop, level and fades in) */
+/* k samples at the loop's rate: x in, y out (the loop, level and fades in).
+ * One path for all states that run: REC is a write with no old signal. */
 static void run(looper_t *lp, const float *x, float *y, unsigned k)
 {
     const float rs = lp->ramp, lv = lp->level * (1.0f / SCALE);
     for (unsigned i = 0; i < k; i++) {
-        float out = 0.0f;
-        if (lp->state == LOOPER_REC) {
-            uint32_t o = lp->pos % LOOPER_BLK;
-            uint8_t *p = blk(lp, lp->pos / LOOPER_BLK);
-            if (o == 0) hdr_put(p, &lp->enc);
-            nib_put(p, o, looper_adpcm_enc(&lp->enc, to_i16(x[i])));
-            if (++lp->pos >= lp->rec_end) close_rec(lp);
-        } else if (lp->state != LOOPER_STOP) {
-            uint32_t o = lp->pos % LOOPER_BLK;
-            uint8_t *p = bank_blk(lp, lp->cur, lp->pos / LOOPER_BLK);
-            int want = lp->dub_t > 0.0f || lp->dub_g > 0.0f || lp->xfade;
-            if (o == 0) {
-                hdr_get(p, &lp->dec);
-                if (lp->writing && want) hdr_put(p, &lp->enc);
-                else lp->writing = 0;
+        y[i] = 0.0f;
+        if (lp->state == LOOPER_STOP) continue;
+        const int rec = lp->state == LOOPER_REC;
+        uint32_t o = lp->pos % LOOPER_BLK;
+        uint8_t *p = bank_blk(lp, lp->cur, lp->pos / LOOPER_BLK);
+        int want = rec || lp->dub_t > 0.0f || lp->dub_g > 0.0f || lp->xfade;
+        if (o == 0) {
+            if (!rec) hdr_get(p, &lp->dec);
+            if (lp->writing && want) hdr_put(p, &lp->enc);
+            else lp->writing = 0;
+        }
+        if (!lp->writing && want) {           /* starts here: from the old stream's state */
+            lp->writing = 1;
+            lp->enc = lp->dec;
+        }
+        float old = rec ? 0.0f : (float)looper_adpcm_dec(&lp->dec, nib_get(p, o));
+        float out = old;
+        if (lp->writing) {
+            float gi = 1.0f, go = 0.0f;        /* REC */
+            if (lp->xfade) {                   /* the closing crossfade */
+                go = (float)(LOOPER_BLK - lp->xfade) * (1.0f / LOOPER_BLK);
+                gi = 1.0f - go;
+                out = old * go;                /* the tail is heard live on this pass */
+                lp->xfade--;
+            } else if (!rec) {
+                gi = lp->dub_g;
+                go = 1.0f - (1.0f - LOOPER_FB) * gi;
             }
-            if (!lp->writing && want) {       /* starts here: from the old stream's state */
-                lp->writing = 1;
-                lp->enc = lp->dec;
-            }
-            float old = (float)looper_adpcm_dec(&lp->dec, nib_get(p, o));
-            out = old;
-            if (lp->writing) {
-                float gi, go;
-                if (lp->xfade) {             /* the closing crossfade */
-                    go = (float)(LOOPER_BLK - lp->xfade) * (1.0f / LOOPER_BLK);
-                    gi = 1.0f - go;
-                    out = old * go;          /* the tail is heard live on this pass */
-                    lp->xfade--;
-                } else {
-                    gi = lp->dub_g;
-                    go = 1.0f - (1.0f - LOOPER_FB) * gi;
-                }
-                float v = old * go + x[i] * SCALE * gi;
-                int q = v > 32767.0f ? 32767 : v < -32768.0f ? -32768 : (int)v;
-                nib_put(p, o, looper_adpcm_enc(&lp->enc, q));
-            }
-            lp->dub_g = ramp(lp->dub_g, lp->dub_t, rs);
-            lp->out_g = ramp(lp->out_g, lp->out_t, rs);
-            out *= lp->out_g * lv;
-            if (++lp->pos == lp->len) {
+            float v = old * go + x[i] * SCALE * gi;
+            int q = v > 32767.0f ? 32767 : v < -32768.0f ? -32768 : (int)v;
+            nib_put(p, o, looper_adpcm_enc(&lp->enc, q));
+        }
+        lp->dub_g = ramp(lp->dub_g, lp->dub_t, rs);
+        lp->out_g = ramp(lp->out_g, lp->out_t, rs);
+        y[i] = out * lp->out_g * lv;
+        if (++lp->pos >= (rec ? lp->rec_end : lp->len)) {
+            if (rec) {
+                close_rec(lp);
+            } else {
                 lp->pos = 0;
                 lp->passes++;
             }
         }
-        y[i] = out;
     }
 }
 
@@ -220,8 +211,8 @@ static void interpolate(looper_t *lp, const float *y, float *out, unsigned k)
 void looper_process(looper_t *lp, float *l, float *r, unsigned n)
 {
     if (lp->state <= LOOPER_EMPTY) return;
-    float x[DSP_BLOCK], y[DSP_BLOCK], o[DSP_BLOCK];
-    if (n > DSP_BLOCK) n = DSP_BLOCK;
+    float x[DSP_BLOCK], y[DSP_BLOCK / 2], o[DSP_BLOCK];
+    if (n != DSP_BLOCK) return;          /* the engine's whole blocks only */
     for (unsigned i = 0; i < n; i++) x[i] = 0.5f * (l[i] + r[i]);
     if (lp->hq) {
         run(lp, x, o, n);
@@ -325,14 +316,18 @@ COLD int looper_cmd(looper_t *lp, int a)
             to_empty(lp);
             lp->state = LOOPER_REC;
             lp->rec_end = lp->total * LOOPER_BLK;
-            lp->enc.pred = 0;
-            lp->enc.idx = 0;
+            lp->banks = 1;
+            lp->cur = 0;
+            lp->alt = lp->redo = 0;
+            lp->dec.pred = lp->enc.pred = 0;
+            lp->dec.idx = lp->enc.idx = 0;
+            lp->writing = 1;
             lp->out_g = lp->out_t = 1.0f;
             lp->passes = 0;
             return 0;
         }
         if (st != LOOPER_REC) return -1;
-        /* fall through: close */
+        __attribute__((fallthrough));    /* recording: close */
     case LOOPER_PLAY_A:
         if (st == LOOPER_REC) {
             lp->rec_end = lp->pos > min ? lp->pos : min;

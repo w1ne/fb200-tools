@@ -153,6 +153,7 @@ static void cmd_help(void)
              "          preset [0-39] | save | factory [yes] | rgb 0xRRGGBB [led] | rgb cfg 0xIIS0S1\r\n"
              "  bt    : bt | bt send <AT+...> | btaudio\r\n"
              "  music : stock | tuner on|off | drums [on|off|<1-40>|bpm <n>|level <0-100>]\r\n"
+             "  loop  : loop [rec|play|dub|stop|undo|clear|tap] | loop hq on|off | loop level <0-100>\r\n"
              "  delay : delay [on|off] [time " XSTR(DELAY_MS_MIN) "-" XSTR(DELAY_MS_MAX) " ms] [fb 0-100] [mix 0-100] [lowcut 0-100] [tone 0-100]\r\n"
              "  eq    : eq [on|off] | eq hpf <20-200 Hz|0> | eq lpf <2000-20000 Hz|0>\r\n"
              "          eq <band 1-5> <30-10000 Hz> <gain -15..15 dB> [q 0.3-4]\r\n"
@@ -217,6 +218,50 @@ static void cmd_delay(int argc, char **argv)
     log_printf("delay %s%s: time %u ms fb %u mix %u lowcut %u (%d Hz) tone %u%s\r\n",
                en ? "on" : "off", marked ? "" : " (stock preset, never plays)",
                v[0], v[1], v[2], v[3], (int)hz, v[4], v[4] >= 100u ? " (off)" : "");
+}
+
+/* loop [rec|play|dub|stop|undo|clear|tap] | loop hq on|off | loop level
+ * <0-100>: the looper (dsp/looper.h), then its state. `rec` takes the delay
+ * line and the long-IR memory (delay off, long IRs 512 taps) until `clear`. */
+static void cmd_loop(int argc, char **argv)
+{
+    static const char *const kAct[] = {"tap", "rec", "play", "dub", "stop", "undo", "clear"};
+    static const char *const kState[] = {"off", "empty", "rec", "play", "dub", "stop"};
+    static const char *const kUndo[] = {"none", "undo", "redo"};
+    int r = 0;
+    if (argc > 1) {
+        int a = -1;
+        for (int i = 0; i < 7; i++) if (streq(argv[1], kAct[i])) a = i;
+        if (a >= 0) {
+            r = engine_loop(a);
+        } else if (streq(argv[1], "hq") && argc > 2 && (streq(argv[2], "on") || streq(argv[2], "off"))) {
+            if (engine_loop_hq(streq(argv[2], "on")) != 0) {
+                log_printf("loop hq: not allowed while a loop exists (loop clear first)\r\n");
+                return;
+            }
+        } else if (streq(argv[1], "level") && argc > 2) {
+            int ok;
+            uint32_t n = parse_num(argv[2], &ok);
+            if (!ok || n > 100u) {
+                log_printf("usage: loop level <0-100>\r\n");
+                return;
+            }
+            engine_loop_level(n);
+        } else {
+            log_printf("usage: loop [rec|play|dub|stop|undo|clear|tap] | loop hq on|off | loop level <0-100>\r\n");
+            return;
+        }
+    }
+    looper_info_t in;
+    engine_loop_info(&in);
+    if (r != 0) {
+        log_printf("loop %s: not allowed %s\r\n", argv[1],
+                   r == -2 ? "with no loop (loop rec first)" : "now");
+    }
+    log_printf("loop %s: len_ms=%u pos_ms=%u max_ms=%u undo_max_ms=%u undo=%s hq=%d level=%u "
+               "mem=%d\r\n", kState[in.state <= LOOPER_STOP ? in.state : 0], in.len_ms, in.pos_ms,
+               in.max_ms, in.undo_max_ms, kUndo[in.undo], in.hq, in.level,
+               in.state != LOOPER_OFF);
 }
 
 /* Signed decimal: "-4.5", "3", "0.71". */
@@ -730,13 +775,15 @@ static void dispatch(char *cmd)
                    (int)r.freq, (int)((r.freq - (int)r.freq) * 100.0f));
     }
     else if (streq(argv[0], "prof")) engine_profile();
+    else if (streq(argv[0], "loop")) cmd_loop(argc, argv);
     else if (streq(argv[0], "cab") && argc > 2 && streq(argv[1], "long")) {
         int ok;
         uint32_t n = parse_num(argv[2], &ok);
         int r = ok ? engine_cab_long(n) : -1;
         log_printf("cab long %lu: %s\r\n", (unsigned long)n,
                    r == 0 ? "ok" : r == -2 ? "not available (long IRs need more RAM; max " XSTR(ENGINE_IR_TAPS) ")"
-                                           : "bad taps");
+                   : r == -3 ? "not available (the looper has the long-IR memory; max 512 until loop clear)"
+                             : "bad taps");
     }
     else if (streq(argv[0], "stock")) {
         int r = stock_check((const void *)STOCK_FLASH, STOCK_FLASH_SIZE);
