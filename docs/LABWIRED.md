@@ -27,7 +27,7 @@ has no FB200 special cases.
 The i.MX RT parts and the `peripheral_log` and `fidelity_clean` assertions
 are on core `main` (PRs #1254 and #1255) and are not released yet. The
 14-segment display model (`segment-display-mux`) needs core PR
-CORE_PR_PLACEHOLDER. Until the
+[#1273](https://github.com/w1ne/labwired-core/pull/1273). Until the
 next core release, build the CLI from `main`:
 
 ```bash
@@ -217,8 +217,8 @@ It records two logs for `peripheral_log`:
 
 | Log | One line per | Example |
 |-----|--------------|---------|
-| `text` | change of the visible text | `"LAb" at cycle 12000000` |
-| `frames` | change of the visible segment masks (bit = IO16..IO30) | `0x4021 0x4751 0x4471 at cycle 12000000` |
+| `text` | change of the visible text | `"LAb" at cycle 12000001` |
+| `frames` | change of the visible segment masks (bit = IO16..IO30) | `0x4021 0x4751 0x4471 at cycle 12000001` |
 
 A failed `peripheral_log` check prints the last lines of the log.
 
