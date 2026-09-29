@@ -88,6 +88,7 @@ def test_conv2_suite():
     assert result.returncode == 0, result.stdout + result.stderr
     assert "conv2 host tests OK" in result.stdout
     assert "conv2 4096 taps, odd blocks" in result.stdout
+    assert "conv2 4096 taps,  8-sample block then" in result.stdout
 
 
 def test_amp_cab_suite():

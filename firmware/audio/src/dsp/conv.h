@@ -5,6 +5,7 @@
  * The caller owns the spectra storage (CONV_PARTS(taps) rows each), so every
  * instance reserves only the IR length it needs. */
 #include <stddef.h>
+#include <stdint.h>
 #include "arm_math.h"
 #include "dsp.h"
 
@@ -16,6 +17,7 @@ typedef struct {
     float (*h)[CONV_N];          /* cap IR partition spectra (packed) */
     float (*x)[CONV_N];          /* cap input spectra: ring (FDL), newest at head */
     unsigned cap, parts, head, fill;
+    uint32_t steps;              /* FFT + MAC steps run (wraps): tests, profiling */
     float in[CONV_N];            /* previous block | current block (fill samples) */
 } conv_t;
 

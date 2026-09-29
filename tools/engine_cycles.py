@@ -90,7 +90,7 @@ def build(cross: str, src: Path, out: Path) -> tuple[Path, dict[str, int], list]
         _obj(cross, f, objs[-1], inc)
     elf = out / "bench.elf"
     subprocess.run([f"{cross}gcc", *FLAGS, "-nostdlib", "-Wl,--gc-sections", "-Wl,-e,bench_setup",
-                    "-Wl,-u,bench_amp", "-Wl,-u,bench_cab", "-Wl,--no-warn-rwx-segments",
+                    "-Wl,-u,bench_amp", "-Wl,-u,bench_cab", "-Wl,-u,bench_cab_n", "-Wl,--no-warn-rwx-segments",
                     "-T", str(out / "bench.ld"), *map(str, objs), "-lgcc", "-o", str(elf)],
                    check=True)
     subprocess.run([f"{cross}objcopy", "-O", "binary", "-j", ".text", "-j", ".rodata", str(elf),
@@ -377,6 +377,14 @@ def do_profile(args, cross: str) -> int:
     setting = (*setting[:7], args.cab, args.taps)
     b.setup(setting)
     warm(b)
+    if args.short:                            # misalign, then the re-phasing block
+        b.call("bench_cab_n", args.short)
+        b.profile(True)
+        b.call("bench_cab")
+        b.profile(False)
+        print(f"after a {args.short}-sample block, the next cab block: "
+              f"{sum(b.counts.values())} instr, model {sum(b.cycles.values())} cycles")
+        b.at = {}
     rng = np.random.default_rng(1)
     x = signal(rng, args.blocks)
     tot = {}
@@ -463,6 +471,8 @@ def main() -> int:
     ap.add_argument("--model", type=int, default=1)
     ap.add_argument("--cab", type=int, default=1)
     ap.add_argument("--taps", type=int, default=0, help="long IR taps (0: the stock 512)")
+    ap.add_argument("--short", type=int, default=0,
+                    help="one short cab block of this length first (partition phase)")
     ap.add_argument("--blocks", type=int, default=0, help="default 20 (profile), 2000 (compare)")
     ap.add_argument("--fp-lat", type=int, default=3)
     ap.add_argument("--fma-lat", type=int, default=0, help="VFMA latency (default: --fp-lat)")

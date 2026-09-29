@@ -43,3 +43,6 @@ void bench_setup(const stock_data_t *blob)
 void bench_amp(void) { amp_process(&s_amp, bench_buf, DSP_BLOCK); }
 
 void bench_cab(void) { cab_process(&s_cab, bench_buf, DSP_BLOCK); }
+
+/* a short block (a SAI hiccup on the pedal): shifts the partition phase */
+void bench_cab_n(unsigned n) { cab_process(&s_cab, bench_buf, n); }
