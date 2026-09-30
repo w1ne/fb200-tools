@@ -31,7 +31,7 @@ SETTINGS_FLASH = 0x80000
 
 # the looper on the simulated flash (firmware/audio/tests/loopflash_sim.c)
 LOOPER_SRC = ["dsp/looper.c", "dsp/loopcodec.c", "loopstore/loopstore.c", "loopstore/lsio.c",
-              "debug/flash_rmw.c"]
+              "debug/flash_rmw.c", "crc32.c"]
 
 
 @functools.cache
