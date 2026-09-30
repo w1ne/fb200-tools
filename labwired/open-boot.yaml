@@ -19,25 +19,48 @@
 #   mV = trunc(3300 * P / 100); counts = round(mV * 4095 / 3300)
 # The start positions are 8 + 5 N % (system.yaml). The 16 counts differ.
 # None of them is the 50 % mid-scale count 2048. At 80 M cycles a stimulus
-# turns MASTER (k15) from 83 % to 20 %. At 115 M cycles its slot holds
+# turns MASTER (k15) from 83 % to 20 %. At the stop its slot holds
 # 819 (0x333). The start count 3399 (0xd47) is no longer there.
+# The same run checks the panel. MASTER's name is shown as 0Ut, because
+# the display reads the letter O as the digit 0. Footswitch B loads slot
+# B, and the display then shows P0b. The codec comes up as 16-bit I2S
+# with the converters on. The Bluetooth module answers the boot commands
+# through AT+B401. The run stops at 640 M cycles, which is after that
+# last command. The looper chord holds a footswitch for one second, and
+# that second is past this budget.
 schema_version: "1.2"
 inputs:
   firmware: "../build/labwired/open.elf"
   system: "system.yaml"
 limits:
-  max_steps: 200000000
-  max_cycles: 115000000
+  max_steps: 1000000000
+  max_cycles: 640000000
   wall_time_ms: 110000
   # The per-cycle peripheral walk dominates this run. Sixteen CPU cycles
-  # between peripheral ticks still reach the USB name and the turned knob.
+  # between peripheral ticks still reach the checks below.
   peripheral_tick_interval: 16
 stimuli:
   - target: { component: "knob_k15_master", channel: "position" }
     trigger: !after_cycles { cycles: 80000000 }
     value: 20
+  - target: { component: "footswitch_b", channel: "pressed" }
+    trigger: !after_cycles { cycles: 100000000 }
+    value: 1
+  - target: { component: "footswitch_b", channel: "pressed" }
+    trigger: !after_cycles { cycles: 140000000 }
+    value: 0
 assertions:
   - peripheral_log: {peripheral: usb1, log: host, contains: "\"FB200 Audio\""}
+  - peripheral_log: {peripheral: display, log: text, contains: "\"0Ut\""}
+  - peripheral_log: {peripheral: display, log: text, contains: "\"P0b\""}
+  - peripheral_log: {peripheral: codec, log: writes, contains: "write 0x001c = 0x0002"}
+  - peripheral_log: {peripheral: codec, log: state, contains: "dai slave i2s 16-bit"}
+  - peripheral_log: {peripheral: codec, log: state, contains: "adcout driven"}
+  - peripheral_log: {peripheral: codec, log: state, contains: "enable dac_l dac_r adc_l adc_r"}
+  - peripheral_log: {peripheral: lpuart5, log: at, contains: "AT+TM -> TM+BT201-BLE"}
+  - peripheral_log: {peripheral: lpuart5, log: at, contains: "AT+CN00"}
+  - peripheral_log: {peripheral: lpuart5, log: at, contains: "AT+B501"}
+  - peripheral_log: {peripheral: lpuart5, log: at, contains: "AT+B401"}
   # k0 THRESH, 8 %
   - memory_value: { symbol: knobs, offset: 0, size: 2, expected_value: 0x148 }
   # k1 COMP_LEVEL, 13 %

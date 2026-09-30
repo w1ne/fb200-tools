@@ -1,4 +1,4 @@
-"""The open pedal gate names 16 raw knob counts and one turned knob.
+"""The open pedal gate names the panel checks and 16 raw knob counts.
 
 The counts are the divider formula in labwired/open-boot.yaml. The test
 fails when those literals are the mid-scale reading or the turned knob's
@@ -82,6 +82,20 @@ def test_open_gate_expects_the_sixteen_start_counts_and_the_turn():
     assert "max_cycles: 3400000000" not in text
     assert "wall_time_ms: 900000" not in text
     assert "peripheral_tick_interval: 16" in text
+    assert "max_cycles: 640000000" in text
+    assert "max_steps: 1000000000" in text
+    assert "max_cycles: 115000000" not in text
+    assert 'component: "footswitch_b"' in text
+    assert '\\"0Ut\\"' in text
+    assert '\\"P0b\\"' in text
+    assert "write 0x001c = 0x0002" in text
+    assert "dai slave i2s 16-bit" in text
+    assert "adcout driven" in text
+    assert "enable dac_l dac_r adc_l adc_r" in text
+    assert "AT+TM -> TM+BT201-BLE" in text
+    assert "AT+CN00" in text
+    assert "AT+B501" in text
+    assert "AT+B401" in text
 
 
 def test_render_gate_writes_the_symbol_address_and_keeps_the_counts():
@@ -99,6 +113,9 @@ def test_render_gate_writes_the_symbol_address_and_keeps_the_counts():
     assert 'system: "../../labwired/system.yaml"' in placed
     assert "peripheral_tick_interval: 16" in rendered
     assert "peripheral_tick_interval: 16" in placed
+    assert '\\"P0b\\"' in rendered
+    assert "AT+B401" in rendered
+    assert "max_cycles: 640000000" in rendered
 
 
 def test_render_gate_rejects_a_missing_slot():

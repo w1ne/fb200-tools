@@ -92,7 +92,8 @@ jobs:
           name: fb200-firmware
           path: out/
 
-  # Boots firmware/audio on the FB200 twin and checks one knob turn.
+  # Boots firmware/audio on the FB200 twin and checks one knob turn,
+  # the display, one footswitch, the codec, and Bluetooth startup.
   # The core pin drops a stale decode after a store, aligns VLDR/VSTR
   # literals, and applies limits.peripheral_tick_interval. A released
   # labwired binary does not boot this image. Apt, the firmware build,
@@ -120,8 +121,8 @@ jobs:
       - name: Build labwired
         working-directory: labwired-core
         env:
-          # ubuntu-latest does about 1.1 M steps/s. The pedal proof is ready
-          # at 115 M cycles, which needs a faster binary to finish in 90 s.
+          # The pedal proof stops at 640 M cycles. This binary has to
+          # finish that run inside the 90 s cap.
           CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
           RUSTFLAGS: "-C target-cpu=native"
         run: cargo build --release -p labwired-cli
@@ -181,16 +182,29 @@ jobs:
           )
           if stimulus["outcome"] != "applied" or stimulus["value"] != 20:
               sys.exit("the MASTER knob was not turned to 20")
+          required_logs = {
+              ("usb1", "host", '"FB200 Audio"'),
+              ("display", "text", '"0Ut"'),
+              ("display", "text", '"P0b"'),
+              ("codec", "writes", "write 0x001c = 0x0002"),
+              ("codec", "state", "dai slave i2s 16-bit"),
+              ("codec", "state", "adcout driven"),
+              ("codec", "state", "enable dac_l dac_r adc_l adc_r"),
+              ("lpuart5", "at", "AT+TM -> TM+BT201-BLE"),
+              ("lpuart5", "at", "AT+CN00"),
+              ("lpuart5", "at", "AT+B501"),
+              ("lpuart5", "at", "AT+B401"),
+          }
+          seen_logs = set()
           memory = []
           for item in result["assertions"]:
               if not item["passed"]:
                   sys.exit(f"failed check: {item}")
               body = item["assertion"]
               if "peripheral_log" in body:
-                  text = body["peripheral_log"]["contains"]
-                  print("usb", text)
-                  if text != '"FB200 Audio"':
-                      sys.exit("USB product string is not FB200 Audio")
+                  log = body["peripheral_log"]
+                  seen_logs.add((log["peripheral"], log["log"], log["contains"]))
+                  print(log["peripheral"], log["log"], log["contains"])
               elif "fidelity_clean" in body:
                   print("fidelity_clean", body["fidelity_clean"])
                   if body["fidelity_clean"] is not True:
@@ -201,10 +215,18 @@ jobs:
                   print(
                       f"knob {len(memory) - 1} address {body['memory_value']['address']:#x} value {value:#x}"
                   )
+          missing = sorted(required_logs - seen_logs)
+          if missing:
+              sys.exit(f"missing checks: {missing}")
           if len(memory) != 16:
               sys.exit(f"expected 16 knob values, found {len(memory)}")
           if len(set(memory)) != 16 or 2048 in memory or memory[-1] in (2048, 3399):
               sys.exit(f"knob values are not the distinct raw counts plus the turn: {memory}")
+          foot = [item for item in result["stimuli"] if item["component"] == "footswitch_b"]
+          got = [(item["value"], item["outcome"]) for item in foot]
+          print("footswitch_b", got)
+          if got != [(1, "applied"), (0, "applied")]:
+              sys.exit("footswitch B was not pressed and released")
           print("open-firmware pedal proof ok")
           PY
       - uses: actions/upload-artifact@v4
