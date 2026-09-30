@@ -127,7 +127,7 @@ int main(void)
         char *argv[8] = {0};
         int argc = 0;
         for (char *t = strtok(line, " \r\n"); t && argc < 8; t = strtok(NULL, " \r\n")) argv[argc++] = t;
-        if (!argc) { puts("."); continue; }
+        if (!argc) { puts("."); fflush(stdout); continue; }
         const char *c = argv[0];
         unsigned long a1 = argc > 1 ? strtoul(argv[1], NULL, 0) : 0;
         if (!strcmp(c, "cap")) cap = (uint32_t)a1;
@@ -184,6 +184,8 @@ int main(void)
         else if (!strcmp(c, "nameok")) printf("nameok %d\n", irstore_name_ok(argc > 1 ? argv[1] : ""));
         else printf("unknown %s\n", c);
         puts(".");
+        /* Win32 treats _IOLBF as full buffering, so the pipe stalls without this. */
+        fflush(stdout);
     }
     return 0;
 }
