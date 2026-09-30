@@ -93,10 +93,11 @@ jobs:
           path: out/
 
   # Boots firmware/audio on the FB200 twin and checks one knob turn.
-  # The core pin is the commit that drops a stale decode after a store
-  # and aligns VLDR/VSTR literals. A released labwired binary does not
-  # boot this image. Apt, the firmware build, and the core build are
-  # outside the 90 s cap. The cap is the labwired test process only.
+  # The core pin drops a stale decode after a store, aligns VLDR/VSTR
+  # literals, and applies limits.peripheral_tick_interval. A released
+  # labwired binary does not boot this image. Apt, the firmware build,
+  # and the core build are outside the 90 s cap. The cap is the labwired
+  # test process only.
   open-firmware:
     runs-on: ubuntu-latest
     steps:
@@ -110,7 +111,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: w1ne/labwired-core
-          ref: dfe7b73fb39b2bb5c60aaaa722d6b94499a0674f
+          ref: c70cef732f18bf83df88e61f5f9374fb26d48fa6
           path: labwired-core
       - uses: dtolnay/rust-toolchain@1.95.0
       - uses: Swatinem/rust-cache@v2
