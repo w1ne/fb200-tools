@@ -1,0 +1,71 @@
+# fb200-tools: LabWired twin of the FLAMMA FB200 - open firmware pedal gate.
+#
+# Boots firmware/audio. Recovery starts, checks the app slot, and launches
+# the app. There is no vendor image. Build the image first. That step also
+# resolves the knob table and writes the file `labwired test` runs:
+#
+#   make -C firmware/audio build VARIANT=recovery
+#   make -C firmware/audio build VARIANT=app
+#   python3 tools/labwired_open_fw.py
+#   labwired test --script build/labwired/open-boot.yaml
+#
+# The name knobs is the file-local array in
+# firmware/audio/src/ui/controls.c. The linker moves it every build, so
+# this file names that array. The tool reads the address from
+# fb200-app.elf and writes build/labwired/open-boot.yaml with that address.
+#
+# The app stores the raw ADC count. 0 is fully counter-clockwise. It does
+# not subtract the count from 4095. A knob at P % reads:
+#   mV = trunc(3300 * P / 100); counts = round(mV * 4095 / 3300)
+# The start positions are 8 + 5 N % (system.yaml). The 16 counts differ.
+# None of them is the 50 % mid-scale count 2048. At 80 M cycles a stimulus
+# turns MASTER (k15) from 83 % to 20 %. At 140 M cycles its slot holds
+# 819 (0x333). The start count 3399 (0xd47) is no longer there.
+schema_version: "1.2"
+inputs:
+  firmware: "../build/labwired/open.elf"
+  system: "system.yaml"
+limits:
+  max_steps: 400000000
+  max_cycles: 140000000
+  wall_time_ms: 120000
+stimuli:
+  - target: { component: "knob_k15_master", channel: "position" }
+    trigger: !after_cycles { cycles: 80000000 }
+    value: 20
+assertions:
+  - peripheral_log: {peripheral: usb1, log: host, contains: "\"FB200 Audio\""}
+  # k0 THRESH, 8 %
+  - memory_value: { symbol: knobs, offset: 0, size: 2, expected_value: 0x148 }
+  # k1 COMP_LEVEL, 13 %
+  - memory_value: { symbol: knobs, offset: 2, size: 2, expected_value: 0x214 }
+  # k2 AMP, 18 %
+  - memory_value: { symbol: knobs, offset: 4, size: 2, expected_value: 0x2e1 }
+  # k3 GATE, 23 %
+  - memory_value: { symbol: knobs, offset: 6, size: 2, expected_value: 0x3ae }
+  # k4 BASS, 28 %
+  - memory_value: { symbol: knobs, offset: 8, size: 2, expected_value: 0x47b }
+  # k5 GAIN, 33 %
+  - memory_value: { symbol: knobs, offset: 10, size: 2, expected_value: 0x547 }
+  # k6 MID, 38 %
+  - memory_value: { symbol: knobs, offset: 12, size: 2, expected_value: 0x614 }
+  # k7 TREBLE, 43 %
+  - memory_value: { symbol: knobs, offset: 14, size: 2, expected_value: 0x6e1 }
+  # k8 RATE, 48 %
+  - memory_value: { symbol: knobs, offset: 16, size: 2, expected_value: 0x7ae }
+  # k9 MOD, 53 %
+  - memory_value: { symbol: knobs, offset: 18, size: 2, expected_value: 0x87a }
+  # k10 VOL, 58 %
+  - memory_value: { symbol: knobs, offset: 20, size: 2, expected_value: 0x947 }
+  # k11 MIX, 63 %
+  - memory_value: { symbol: knobs, offset: 22, size: 2, expected_value: 0xa14 }
+  # k12 REVERB, 68 %
+  - memory_value: { symbol: knobs, offset: 24, size: 2, expected_value: 0xae1 }
+  # k13 CAB, 73 %
+  - memory_value: { symbol: knobs, offset: 26, size: 2, expected_value: 0xbad }
+  # k14 REV_LEVEL, 78 %
+  - memory_value: { symbol: knobs, offset: 28, size: 2, expected_value: 0xc7a }
+  # k15 MASTER, turned from 83 % to 20 % (the start count would be 0xd47)
+  - memory_value: { symbol: knobs, offset: 30, size: 2, expected_value: 0x333 }
+  - fidelity_clean: true
+  - expected_stop_reason: max_cycles

@@ -91,3 +91,119 @@ jobs:
         with:
           name: fb200-firmware
           path: out/
+
+  # Boots firmware/audio on the FB200 twin and checks one knob turn.
+  # The core pin is the commit that drops a stale decode after a store
+  # and aligns VLDR/VSTR literals. A released labwired binary does not
+  # boot this image. Apt, the firmware build, and the core build are
+  # outside the 90 s cap. The cap is the labwired test process only.
+  open-firmware:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the ARM toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi make
+      - name: Check out labwired-core
+        uses: actions/checkout@v4
+        with:
+          repository: w1ne/labwired-core
+          ref: dfe7b73fb39b2bb5c60aaaa722d6b94499a0674f
+          path: labwired-core
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: labwired-core
+      - name: Build labwired
+        working-directory: labwired-core
+        run: cargo build --release -p labwired-cli
+      - name: Build the open firmware
+        working-directory: firmware/audio
+        run: |
+          make deps
+          make build VARIANT=recovery
+          make build VARIANT=app
+      - name: Resolve the knob table
+        run: python3 tools/labwired_open_fw.py
+      - name: Boot the open firmware and check the pedal
+        run: |
+          set -o pipefail
+          ./labwired-core/target/release/labwired test \
+            --script build/labwired/open-boot.yaml \
+            --output-dir open-pedal \
+            --no-uart-stdout 2>&1 | tee open-pedal.log
+          python3 - <<'PY'
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          log = Path("open-pedal.log").read_text()
+          match = re.search(
+              r"PASS\s+(\d+)/(\d+) checks · open-boot · (\d+) steps · ([0-9.]+)s",
+              log,
+          )
+          if match is None:
+              sys.exit("open-pedal.log has no PASS line")
+          done, total, steps, seconds = match.groups()
+          seconds = float(seconds)
+          print(f"PASS  {done}/{total} checks · open-boot · {steps} steps · {seconds}s")
+          if done != total:
+              sys.exit("not every check passed")
+          if seconds > 90:
+              sys.exit(f"labwired test took {seconds}s; the cap is 90s")
+
+          result = json.loads(Path("open-pedal/result.json").read_text())
+          print("status", result["status"])
+          print("stop_reason", result["stop_reason"])
+          observed = result["stop_reason_details"]["observed"]["value"]
+          limit = result["stop_reason_details"]["triggered_limit"]["value"]
+          print("cycles", observed, "limit", limit)
+          if result["status"] != "pass" or result["stop_reason"] != "max_cycles":
+              sys.exit("the run did not pass at max_cycles")
+          if observed != limit or limit in (250_000_000, 3_400_000_000):
+              sys.exit("the run used the soak budget")
+          stimulus = result["stimuli"][0]
+          print(
+              "turn",
+              stimulus["component"],
+              stimulus["value"],
+              stimulus["outcome"],
+              stimulus["at_cycle"],
+          )
+          if stimulus["outcome"] != "applied" or stimulus["value"] != 20:
+              sys.exit("the MASTER knob was not turned to 20")
+          memory = []
+          for item in result["assertions"]:
+              if not item["passed"]:
+                  sys.exit(f"failed check: {item}")
+              body = item["assertion"]
+              if "peripheral_log" in body:
+                  text = body["peripheral_log"]["contains"]
+                  print("usb", text)
+                  if text != '"FB200 Audio"':
+                      sys.exit("USB product string is not FB200 Audio")
+              elif "fidelity_clean" in body:
+                  print("fidelity_clean", body["fidelity_clean"])
+                  if body["fidelity_clean"] is not True:
+                      sys.exit("fidelity_clean did not pass")
+              elif "memory_value" in body:
+                  value = body["memory_value"]["expected_value"]
+                  memory.append(value)
+                  print(
+                      f"knob {len(memory) - 1} address {body['memory_value']['address']:#x} value {value:#x}"
+                  )
+          if len(memory) != 16:
+              sys.exit(f"expected 16 knob values, found {len(memory)}")
+          if len(set(memory)) != 16 or 2048 in memory or memory[-1] in (2048, 3399):
+              sys.exit(f"knob values are not the distinct raw counts plus the turn: {memory}")
+          print("open-firmware pedal proof ok")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: open-pedal-result
+          path: |
+            open-pedal/result.json
+            open-pedal.log

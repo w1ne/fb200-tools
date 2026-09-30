@@ -20,8 +20,11 @@ has no FB200 special cases.
 | `labwired/stock-knobs.yaml` | gate for the vendor firmware: it reads all 16 knobs through the 74HC4051 muxes, and a turned knob (long: 3.4 G cycles) |
 | `labwired/stock-first-boot.yaml` | gate for the vendor firmware from a blank flash: factory reset, Bluetooth AT sequence and module replies, a scripted phone (long: about 30 min of CPU time) |
 | `firmware/labwired-smoke/` | the open smoke firmware (bare registers, no SDK) |
+| `firmware/audio/` | the open pedal firmware (recovery and the app) |
 | `tools/labwired_elf.py` | puts raw blobs into one ARM ELF, one PT_LOAD per blob |
 | `tools/labwired_stock.py` | builds `build/labwired/stock.elf` from your `.mr` |
+| `tools/labwired_open_fw.py` | builds `build/labwired/open.elf` and writes `build/labwired/open-boot.yaml` with the knob-table address |
+| `labwired/open-boot.yaml` | gate template for the open firmware: USB product string, 16 raw knob counts, and one turned knob |
 
 ## 2. Get the LabWired CLI
 
@@ -30,7 +33,11 @@ the NAU88L21 codec part with device logs (PR #1272), the 14-segment
 display part `segment-display-mux` (PR
 [#1273](https://github.com/w1ne/labwired-core/pull/1273)) and the BT201
 Bluetooth module `bt201` (PR #1274) are on core `main` and are not
-released yet. Until the next core release, build the CLI from `main`:
+released yet. This image also needs two interpreter fixes. A store drops
+a cached decode of the instruction bytes it overwrites. A VLDR or VSTR
+literal uses Align(PC+4, 4). A released `labwired` binary does not boot
+this image. Until the next core release, build the CLI from a core
+commit that contains those fixes:
 
 ```bash
 git clone https://github.com/w1ne/labwired-core.git
@@ -61,6 +68,25 @@ The script reads the `.mr` with `fb200.firmware.MrFile` and writes
 (model library) at `0x600D0000`. The entry is block 0's reset vector
 (`0x600104D9`).
 
+Open firmware (recovery and the app). This image has no vendor bytes:
+
+```bash
+make -C firmware/audio build VARIANT=recovery
+make -C firmware/audio build VARIANT=app
+python3 tools/labwired_open_fw.py
+```
+
+The script writes `build/labwired/open.elf`. Recovery sits at `0x60010000`.
+The app slot sits at `0x60020000`. The reset vector still points at
+`0x600104D9`. The script writes a short loader at that address. The loader
+copies the recovery program into ITCM and branches to it. Recovery then
+launches the app.
+
+The script also reads the `knobs` symbol in `fb200-app.elf`. It writes
+`build/labwired/open-boot.yaml`. Run that file. The
+template `labwired/open-boot.yaml` names the array. The tool fills in the
+address for this build. The linker moves the array on every build.
+
 **The vendor image is not redistributable.** Never commit `fb200-stock.mr`,
 `stock.elf` or any block extracted from it. `build/` and `*.mr` are in
 `.gitignore`.
@@ -69,6 +95,7 @@ The script reads the `.mr` with `fb200.firmware.MrFile` and writes
 
 ```bash
 labwired test --script labwired/smoke.yaml
+labwired test --script build/labwired/open-boot.yaml   # open firmware, see 5
 labwired test --script labwired/stock-boot.yaml
 labwired test --script labwired/stock-knobs.yaml        # long, see 5
 labwired test --script labwired/stock-first-boot.yaml   # long, see 5
@@ -78,6 +105,7 @@ Expected result:
 
 ```
 PASS  5/5 checks · smoke · 40000000 steps · 36.87s
+PASS  19/19 checks · open-boot · 140000000 steps · 38.61s
 PASS  37/37 checks · stock-boot · 90000000 steps · 15.26s
 PASS  20/20 checks · stock-knobs · 3400000000 steps · 4754.33s
 PASS  24/24 checks · stock-first-boot · 6800000000 steps · 6031.15s
@@ -87,11 +115,40 @@ The stock gate asserts `fidelity_clean: true`: an unmapped MMIO access or an
 undecoded instruction anywhere in the run fails it (the gaps are also in
 `result.json`, key `fidelity`). Use `--output-dir DIR` to keep the artifacts.
 
-A nightly CI job with the released `labwired-test` action follows after the
-next core release. The stock gate cannot run in public CI, because it needs
-the vendor image.
+The `open-firmware` job in `.github/workflows/ci.yml` builds this image and
+runs the open gate on every push and every pull request. The job builds
+the CLI from the pinned core commit. The stock gate cannot run in public
+CI, because it needs the vendor image.
 
 ## 5. What the gates prove
+
+### Open firmware gate
+
+The open gate runs `firmware/audio`. Recovery starts, checks the app slot,
+and launches the app. The simulated USB host reads the string descriptors.
+The product string is `FB200 Audio`. The stock image sends `FB200`.
+`fidelity_clean: true` rejects an unmapped access or an undecoded instruction.
+
+The app stores one raw ADC count per knob. The count is a `uint16_t` in
+the array `knobs`. A count of 0 is fully counter-clockwise. The firmware
+does not subtract the count from 4095. The board starts each knob at
+`8 + 5 N` %. Those 16 counts are all different. None of them is the
+mid-scale count 2048.
+
+At 80 M cycles the gate turns the MASTER knob from 83 % to 20 %. The app
+scans that knob again. At 140 M cycles the stored count is 819 (`0x333`).
+The start count 3399 (`0xd47`) is no longer in that slot. The run stops
+at `max_cycles` 140000000.
+
+Two consecutive runs reported the same 19 checks and the same stop
+reason, `max_cycles`. The first run printed this line. The second run
+took 38.98 s.
+
+```
+PASS  19/19 checks · open-boot · 140000000 steps · 38.61s
+```
+
+The runs used a local core build. That core is not released yet.
 
 ### Smoke gate
 
