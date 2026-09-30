@@ -1,14 +1,15 @@
-/* Looper: see looper.h. looper_process and what it calls are on the audio
- * path (ITCM); the control functions are COLD (flash). */
+/* Looper, the audio side: see looper.h. looper_process and what it calls
+ * are on the audio path (ITCM); the control functions are COLD (flash). */
 #include <string.h>
 #include "cold.h"
 #include "looper.h"
-#include "dsp.h"
+#include "loopstore/loopstore.h"
 
-#define FS_FULL 44100.0f
-#define SCALE 16384.0f                 /* int16 = x * SCALE: +6 dB headroom */
 #define HB_N (4 * LOOPER_HB_SIDE - 2)  /* decimator history: taps - 1 (26) */
 #define IH_N (2 * LOOPER_HB_SIDE - 1)  /* interpolator history (13) */
+#define CHUNK_SAMPLES (LS_FPC * LC_N)  /* 6368: 289 ms */
+#define MIN_LEN ((uint32_t)(LOOPER_MIN_MS * LOOPER_FS / 1000.0f))
+#define NO_CHUNK 0xFFFFFFFFu
 
 /* Half-band FIR (27 taps, Kaiser beta 6): h[13] = 0.5, h[13 +- (2j+1)] =
  * kHb[j], the even offsets are 0. Sum of kHb = 0.25 (unity at DC). Flat
@@ -19,119 +20,123 @@ static const float kHb[LOOPER_HB_SIDE] = {
     7.920118734e-03f, -2.469291685e-03f, 3.642603099e-04f,
 };
 
-/* IMA ADPCM (the standard tables) */
-static const int16_t kStep[89] = {
-    7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60,
-    66, 73, 80, 88, 97, 107, 118, 130, 143, 157, 173, 190, 209, 230, 253, 279, 307, 337, 371,
-    408, 449, 494, 544, 598, 658, 724, 796, 876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878,
-    2066, 2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845,
-    8630, 9493, 10442, 11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086,
-    29794, 32767,
-};
-static const int8_t kIdx[8] = {-1, -1, -1, -1, 2, 4, 6, 8};
-
-/* One IMA step on the packed state s = pred (low 16 bits) | idx << 16:
- * the decoder, and the encoder after quant(), so both track the same
- * state. Packed: it stays in registers across the call (one copy of the
- * code for both: ITCM). */
-__attribute__((noinline)) static uint32_t step(uint32_t s, unsigned n)
-{
-    int st = kStep[s >> 16], d = st >> 3;
-    if (n & 4u) d += st;
-    if (n & 2u) d += st >> 1;
-    if (n & 1u) d += st >> 2;
-    int p = (int16_t)s + ((n & 8u) ? -d : d);
-    p = p > 32767 ? 32767 : p < -32768 ? -32768 : p;
-    int i = (int)(s >> 16) + kIdx[n & 7u];
-    i = i < 0 ? 0 : i > 88 ? 88 : i;
-    return (uint16_t)p | (uint32_t)i << 16;
-}
-
-/* the encoder's nibble for x */
-static inline unsigned quant(uint32_t s, int x)
-{
-    int st = kStep[s >> 16], d = x - (int16_t)s;
-    unsigned n = 0;
-    if (d < 0) { n = 8; d = -d; }
-    if (d >= st) { n |= 4; d -= st; }
-    st >>= 1;
-    if (d >= st) { n |= 2; d -= st; }
-    st >>= 1;
-    if (d >= st) n |= 1;
-    return n;
-}
-
-static inline uint32_t pack(const adpcm_t *a) { return (uint16_t)a->pred | (uint32_t)a->idx << 16; }
-
-static inline void unpack(adpcm_t *a, uint32_t s)
-{
-    a->pred = (int16_t)s;
-    a->idx = (uint8_t)(s >> 16);
-}
-
-/* the codec for the tests (flash) */
-COLD int looper_adpcm_dec(adpcm_t *a, unsigned nib)
-{
-    unpack(a, step(pack(a), nib & 15u));
-    return a->pred;
-}
-
-COLD unsigned looper_adpcm_enc(adpcm_t *a, int x)
-{
-    unsigned n = quant(pack(a), x);
-    unpack(a, step(pack(a), n));
-    return n;
-}
-
-/* global block g of the memory */
-static inline uint8_t *blk(const looper_t *lp, uint32_t g)
-{
-    return g < lp->nseg0 ? lp->seg[0] + g * LOOPER_BLK_BYTES
-                         : lp->seg[1] + (g - lp->nseg0) * LOOPER_BLK_BYTES;
-}
-
-static inline uint8_t *bank_blk(const looper_t *lp, unsigned bank, uint32_t b)
-{
-    return blk(lp, b + (lp->banks == 2 ? bank * lp->half : 0));
-}
-
-/* float -> int16, saturated (the M7: VCVT then SSAT) */
-static inline int sat16(float v)
-{
-#if defined(__ARM_FEATURE_SAT)
-    return __builtin_arm_ssat((int)v, 16);   /* |v| < 2^17 here: the cast is exact */
-#else
-    return v > 32767.0f ? 32767 : v < -32768.0f ? -32768 : (int)v;
-#endif
-}
-
 static inline float ramp(float g, float t, float st)
 {
     float e = t - g;
     return e > st ? g + st : e < -st ? g - st : t;
 }
 
-/* REC closes: the loop is pos samples long; the first block is rewritten
- * with the crossfade (in place, the writer continues the record's
- * encoder: the tail follows the loop end in time). */
+/* The flash side has a slot for one more chunk (after the ones started
+ * and not yet given one), res kept back. */
+static inline int room(const looper_t *lp, uint32_t extra)
+{
+    const loopio_t *io = lp->io;
+    return lp->started - io->alloc + extra < io->pool;
+}
+
+/* a marker waiting for its slot goes first: 1 when none is left */
+static inline int flush_mark(looper_t *lp)
+{
+    if (lp->mark && lio_wr_mark(lp->io, lp->mark)) lp->mark = 0;
+    return lp->mark == 0;
+}
+
+static inline void end_session(looper_t *lp)
+{
+    lp->sess = 0;
+    if (!flush_mark(lp) || !lio_wr_mark(lp->io, LIO_END)) lp->mark = LIO_END;
+}
+
+/* REC closes: the loop is pos samples long. What plays next (the tail)
+ * fades out while the start fades in: a new version of the first frames
+ * (the next write session). */
 __attribute__((noinline)) static void close_rec(looper_t *lp)
 {
     lp->len = lp->pos;
-    lp->nblk = (lp->len + LOOPER_BLK - 1u) / LOOPER_BLK;
-    lp->banks = lp->nblk <= lp->half ? 2 : 1;
-    lp->cur = 0;
-    lp->alt = lp->redo = 0;
-    lp->pos = 0;
-    lp->xfade = LOOPER_BLK;
-    lp->writing = 1;
+    lp->nfr = (lp->len + LC_N - 1u) / LC_N;
+    lp->io->nfr = lp->nfr;
+    if (lp->sess) end_session(lp);
     lp->state = LOOPER_PLAY;
+    lp->pos = 0;
+    lp->xfade = LOOPER_XFADE;
+    lp->alt = lp->redo = 0;
+    lp->passes = 0;
 }
 
-/* k samples at the loop's rate: x in (read only while writing), y out (the
- * loop, level and fades in). One path for all states that run: REC is a
- * write with no old signal. The state lives in locals here: the nibble
- * stores (uint8_t) would otherwise make the compiler reload it. The fades
- * step linearly across the call (to the value a per-sample ramp reaches). */
+/* the flash is full: the dub ends (fades out), the loop plays on */
+static void cut_dub(looper_t *lp)
+{
+    lp->cut++;
+    lp->dub_t = 0.0f;
+    if (lp->state == LOOPER_DUB) lp->state = LOOPER_PLAY;
+}
+
+/* frame f is done (filled samples of it belong to the loop): send it if it
+ * is new, else end the write session */
+__attribute__((noinline)) static void frame_end(looper_t *lp, uint32_t f, uint32_t filled)
+{
+    for (uint32_t j = filled; j < LC_N; j++) lp->enc[j] = 0.0f;
+    if (!lp->touched) {
+        if (lp->sess) end_session(lp);
+        return;
+    }
+    if (!flush_mark(lp)) {                 /* order: the marker first */
+        lp->io->wr_over++;
+        return;
+    }
+    if (!lp->sess) {
+        lp->sess = 1;
+        lp->fresh = lp->state == LOOPER_REC;
+        lp->w_lc = NO_CHUNK;
+    }
+    uint32_t lc = f / LS_FPC;
+    if (lc != lp->w_lc) {                  /* a new chunk: the flash side needs a slot */
+        if (!room(lp, lp->fresh ? 1u : 0u)) {
+            cut_dub(lp);
+            end_session(lp);
+            return;
+        }
+        lp->started++;
+        lp->w_lc = lc;
+    }
+    uint8_t *slot = lio_wr_slot(lp->io);
+    if (!slot) return;                     /* counted: the flash side fills the gap */
+    lc_encode(lp->enc, slot);
+    lio_wr_push(lp->io, f | (lp->fresh ? LIO_FRESH : 0u));
+}
+
+/* a frame starts at pos: the old frame from the read stream */
+__attribute__((noinline)) static void frame_begin(looper_t *lp)
+{
+    uint32_t f = lp->pos / LC_N;
+    lp->touched = 0;
+    if (lp->state == LOOPER_REC) {
+        /* a new chunk, and none left for it (one is kept for the close) */
+        if (f != 0u && f % LS_FPC == 0u && !room(lp, 1u)) {
+            lp->cut++;
+            close_rec(lp);
+            frame_begin(lp);
+        }
+        return;
+    }
+    const uint8_t *p = lio_rd_take(lp->io);
+    if (p) lc_decode(p, lp->dec);
+    else memset(lp->dec, 0, sizeof lp->dec);
+    lio_rd_done(lp->io);
+    lp->rd_f = lp->rd_f + 1u >= lp->nfr ? 0u : lp->rd_f + 1u;
+    /* dubbing near a chunk end, and no slot for the next chunk: fade out
+     * now (LOOPER_RAMP_MS, 3.4 frames), inside this chunk */
+    uint32_t lc = f / LS_FPC, first = lc * LS_FPC;
+    uint32_t in_chunk = lp->nfr - first < LS_FPC ? lp->nfr - first : LS_FPC;
+    if (lp->dub_t > 0.0f && f - first + 8u >= in_chunk) {
+        uint32_t need = lp->sess && lp->w_lc == lc ? 0u : 1u;
+        if (!room(lp, need)) cut_dub(lp);
+    }
+}
+
+/* k samples at 22.05 kHz: x in, y out (the loop, level and fades in). The
+ * fades step linearly across the call (to the value a per-sample ramp
+ * reaches). */
 static void run(looper_t *lp, const float *x, float *y, unsigned k)
 {
     if (lp->state == LOOPER_STOP) {
@@ -139,82 +144,48 @@ static void run(looper_t *lp, const float *x, float *y, unsigned k)
         return;
     }
     const float rk = lp->ramp * (float)k, ik = 1.0f / (float)k;
-    const float lv = lp->level * (1.0f / SCALE);
+    const float lv = lp->level;
     float dg = lp->dub_g, og = lp->out_g;
     const float dg1 = ramp(dg, lp->dub_t, rk), og1 = ramp(og, lp->out_t, rk);
     const float ddg = (dg1 - dg) * ik, dog = (og1 - og) * ik;
-    const int dub = lp->dub_t > 0.0f || dg > 0.0f || dg1 > 0.0f;
-    int rec = lp->state == LOOPER_REC, wr = lp->writing;
-    uint32_t pos = lp->pos, xf = lp->xfade, end = rec ? lp->rec_end : lp->len;
-    uint32_t ds = pack(&lp->dec), es = pack(&lp->enc);
-    uint8_t *p = bank_blk(lp, lp->cur, pos / LOOPER_BLK);
     for (unsigned i = 0; i < k; i++) {
-        uint32_t o = pos % LOOPER_BLK;
-        int want = rec || dub || xf;
+        if (lp->pos % LC_N == 0u) frame_begin(lp);
+        uint32_t o = lp->pos % LC_N;
+        int rec = lp->state == LOOPER_REC;
         dg += ddg;
         og += dog;
-        if (o == 0) {
-            p = bank_blk(lp, lp->cur, pos / LOOPER_BLK);
-            if (!rec) ds = (uint16_t)(p[0] | p[1] << 8) | (uint32_t)(p[2] > 88 ? 88 : p[2]) << 16;
-            if (wr && want) {
-                p[0] = (uint8_t)es;
-                p[1] = (uint8_t)(es >> 8);
-                p[2] = (uint8_t)(es >> 16);
-                p[3] = 0;
-            } else {
-                wr = 0;
-            }
+        float old = rec ? 0.0f : lp->dec[o], out = old, gi, go;
+        if (rec) {
+            gi = 1.0f;
+            go = 0.0f;
+        } else if (lp->xfade) {                /* the closing crossfade */
+            go = (float)(LOOPER_XFADE - lp->xfade) * (1.0f / LOOPER_XFADE);
+            gi = 1.0f - go;
+            out = old * go;                    /* the tail is heard live on this pass */
+            lp->xfade--;
+        } else {
+            gi = dg;
+            go = 1.0f - (1.0f - LOOPER_FB) * gi;
         }
-        if (!wr && want) {                    /* starts here: from the old stream's state */
-            wr = 1;
-            es = ds;
-        }
-        uint8_t *b = &p[4 + (o >> 1)];
-        float old = 0.0f;
-        if (!rec) {
-            ds = step(ds, (o & 1u) ? *b >> 4 : *b & 15u);
-            old = (float)(int16_t)ds;
-        }
-        float out = old;
-        if (wr) {
-            float gi = 1.0f, go = 0.0f;        /* REC */
-            if (xf) {                          /* the closing crossfade */
-                go = (float)(LOOPER_BLK - xf) * (1.0f / LOOPER_BLK);
-                gi = 1.0f - go;
-                out = old * go;                /* the tail is heard live on this pass */
-                xf--;
-            } else if (!rec) {
-                gi = dg;
-                go = 1.0f - (1.0f - LOOPER_FB) * gi;
-            }
-            float v = old * go + x[i] * SCALE * gi;
-            unsigned nb = quant(es, sat16(v));
-            es = step(es, nb);
-            *b = (o & 1u) ? (uint8_t)((*b & 0x0Fu) | nb << 4) : (uint8_t)((*b & 0xF0u) | nb);
-        }
+        if (gi > 0.0f) lp->touched = 1;
+        lp->enc[o] = old * go + x[i] * gi;
         y[i] = out * og * lv;
-        if (++pos >= end) {
-            if (rec) {                         /* the loop closes: reload the state */
-                lp->pos = pos;
-                unpack(&lp->enc, es);
+        uint32_t end = rec ? lp->rec_end : lp->len;
+        lp->pos++;
+        int wrap = lp->pos >= end;
+        if (lp->pos % LC_N == 0u || wrap)
+            frame_end(lp, (lp->pos - 1u) / LC_N, (lp->pos - 1u) % LC_N + 1u);
+        if (wrap) {
+            if (rec) {
                 close_rec(lp);
-                rec = 0;
-                wr = 1;
-                xf = lp->xfade;
-                end = lp->len;
             } else {
                 lp->passes++;
+                lp->pos = 0;
             }
-            pos = 0;
         }
     }
-    lp->pos = pos;
-    lp->xfade = xf;
-    lp->writing = (uint8_t)wr;
     lp->dub_g = dg1;
     lp->out_g = og1;
-    unpack(&lp->dec, ds);
-    unpack(&lp->enc, es);
 }
 
 /* sum_j kHb[j] * (c[-(2j+1)] + c[2j+1]): the half-band's side taps around
@@ -241,90 +212,75 @@ void looper_process(looper_t *lp, float *l, float *r, unsigned n)
     if (lp->state <= LOOPER_EMPTY || n != DSP_BLOCK) return;   /* the engine's whole blocks */
     float *w = lp->dw;                   /* [history HB_N | this block] at 44.1 kHz */
     for (unsigned i = 0; i < DSP_BLOCK; i++) w[HB_N + i] = 0.5f * (l[i] + r[i]);
-    float x[DSP_BLOCK / 2], y[DSP_BLOCK];
-    if (lp->hq) {
-        run(lp, w + HB_N, y, DSP_BLOCK);
-        for (unsigned i = 0; i < DSP_BLOCK; i++) {
-            l[i] += y[i];
-            r[i] += y[i];
-        }
-    } else {
-        /* 2:1 half-band, only while something is recorded (the history
-         * always moves on, so a dub starts from a clean filter) */
-        if (lp->state == LOOPER_REC || lp->dub_t > 0.0f || lp->dub_g > 0.0f || lp->xfade)
-            for (unsigned m = 0; m < DSP_BLOCK / 2; m++) {
-                const float *c = w + 2u * m + 1u + HB_N / 2u;
-                x[m] = 0.5f * c[0] + hb(c);
-            }
-        float *v = lp->iw;               /* [history IH_N | this block] at 22.05 kHz */
-        run(lp, x, v + IH_N, DSP_BLOCK / 2);
-        for (unsigned m = 0; m < DSP_BLOCK / 2; m++) {   /* 1:2 half-band */
-            const float *c = v + m + LOOPER_HB_SIDE - 1u;
-            float a = c[0], b = 2.0f * hbi(c);
-            l[2u * m] += a;
-            r[2u * m] += a;
-            l[2u * m + 1u] += b;
-            r[2u * m + 1u] += b;
-        }
-        for (unsigned i = 0; i < IH_N; i++) v[i] = v[DSP_BLOCK / 2 + i];
+    float x[DSP_BLOCK / 2];
+    for (unsigned m = 0; m < DSP_BLOCK / 2; m++) {           /* 2:1 half-band */
+        const float *c = w + 2u * m + 1u + HB_N / 2u;
+        x[m] = 0.5f * c[0] + hb(c);
     }
+    float *v = lp->iw;                   /* [history IH_N | this block] at 22.05 kHz */
+    run(lp, x, v + IH_N, DSP_BLOCK / 2);
+    for (unsigned m = 0; m < DSP_BLOCK / 2; m++) {           /* 1:2 half-band */
+        const float *c = v + m + LOOPER_HB_SIDE - 1u;
+        float a = c[0], b = 2.0f * hbi(c);
+        l[2u * m] += a;
+        r[2u * m] += a;
+        l[2u * m + 1u] += b;
+        r[2u * m + 1u] += b;
+    }
+    for (unsigned i = 0; i < IH_N; i++) v[i] = v[DSP_BLOCK / 2 + i];
     for (unsigned i = 0; i < HB_N; i++) w[i] = w[DSP_BLOCK + i];
+}
+
+int looper_writing(const looper_t *lp)
+{
+    const loopio_t *io = lp->io;
+    return lp->state == LOOPER_REC || lp->state == LOOPER_DUB || lp->sess || lp->mark ||
+           io->w_busy || io->wr_head != io->wr_tail;
 }
 
 /* ------------------------------------------------------------ control */
 
-/* fade step per sample at the loop's rate */
-static COLD void set_rate(looper_t *lp)
+static COLD int writer_busy(const looper_t *lp)
 {
-    lp->ramp = 1000.0f / ((float)LOOPER_RAMP_MS * (lp->hq ? FS_FULL : FS_FULL * 0.5f));
+    return lp->sess || lp->mark || !ls_writer_idle(lp->ls);
 }
 
-COLD void looper_init(looper_t *lp)
+COLD void looper_init(looper_t *lp, loopio_t *io, struct loopstore *ls)
 {
     memset(lp, 0, sizeof *lp);
+    lp->io = io;
+    lp->ls = ls;
     lp->level = 1.0f;
-    set_rate(lp);
-}
-
-COLD void looper_attach(looper_t *lp, void *m0, size_t bytes0, void *m1, size_t bytes1)
-{
-    lp->seg[0] = m0;
-    lp->seg[1] = m1;
-    lp->nseg0 = (uint32_t)(bytes0 / LOOPER_BLK_BYTES);
-    lp->total = lp->nseg0 + (m1 ? (uint32_t)(bytes1 / LOOPER_BLK_BYTES) : 0u);
-    lp->half = lp->total / 2u;
-    lp->state = LOOPER_EMPTY;
-    lp->pend = lp->dub_req = 0;
-}
-
-COLD void looper_detach(looper_t *lp)
-{
-    lp->state = LOOPER_OFF;
-    lp->seg[0] = lp->seg[1] = NULL;
-    lp->total = lp->nseg0 = lp->half = 0;
+    lp->ramp = 1000.0f / ((float)LOOPER_RAMP_MS * LOOPER_FS);
+    lp->chunks = ls_chunks(ls);
+    lp->state = lp->chunks ? LOOPER_EMPTY : LOOPER_OFF;
 }
 
 static COLD void to_empty(looper_t *lp)
 {
+    ls_clear(lp->ls);
     lp->state = LOOPER_EMPTY;
-    lp->writing = lp->xfade = 0;
+    lp->sess = lp->mark = 0;
+    lp->xfade = 0;
     lp->alt = lp->redo = 0;
     lp->pend = lp->dub_req = 0;
     lp->dub_g = lp->dub_t = 0.0f;
-    lp->len = lp->pos = 0;
+    lp->len = lp->pos = lp->nfr = 0;
+    lp->rd_f = 0;
+    lp->started = lp->io->alloc;
 }
 
-/* a dub from PLAY with the writer idle: on a copy of the loop (undo), or in
- * place when the loop does not fit twice */
+/* a dub from PLAY: the undo point is taken by the flash side in stream
+ * order (LIO_SNAP), so the dub starts at once */
 static COLD void dub_start(looper_t *lp)
 {
-    if (lp->banks == 2) {
-        for (uint32_t b = 0; b < lp->nblk; b++)
-            memcpy(bank_blk(lp, lp->cur ^ 1u, b), bank_blk(lp, lp->cur, b), LOOPER_BLK_BYTES);
-        lp->cur ^= 1u;                   /* same bytes: playback goes on seamlessly */
-        lp->alt = 1;
-        lp->redo = 0;
+    if (!flush_mark(lp) || !lio_wr_mark(lp->io, LIO_SNAP)) {
+        lp->dub_req = 1;                   /* no slot: looper_poll tries again */
+        return;
     }
+    lp->alt = 1;
+    lp->redo = 0;
+    lp->dub_req = 0;
     lp->dub_t = 1.0f;
     lp->state = LOOPER_DUB;
 }
@@ -341,6 +297,8 @@ static COLD void fade_then(looper_t *lp, int a)
 
 static COLD void play_start(looper_t *lp)
 {
+    ls_play_from(lp->ls, 0);
+    lp->rd_f = 0;
     lp->pos = 0;
     lp->out_g = 0.0f;
     lp->out_t = 1.0f;
@@ -351,22 +309,18 @@ COLD int looper_cmd(looper_t *lp, int a)
 {
     int st = lp->state;
     if (st == LOOPER_OFF) return -2;
+    ls_arm(lp->ls);                        /* erase ahead from now on */
     if (a == LOOPER_TAP)
         a = st == LOOPER_EMPTY ? LOOPER_REC_A : st == LOOPER_PLAY ? LOOPER_DUB_A : LOOPER_PLAY_A;
     if (lp->pend && a != LOOPER_CLEAR_A && a != LOOPER_STOP_A) return -1;   /* a fade runs */
-    uint32_t min = LOOPER_MIN_BLKS * LOOPER_BLK;
     switch (a) {
     case LOOPER_REC_A:
         if (st == LOOPER_EMPTY) {
+            if (lp->io->pool < LOOPER_READY_CHUNKS) return -3;
             to_empty(lp);
+            ls_rec_begin(lp->ls);
             lp->state = LOOPER_REC;
-            lp->rec_end = lp->total * LOOPER_BLK;
-            lp->banks = 1;
-            lp->cur = 0;
-            lp->alt = lp->redo = 0;
-            lp->dec.pred = lp->enc.pred = 0;
-            lp->dec.idx = lp->enc.idx = 0;
-            lp->writing = 1;
+            lp->rec_end = (lp->chunks - 1u) * CHUNK_SAMPLES;
             lp->out_g = lp->out_t = 1.0f;
             lp->passes = 0;
             return 0;
@@ -375,7 +329,7 @@ COLD int looper_cmd(looper_t *lp, int a)
         __attribute__((fallthrough));    /* recording: close */
     case LOOPER_PLAY_A:
         if (st == LOOPER_REC) {
-            lp->rec_end = lp->pos > min ? lp->pos : min;
+            if (lp->pos < lp->rec_end) lp->rec_end = lp->pos > MIN_LEN ? lp->pos : MIN_LEN;
         } else if (st == LOOPER_DUB) {
             lp->dub_t = 0.0f;
             lp->state = LOOPER_PLAY;
@@ -388,16 +342,17 @@ COLD int looper_cmd(looper_t *lp, int a)
         return 0;
     case LOOPER_DUB_A:
         if (st == LOOPER_REC) {
-            lp->rec_end = lp->pos > min ? lp->pos : min;
+            if (lp->pos < lp->rec_end) lp->rec_end = lp->pos > MIN_LEN ? lp->pos : MIN_LEN;
             lp->dub_req = 1;                 /* after the closing crossfade */
             return 0;
         }
         if (st == LOOPER_DUB) return 0;
         if (st != LOOPER_PLAY) return -1;
-        if (lp->writing && !lp->xfade) {     /* still writing a punch-out: the same dub */
+        if (!room(lp, 0u)) return -1;        /* no free flash for a new layer */
+        if (lp->sess && !lp->xfade) {        /* still writing a punch-out: the same dub */
             lp->dub_t = 1.0f;
             lp->state = LOOPER_DUB;
-        } else if (lp->writing) {
+        } else if (lp->sess || lp->xfade) {
             lp->dub_req = 1;
         } else {
             dub_start(lp);
@@ -405,7 +360,7 @@ COLD int looper_cmd(looper_t *lp, int a)
         return 0;
     case LOOPER_STOP_A:
         if (st == LOOPER_REC) {
-            lp->rec_end = lp->pos > min ? lp->pos : min;
+            if (lp->pos < lp->rec_end) lp->rec_end = lp->pos > MIN_LEN ? lp->pos : MIN_LEN;
             lp->out_t = 0.0f;
             lp->pend = LOOPER_STOP_A;
             return 0;
@@ -416,7 +371,9 @@ COLD int looper_cmd(looper_t *lp, int a)
     case LOOPER_UNDO_A:
         if (!lp->alt || (st != LOOPER_PLAY && st != LOOPER_DUB && st != LOOPER_STOP)) return -1;
         if (st == LOOPER_STOP) {
-            lp->cur ^= 1u;
+            if (writer_busy(lp)) return -1;
+            ls_swap(lp->ls, 0);
+            lp->rd_f = 0;
             lp->redo ^= 1u;
             return 0;
         }
@@ -435,10 +392,46 @@ COLD int looper_cmd(looper_t *lp, int a)
     }
 }
 
+COLD int looper_save(looper_t *lp, unsigned n)
+{
+    if (lp->state == LOOPER_OFF) return -2;
+    if (n >= 2u) return -1;
+    if (lp->state == LOOPER_EMPTY || lp->state == LOOPER_REC || lp->len == 0u) return -1;
+    if (lp->pend || writer_busy(lp)) return -6;
+    return ls_save(lp->ls, n, lp->len, lp->alt, lp->redo);
+}
+
+COLD int looper_load(looper_t *lp, unsigned n)
+{
+    if (lp->state == LOOPER_OFF) return -2;
+    if (n >= 2u) return -1;
+    if (lp->state == LOOPER_REC || lp->state == LOOPER_DUB) return -1;
+    if (lp->pend || writer_busy(lp)) return -6;
+    uint32_t len = 0;
+    int alt = 0, redo = 0;
+    int r = ls_load(lp->ls, n, &len, &alt, &redo);
+    if (r) return r;
+    lp->len = len;
+    lp->nfr = lp->io->nfr;
+    lp->state = LOOPER_STOP;
+    lp->pos = 0;
+    lp->rd_f = 0;
+    lp->alt = (uint8_t)(alt != 0);
+    lp->redo = (uint8_t)(redo != 0);
+    lp->sess = lp->mark = 0;
+    lp->xfade = 0;
+    lp->pend = lp->dub_req = 0;
+    lp->dub_g = lp->dub_t = 0.0f;
+    lp->out_g = lp->out_t = 0.0f;
+    lp->passes = 0;
+    return 0;
+}
+
 COLD void looper_poll(looper_t *lp)
 {
     if (lp->state == LOOPER_PLAY || lp->state == LOOPER_DUB) {
-        if (lp->pend && lp->out_g == 0.0f && !lp->writing) {
+        if (lp->mark) (void)flush_mark(lp);
+        if (lp->pend && lp->out_g == 0.0f && !writer_busy(lp)) {
             int a = lp->pend;
             lp->pend = 0;
             if (a == LOOPER_STOP_A) {
@@ -446,25 +439,16 @@ COLD void looper_poll(looper_t *lp)
                 lp->pos = 0;
             } else if (a == LOOPER_CLEAR_A) {
                 to_empty(lp);
-            } else {                         /* undo / redo */
-                lp->cur ^= 1u;
+            } else {                         /* undo / redo: the next frame from the other map */
+                ls_swap(lp->ls, lp->rd_f);
                 lp->redo ^= 1u;
                 lp->out_t = 1.0f;
             }
         }
-        if (lp->dub_req && lp->state == LOOPER_PLAY && !lp->writing) {
-            lp->dub_req = 0;
-            dub_start(lp);
-        }
+        if (lp->dub_req && lp->state == LOOPER_PLAY && !lp->sess && !lp->xfade) dub_start(lp);
     }
-}
-
-COLD int looper_set_hq(looper_t *lp, int on)
-{
-    if (lp->state > LOOPER_EMPTY) return -1;
-    lp->hq = on ? 1 : 0;
-    set_rate(lp);
-    return 0;
+    /* chunks started but never given a slot (all their frames dropped) */
+    if (!lp->sess && !lp->mark && ls_writer_idle(lp->ls)) lp->started = lp->io->alloc;
 }
 
 COLD void looper_set_level(looper_t *lp, unsigned pct)
@@ -472,18 +456,19 @@ COLD void looper_set_level(looper_t *lp, unsigned pct)
     lp->level = (float)(pct > 100u ? 100u : pct) * 0.01f;
 }
 
+static COLD unsigned ms(uint64_t samples) { return (unsigned)(samples * 1000u / 22050u); }
+
 COLD void looper_info(const looper_t *lp, looper_info_t *out)
 {
-    float fs = lp->hq ? FS_FULL : FS_FULL * 0.5f;
     uint32_t rec = lp->state == LOOPER_REC;
     out->state = lp->state;
-    out->len_ms = (unsigned)((float)(rec ? lp->pos : lp->len) * 1000.0f / fs);
-    out->pos_ms = (unsigned)((float)lp->pos * 1000.0f / fs);
-    out->max_ms = (unsigned)((float)(lp->total * LOOPER_BLK) * 1000.0f / fs);
-    out->undo_max_ms = (unsigned)((float)(lp->half * LOOPER_BLK) * 1000.0f / fs);
+    out->len_ms = ms(rec ? lp->pos : lp->len);
+    out->pos_ms = ms(lp->pos);
+    out->max_ms = lp->chunks ? ms((uint64_t)(lp->chunks - 1u) * CHUNK_SAMPLES) : 0u;
+    out->undo_max_ms = ms((uint64_t)(lp->chunks / 2u) * CHUNK_SAMPLES);
     out->undo = lp->alt ? (lp->redo ? 2 : 1) : 0;
-    out->hq = lp->hq;
     out->level = (unsigned)(lp->level * 100.0f + 0.5f);
+    out->prep_ms = ms((uint64_t)lp->io->pool * CHUNK_SAMPLES);
+    out->flash = lp->chunks != 0u;
     if (lp->state <= LOOPER_EMPTY) out->len_ms = out->pos_ms = 0;
 }
-

@@ -1,4 +1,5 @@
 #include "arm_math.h"
+#include "cold.h"
 #include "comp.h"
 #include "math.h"
 
@@ -17,7 +18,7 @@ void comp_init(comp_t *c, float fs)
     dsp_knob_init(&c->level, 0.001f, 0.999f);
 }
 
-void comp_set_params(comp_t *c, unsigned type, unsigned attack, unsigned threshold,
+COLD void comp_set_params(comp_t *c, unsigned type, unsigned attack, unsigned threshold,
                      unsigned ratio, unsigned level)
 {
     (void)type;

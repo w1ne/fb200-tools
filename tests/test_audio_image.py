@@ -84,9 +84,11 @@ def test_ram_map_is_the_pedals():
 def test_big_buffers_placement():
     """The budget (docs/FIRMWARE_BRINGUP.md, "Memory map"): the long-IR tail
     for ENGINE_IR_TAPS in the low DTCM, the delay line for DELAY_MS_MAX at
-    44.1 kHz in the DTCM above .bss, the reverb in the ITCM above the code;
-    OCRAM holds the user IR staging, the cab, the EQ, the long IR upload
-    state (irstore.c, < 100 B) and nothing else."""
+    44.1 kHz in the DTCM above .bss, the reverb in the ITCM above the code.
+    OCRAM holds the user IR staging, the cab, the EQ, the looper's flash
+    side and its chunk maps, and the long IR upload state (irstore.c,
+    under 100 B); the looper's audio side and its frame rings are in the
+    low DTCM (the audio path reads them)."""
     syms, sizes = elf_symbols(), elf_sizes()
     engine_h = (FW / "src" / "audio" / "engine.h").read_text()
     taps = int(re.search(r"#define ENGINE_IR_TAPS (\d+)", engine_h).group(1))
@@ -99,8 +101,10 @@ def test_big_buffers_placement():
     assert syms["__itcm_bss_start__"] <= syms["s_rev"] < syms["__itcm_bss_end__"]
     inside = {n: z for n, (a, z) in sizes.items() if 0x20200000 <= a < 0x20300000}
     tables = {n for n in inside if syms["__ocramdata_start__"] <= sizes[n][0] < syms["__ocramdata_end__"]}
-    assert set(inside) - tables == {"s_ir", "s_eq", "s_cab", "s_irput"}, inside
+    assert set(inside) - tables == {"s_ir", "s_eq", "s_cab", "s_ls", "s_lmap", "s_irput"}, inside
     assert inside["s_irput"] < 100
+    for audio in ("s_loop", "s_lio"):                  # the audio side: DTCM, no cache misses
+        assert 0x20000000 <= syms[audio] < 0x20018A00, audio
     assert inside["s_ir"] == taps * 4
     assert "twiddleCoef_rfft_512" in tables
 
@@ -134,12 +138,16 @@ def test_hot_and_cold_placement():
                 "Default_Handler", "wdog_feed", "dcd_int_handler", "EDMA_HandleIRQ",
                 "memcpy", "crc32_ieee",
                 "fw_begin", "fw_session", "flash_store", "FLEXSPI_TransferBlocking",
-                "flash_read_id", "flash_capacity",
+                "flash_capacity",
                 "flash_rmw", "flash_wait_idle", "flash_pump", "engine_pump",
-                "log_printf", "tud_descriptor_configuration_cb", "cdcd_xfer_cb"):
+                "log_printf", "tud_descriptor_configuration_cb", "cdcd_xfer_cb",
+                "looper_process", "lc_encode", "lc_decode", "looper_writing", "lsio_program",
+                "lsio_erase_run", "lsio_read", "lsio_quiesce", "flash_cmd_read",
+                "flash_capacity"):
         assert syms[hot] in ITCM, hot
     for cold in ("console_task", "ui_task", "display_task", "proto_feed", "preset_write",
-                 "CLOCK_InitArmPll", "irstore_put_task", "irstore_load"):
+                 "CLOCK_InitArmPll", "ls_task", "looper_cmd", "flash_probe", "fw_info",
+                 "irstore_put_task", "irstore_load", "flash_read_id"):
         assert syms[cold] in XIP, cold
 
 
@@ -154,26 +162,28 @@ def test_nothing_hot_runs_from_flash():
 
 
 def test_hot_path_check_catches_cold_audio_code(tmp_path):
-    """Negative control: an audio file (gain.c, called by engine_task) and an
-    ISR callback file (rgb.c) moved to flash (COLD_SRC) must fail the check."""
+    """Negative control: audio files (gain.c, called by engine_task; the
+    looper's codec) and an ISR callback file (rgb.c) moved to flash
+    (COLD_SRC) must fail the check."""
     import hot_path
     out = tmp_path / "build"
     shutil.copytree(fwbuild.build(FW), out)             # relink only: objects are current
     (out / "fb200-app" / "cold.ld").unlink()
     (out / "fb200-app.elf").unlink()   # make 3.81 (macOS) compares whole seconds: force the relink
     subprocess.run(["make", f"BUILD={out}", "build",
-                    "COLD_EXTRA=src/dsp/gain.c src/ui/rgb.c"],
+                    "COLD_EXTRA=src/dsp/gain.c src/ui/rgb.c src/dsp/loopcodec.c"],
                    cwd=FW, check=True, capture_output=True)
     bad = "\n".join(hot_path.check(out / "fb200-app.elf"))
     assert "gain_process" in bad and "engine_task" in bad
     assert "done @" in bad                               # rgb.c's eDMA callback
     assert "flash busy: gain_process @" in bad           # the audio pump runs it too
+    assert "lc_decode @" in bad and "looper_process" in bad
 
 
 def test_hot_path_check_catches_cold_flash_writes(tmp_path):
-    """Negative control: the flash write path (selfupdate.c) or the CDC class
-    driver in flash must fail the flash-write check, and so must the HID
-    report callback without its fw_xip_gone() gate."""
+    """Negative control: the flash write path (selfupdate.c, the looper's
+    lsio.c) or the CDC class driver in flash must fail the flash-write check,
+    and so must the HID report callback without its fw_xip_gone() gate."""
     import hot_path
     out = tmp_path / "build"
     shutil.copytree(fwbuild.build(FW), out)
@@ -181,13 +191,16 @@ def test_hot_path_check_catches_cold_flash_writes(tmp_path):
     (out / "fb200-app.elf").unlink()   # make 3.81 (macOS) compares whole seconds: force the relink
     cdc = ".deps/tinyusb/src/class/cdc/cdc_device.c"
     subprocess.run(["make", f"BUILD={out}", "build",
-                    f"COLD_EXTRA=src/debug/selfupdate.c {cdc}"],
+                    f"COLD_EXTRA=src/debug/selfupdate.c src/loopstore/lsio.c {cdc}"],
                    cwd=FW, check=True, capture_output=True)
     bad = "\n".join(hot_path.check(out / "fb200-app.elf"))
     assert "flash write: fw_begin @" in bad and "flash write: flash_store @" in bad, bad
     assert "flash write: cdcd_xfer_cb @" in bad, bad
-    # the long IR store's path: flash_store -> flash_capacity -> flash_read_id
-    assert "flash write: flash_capacity @" in bad and "flash write: flash_read_id @" in bad, bad
+    assert "flash write: lsio_program @" in bad and "flash write: lsio_erase_run @" in bad, bad
+    # flash_rmw asks flash_capacity while a store runs; that word stays in RAM.
+    # flash_read_id runs only from flash_probe at boot, so it is not on this path.
+    assert "flash write: flash_capacity @" in bad, bad
+    assert "flash write: flash_read_id @" not in bad, bad
     gates = dict(hot_path.GATED)
     try:
         hot_path.GATED[("tud_hid_set_report_cb", "proto_feed")] = "no_such_gate"

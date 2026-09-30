@@ -148,7 +148,7 @@ void eq_reset(eq_t *e)
 
 static const float def_f[EQ_BANDS] = {40.0f, 100.0f, 250.0f, 800.0f, 3000.0f};
 
-void eq_init(eq_t *e, float fs)
+COLD void eq_init(eq_t *e, float fs)
 {
     memset(e, 0, sizeof *e);
     e->fs = fs;
@@ -191,7 +191,7 @@ void eq_set_lpf(eq_t *e, float hz)
     update(e);
 }
 
-int eq_set_band(eq_t *e, unsigned band, float hz, float gain_db, float q)
+COLD int eq_set_band(eq_t *e, unsigned band, float hz, float gain_db, float q)
 {
     if (band >= EQ_BANDS) return -1;
     set_band(e, band, hz, gain_db, q);
@@ -216,7 +216,7 @@ COLD void eq_load(eq_t *e, const uint8_t *r)
 
 static unsigned rnd(float x) { return (unsigned)(int)(x + (x < 0.0f ? -0.5f : 0.5f)); }
 
-void eq_save(const eq_t *e, uint8_t r[EQ_REC])
+COLD void eq_save(const eq_t *e, uint8_t r[EQ_REC])
 {
     unsigned lpf = rnd(e->lpf);
     r[0] = e->on;

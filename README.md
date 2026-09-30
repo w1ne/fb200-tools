@@ -25,7 +25,7 @@ Its firmware is closed and frozen. This project aims to:
   See [`docs/PARITY.md`](docs/PARITY.md) and
   [`docs/ROADMAP_RESEARCH.md`](docs/ROADMAP_RESEARCH.md).
 
-## Status (v0.10)
+## Status (v0.11)
 
 Verified on a real pedal:
 
@@ -38,6 +38,7 @@ Verified on a real pedal:
 | **USB** | Class-compliant audio interface (record and play back, 44.1 kHz). The stock USB identity and control protocol, so `fb200 info` and IR import work. |
 | **Bluetooth** | Module link. The Bluetooth audio input runs; playback from a phone is not yet checked by ear. The app protocol is implemented and tested on the host, but not yet with the Flamma Manager phone app. |
 | **Our additions** | Bass delay up to 1 s, bass EQ (HPF, 5 bands, LPF; saved in the preset), cab IRs up to 4096 taps in 64 long-IR slots (cab types 20-83, `fb200 ir put`), reamping over USB (`usb in`). Measured on the pedal: echo times, EQ response, CPU (engine 14% average with a 4096-tap IR). |
+| **Looper** | Up to 108 s in the pedal's flash, with undo and `loop save`/`load` of two loops across power-off. On a pedal: a 103 s record, a dub past 54 s, save/load across reset, delay and a stored long IR while the loop played. The sound has not been listened to. |
 | **Power** | Battery level, charger sense, status LED |
 | **Updates & recovery** | USB updates with no button combo. A resident recovery keeps the USB console after a crash or hang. Crash dumps survive a reset. |
 
@@ -58,8 +59,10 @@ save blink, rhythm tempo flash). On the pedal so far: the light ring of the sele
 - The display names the knob you turn (`GAn`, `CAb`, …) and marks knobs that have not
   picked up yet.
 - Hold **A** and turn LEVEL / RATE / MOD to change drum level, tempo or rhythm live.
-- A looper (the stock has none): ~16 s mono (8 s in `hq`), overdub with one undo,
-  single-switch control ([Looper](#looper)). Tested on the host, not yet on a pedal.
+- A looper (the stock has none): up to 108 s mono in the pedal's flash, overdub with
+  undo, single-switch control ([Looper](#looper)). The delay and long IRs stay
+  available. Checked on a pedal, including `loop save`/`load` across a reset.
+  The sound has not been listened to.
 - Drums are included in the USB recording.
 - Choosing an empty IR slot never silences the pedal.
 - Drum hits start on time (the stock plays each one up to 31 ms early).
@@ -150,6 +153,10 @@ works in both). In looper mode:
 | **B** (tap) | stop (`StP`) / play from the start |
 | **hold B (1 s)** | clear the loop (`CLr`) |
 
+Entering looper mode starts erasing the looper's flash in the background (about 7 s
+for all of it; a record can start after the first 0.3 s). An A press before that shows
+`PrP`: press again.
+
 Ring A flashes white at each loop start; ring B is blue while a loop exists. The loop
 length is set by the first record (A press to A press). Leaving looper mode keeps the
 loop playing: presets and knobs work as usual, come back to stop or clear it.
@@ -157,14 +164,18 @@ loop playing: presets and knobs work as usual, come back to stop or clear it.
 - **What it records:** the processed sound (after the reverb, before the master
   volume), mono. The drums are not recorded. Overdubs mix the new take with the loop;
   each dubbed pass keeps the older layers at x0.95 (-0.45 dB).
-- **Length:** ~16.4 s at 22.05 kHz (default), ~8.2 s with `loop hq on` (44.1 kHz).
-  Undo works for loops up to half of that (8.2 s / 4.1 s); longer loops dub without
-  undo.
-- **Memory:** RAM is full, so the looper borrows the delay line and the long-IR
-  memory from the first record until **clear**: meanwhile the delay is off and
-  `cab long` works up to 512 taps. After clear both come back, silent.
-- **Console:** `loop` (state), `loop rec|play|dub|stop|undo|clear|tap`,
-  `loop hq on|off` (with no loop), `loop level <0-100>` (loop playback level).
+- **Length:** up to 108 s (22.05 kHz, 10-bit block floating point, 60 dB SNR) in
+  the flash (F:0x510000..0x800000 on the 8 MB chip). A dub over the whole loop works
+  for loops up to 54 s; a longer loop dubs until the free flash runs out (the dub
+  fades out). Undo takes back the whole last dub; again = redo. The record closes by
+  itself when the flash is full.
+- **Flash:** `loop save 1|2` keeps that loop across power-off (two slots).
+  `loop load 1|2` brings it back, stopped at the start. A loop that was not
+  saved is lost. While a loop exists, the automatic settings saves wait; a
+  preset save during a record or a dub is refused (try again after it).
+- **Console:** `loop` (state; `prep_ms` = erased flash ready for a record),
+  `loop rec|play|dub|stop|undo|clear|tap`, `loop save|load <1-2>`,
+  `loop level <0-100>` (loop playback level), `loop stats` (flash counters).
   MCP: the `looper` tool.
 
 ## Host tools
@@ -184,7 +195,7 @@ fb200 console "factory yes"         # factory reset: presets, settings, IR list
 fb200 console "delay on 350"        # bass delay: [on|off] [time] [fb] [mix] [lowcut] [tone]
 fb200 console "eq 1 40 3"           # bass EQ: eq [on|off] | hpf <hz> | lpf <hz> | <band 1-5> <hz> <dB> [q]
 fb200 console prof                  # CPU cycles per chain stage
-fb200 console "loop rec"            # looper: loop [rec|play|dub|stop|undo|clear|tap] | hq on|off | level <n>
+fb200 console "loop rec"            # looper: loop [rec|play|dub|stop|undo|clear|tap] | level <n> | stats
 fb200 console "usb in"              # reamping: computer playback into the effects (out: default)
 fb200 update app latest             # open-firmware USB update (or a file)
 fb200 update stock FB200.mr         # write the stock sound data (once)
@@ -248,7 +259,7 @@ claude mcp add fb200 -- fb200 mcp
 | `set_amp`, `set_cab`, `set_comp`, `set_gate`, `set_mod`, `set_reverb` | change fields of one block (app protocol, HID); returns the block read back |
 | `set_delay`, `set_eq` | bass delay; bass EQ (on/off, HPF, LPF, band 1-5 freq/gain/q), returns the EQ state; both go into the edit buffer (`save_preset` stores them) |
 | `set_output`, `drums`, `tuner` | output gain and mute, drum machine, tuner |
-| `looper` | looper state and actions (rec, play, dub, stop, undo, clear, tap), `hq`, playback `level` |
+| `looper` | looper state and actions (rec, play, dub, stop, undo, clear, tap), playback `level` |
 | `usb_route` | USB playback to the output (`out`), into the chain input (`in`, reamping) or summed (`mix`) |
 | `cpu_profile`, `crash_dump`, `cab_long` | CPU cycles per chain stage (`prof`); the last crash dump; a synthetic N-tap cab IR for measurements (0 = the preset's cab) |
 | `ir_list`, `ir_import`, `ir_delete` | user IR slots; import a WAV into a slot (with the `process_ir` options); delete a slot |

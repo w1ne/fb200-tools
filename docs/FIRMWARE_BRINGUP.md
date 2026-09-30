@@ -108,16 +108,17 @@ every build):
 | Region | Range | Contents | Free |
 |---|---|---|---|
 | ITCM | `0x00000..0x00400` | vectors | - |
-| ITCM | `0x00400..0x14610` | hot code + flash write path (`.blob`) | - |
-| ITCM | `0x14610..0x1FD50` | reverb state `s_rev` (`.itcm_bss`) | 0.7 kB |
-| DTCM low | `0x20000000..0x200181CC` | looper state (0.4 kB), long-IR tail, 4096 taps (`.dtcm_lo`) | 2.1 kB |
+| ITCM | `0x00400..0x14548` | hot code + flash write path (`.blob`) | - |
+| ITCM | `0x14548..0x1FC88` | reverb state `s_rev` (`.itcm_bss`) | 0.9 kB |
+| DTCM low | `0x20000000..0x2001883C` | looper audio side and frame rings (2.1 kB), long-IR tail, 4096 taps (`.dtcm_lo`) | 0.4 kB |
 | DTCM | `0x20018A00..0x20018B44` | crash dump (survives a warm reset) | - |
 | DTCM | `0x20018B44..0x20040608` | CMSIS tables (`.dtcmdata`), `.bss` | - |
-| DTCM | `0x20040608..0x20055E98` | delay line, 1 s at 44.1 kHz (`.dtcm_hi`) | 0.4 kB |
+| DTCM | `0x200406E8..0x20055F78` | delay line, 1 s at 44.1 kHz (`.dtcm_hi`) | 0.1 kB |
 | DTCM | `0x20056000..0x20058000` | stack reserve 8 kB (measured high-water < 512 B) | ~7.5 kB |
-| OCRAM | `0x20200000..0x20207708` | rfft tables (`.ocramdata`), cab head `s_cab`, IR staging `s_ir` (4096 taps), EQ (`.ocram`) | 2.2 kB |
-| Flash | `0x60041000..0x6004ED00` | cold code (`.xiptext`) | - |
-| Flash | `..0x60051680` of `..0x60061000` | + table load images | 62.4 kB |
+| OCRAM | `0x20200000..0x20207F98` | rfft tables (`.ocramdata`), cab head `s_cab`, IR staging `s_ir` (4096 taps), EQ, looper flash side and chunk maps (1.9 kB) (`.ocram`) | 0.1 kB |
+| Flash | `0x60041000..0x60050000` | cold code (`.xiptext`) | - |
+| Flash | `..0x600529C4` of `..0x60061000` | + table load images | 57.6 kB |
+| Flash | `0x60510000..0x60800000` | the looper's loops (`loopstore/loopstore.h`, [PARITY.md M8](PARITY.md#m8-looper)) | - |
 
 - **OCRAM:** in the stock image the vendor loader unpacks 0x5AA0 bytes of
   stock data to OCRAM `0x20200000` (load table entry 3). Our images do not:
@@ -148,10 +149,12 @@ every build):
 - The RAM-bound sizes are one define each: `ENGINE_IR_TAPS`
   (`src/audio/engine.h`; 4096; 512 = long IRs off) and `DELAY_MS_MAX`
   (`src/dsp/delay.h`; 1000 ms).
-- **The looper borrows** the delay line and the long-IR tail (184 kB) from its
-  first record until clear (`src/dsp/loop_mem.h`, [PARITY.md
-  M8](PARITY.md#m8-looper)): one owner at a time. Its loop length follows
-  both sizes (1412 ADPCM blocks of 132 B: 16.4 s at 22.05 kHz).
+- **The looper keeps its loop in the flash** (F:0x510000..0x800000,
+  `src/loopstore/loopstore.h`, [PARITY.md M8](PARITY.md#m8-looper)); in RAM
+  it has two rings of 16 frames (1.3 kB, DTCM: the audio path reads them),
+  its audio state (0.7 kB, DTCM) and the flash side's state and chunk maps
+  (1.9 kB, OCRAM: main loop only). The delay and the long-IR tail keep their
+  RAM.
 
 ### Hot and cold code (audio app)
 
@@ -170,7 +173,10 @@ from flash (XIP):
   (erase/program) or after an app update has erased the app's own cold code
   (it lives in the slot): `selfupdate.c` (`fw_begin`, `fw_rx_task`,
   `flash_store`, `fw_session`), `fsl_flexspi.c`, `tud_task` and the
-  CDC/HID/audio class drivers, the USB descriptors, the CDC log.
+  CDC/HID/audio class drivers, the USB descriptors, the CDC log, and the
+  looper's flash operations (`loopstore/lsio.c`: they return only with the
+  flash idle or its erase suspended, so their caller, `loopstore.c`, is
+  cold; every other writer ends a suspended erase first, `lsio_quiesce`).
   `fw_begin(FW_APP)` never returns to its (cold) caller: it ends in
   `fw_session()`, which streams the image and waits for `reset`, keeping the
   audio running (`engine_task`). HID reports are dropped then

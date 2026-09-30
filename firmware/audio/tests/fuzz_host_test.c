@@ -59,6 +59,7 @@ static uint32_t host_crc(uint32_t a, uint32_t n);
 #include "dsp/mod.h"
 #include "dsp/reverb.h"
 #include "dsp/delay.h"
+#include "loopflash_sim.h"
 #include "dsp/looper.h"
 #include "irstore/irstore.h"
 #include "crc32.h"
@@ -198,28 +199,36 @@ bool engine_get_mute(void) { return muted; }
 void engine_set_meters(bool on) { (void)on; }
 void engine_drop_tx(uint32_t blocks) { (void)blocks; }
 int engine_cab_long(unsigned taps) { return taps > ENGINE_IR_TAPS ? -2 : 0; }
-/* the looper (console `loop`, ui.c looper mode): the real state machine on
- * a small memory, attached and detached as the engine does */
+/* the looper (console `loop`, ui.c looper mode): the real looper on the
+ * simulated flash (loopflash_sim.c, instant timing), one block and one
+ * flash-side step per pass; the simulated chip checks every access */
 static looper_t loop;
-static uint8_t loop_mem[2][LOOPER_BLK_BYTES * 8 + 3];
 int engine_loop(int a)
 {
     CHECK(a >= LOOPER_TAP && a <= LOOPER_CLEAR_A, "loop action %d", a);
-    if (loop.state == LOOPER_OFF && (a == LOOPER_REC_A || a == LOOPER_TAP))
-        looper_attach(&loop, loop_mem[0], sizeof loop_mem[0], loop_mem[1], sizeof loop_mem[1]);
     return looper_cmd(&loop, a);
 }
+int engine_loop_save(unsigned n) { return looper_save(&loop, n); }
+int engine_loop_load(unsigned n) { return looper_load(&loop, n); }
 void engine_loop_poll(void)
 {
     float l[DSP_BLOCK] = {0}, r[DSP_BLOCK] = {0};
     looper_process(&loop, l, r, DSP_BLOCK);   /* a block per pass: the fades finish */
+    ls_task(sim_loop_store());
     looper_poll(&loop);
-    if (loop.state == LOOPER_EMPTY) looper_detach(&loop);
+    CHECK(sim_errors == 0, "simulated flash: %u errors", sim_errors);
 }
 void engine_loop_info(looper_info_t *out) { looper_info(&loop, out); }
-bool engine_loop_has_mem(void) { return loop.state != LOOPER_OFF; }
-int engine_loop_hq(int on) { return looper_set_hq(&loop, on); }
 void engine_loop_level(unsigned pct) { CHECK(pct <= 100u, "loop level %u", pct); looper_set_level(&loop, pct); }
+void engine_loop_arm(void) { ls_arm(sim_loop_store()); }
+void engine_loop_stats(engine_loop_stats_t *out)
+{
+    ls_info(sim_loop_store(), &out->store);
+    out->io = sim_loop_io();
+    out->cut = loop.cut;
+}
+int flash_read_id(uint8_t id[3]) { id[0] = 0xEF; id[1] = 0x40; id[2] = 0x17; return 1; }
+int flash_suspend_ok(void) { return 1; }
 volatile float g_meter_peak[2];
 int g_bss_writable = 1;
 void usb_audio_stats(uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d, uint8_t *e, uint8_t *f)
@@ -347,11 +356,11 @@ static uint32_t cdc_head, cdc_tail;
 uint32_t tud_cdc_available(void) { return cdc_head - cdc_tail; }
 int32_t tud_cdc_read_char(void) { return cdc_tail < cdc_head ? cdc[cdc_tail++] : -1; }
 
-/* ---- flash chip + long IR store (irstore.c, real, on its own fake flash) -- */
-int flash_read_id(uint8_t id[3]) { id[0] = 0xEF; id[1] = 0x40; id[2] = 0x18; return 1; }
-uint32_t flash_window(void) { return 0x01000000u; }
+/* ---- long IR store (irstore.c, real, on its own fake flash) ----
+ * flash_read_id is the looper stub above (W25Q64, 8 MB). flash_capacity is
+ * the simulated chip (loopflash_sim.c). The IR store ends at 0x502000. */
+uint32_t flash_window(void) { return 0x00800000u; }
 uint32_t flash_chip_size(const uint8_t id[3]) { return 1u << id[2]; }
-uint32_t flash_capacity(void) { return 0x01000000u; }
 static uint8_t ir_flash[IRSTORE_END - IRSTORE_BASE];
 static float ir_buf[IRSTORE_TAPS];
 static int ir_buf_busy;
@@ -574,7 +583,7 @@ static const char *const kWords[] = {
     "0x20200000", "0x20207FFF", "0x20208000", "0x400F8000", "0x400F8FFF", "0x401B8000",
     "0x60000000", "0x607FFFFF", "0x60800000", "0x3FFFFF", "0x400000", "0xE000ED00", "0x40000000",
     "0xFFFFFF00", "0x60000", "0x7FFFFF", "0x800000",
-    "loop", "rec", "play", "dub", "stop", "undo", "clear", "tap", "hq",
+    "loop", "rec", "play", "dub", "stop", "undo", "clear", "tap", "stats", "save", "load",
     "irput", "irls", "irdel", "jedec", "19", "20", "83", "84", "44100", "0xdeadbeef", "ir_name",
 };
 
@@ -915,7 +924,8 @@ static void setup(void)
     }
     g_stock_factory = &fake_factory;
     g_stock = NULL;
-    looper_init(&loop);
+    sim_flash_init(&SIM_INSTANT);
+    sim_loop_setup(&loop);
     memset(ir_flash, 0xFF, sizeof ir_flash);   /* erased: an empty long IR store */
     seed_flash();
     bank_init();
@@ -1020,21 +1030,23 @@ static void cases(void)
     stock_fix_crc(&blob, blob.d.size);
     CHECK(stock_check(&blob, blob.d.size) == -5, "zero beats accepted");
     puts("ok stock_bad_tables");
-    /* console: a stored long IR (cab 20..83) while the looper has the
-     * long-IR memory: refused, the looper wins; after clear it is taken */
+    /* console: a loop lives in its own flash, so a stored long IR and the
+     * delay stay available while it records */
     seed_flash();
     boot();
-    unsigned cab0 = pget(ui_edit_preset(), P_CAB_TYPE);
     console_line("loop rec");
-    CHECK(engine_loop_has_mem(), "loop rec took no memory");
+    for (unsigned i = 0; i < 8; i++) engine_loop_poll();
+    console_line("loop rec");
+    looper_info_t in;
+    engine_loop_info(&in);
+    CHECK(in.state == LOOPER_REC, "loop rec did not start (state %u)", in.state);
     console_line("cab 20");
-    CHECK(strstr(out_log, "not available") && pget(ui_edit_preset(), P_CAB_TYPE) == cab0,
-          "long IR taken during a loop: %s", out_log);
+    CHECK(pget(ui_edit_preset(), P_CAB_TYPE) == 20, "long IR refused during a loop: %s", out_log);
     console_line("cab 12");
     CHECK(pget(ui_edit_preset(), P_CAB_TYPE) == 12, "user IR refused during a loop");
     console_line("loop clear");
-    for (unsigned i = 0; i < 200 && engine_loop_has_mem(); i++) engine_loop_poll();
-    CHECK(!engine_loop_has_mem(), "loop clear kept the memory");
+    engine_loop_info(&in);
+    CHECK(in.state == LOOPER_EMPTY, "loop clear left state %u", in.state);
     console_line("cab 83");
     CHECK(pget(ui_edit_preset(), P_CAB_TYPE) == 83, "long IR refused after clear: %s", out_log);
     puts("ok console_long_ir_looper");

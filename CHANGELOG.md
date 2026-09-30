@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.11.0] - 2026-09-30
 
 ### Added
 
@@ -18,31 +18,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `long_ir_import`, `long_ir_delete` (the app asks before an import or delete).
   Gain: the stock user-IR rule, computed at upload. An empty or bad slot bypasses
   the cab. The 9 stock slots and the stock app protocol are unchanged.
-  While a loop exists the looper has the long-IR memory: selecting a long IR slot
-  from the console or the host is refused, and a preset with one plays 512 taps
-  until the loop is cleared.
+  A stored long IR plays all of its taps while a loop exists.
 - **Console `cab [<1-83>]`:** select a cab type in the edit buffer (stock, user IR or
   long IR) without the app.
 - **Console `jedec`:** the flash chip's JEDEC ID, its size and the FlexSPI window.
   The long IR store is off on a chip smaller than 5 MB (checked at run time).
-- **Looper** (the stock has none): mono, after the reverb, ~16 s at 22.05 kHz
-  (4-bit IMA ADPCM, half-band resampling) or ~8 s with `loop hq on`. Overdub, one
-  undo/redo level for loops up to half the memory, a crossfade at the loop point
-  (no click), faded stop/play/undo/clear. Looper mode on the footswitches: hold D,
-  then C long; A = record / play / overdub (acts when pressed), hold A = undo, B =
-  stop/play, hold B = clear; display and ring feedback. Console `loop`, MCP
-  `looper`. RAM is full, so from the first record until clear the looper borrows the
-  delay line and the long-IR memory: the delay is off and IRs play 512 taps
-  meanwhile ([`docs/PARITY.md`](docs/PARITY.md#m8-looper)). Tested on the host, not
-  yet on a pedal.
-- `tools/engine_cycles.py --looper rec|play|dub [--hq]`: the looper's cost per block.
+- **Looper** (the stock has none): mono, after the reverb, up to 108 s in the
+  external flash (F:0x510000..0x800000 on the 8 MB chip, sized from its JEDEC ID):
+  22.05 kHz (half-band resampling), 10-bit block floating point (60 dB SNR). Overdub
+  (a whole-loop dub for loops up to 54 s; longer loops dub until the flash is full),
+  undo/redo of the whole last dub, a crossfade at the loop point (no click), faded
+  stop/play/undo/clear. The flash is erased ahead in the background with erase
+  suspend, so the audio and the UI never wait; a record or a dub that runs out of
+  erased flash ends cleanly. Looper mode on the footswitches: hold D, then C long;
+  A = record / play / overdub (acts when pressed), hold A = undo, B = stop/play,
+  hold B = clear; display and ring feedback. Console `loop`, `loop save|load <1-2>`
+  (two loops kept across power-off), `loop stats`, MCP `looper`. The delay and
+  long IRs stay available
+  ([`docs/PARITY.md`](docs/PARITY.md#m8-looper)). On a pedal: a 103 s record
+  (max 108 s), a dub past 54 s that ended when the erased flash ran out,
+  undo through the fade, and `loop save`/`load` of both slots across a reset.
+  Delay and a stored long IR kept working while that loop played. No crash.
+  The 103 s record counted 13 extra output skips; playback afterwards added
+  none. The sound has not been listened to.
+- `tools/engine_cycles.py --looper rec|play|dub`: the looper's cost per block.
+- Flash: fast read, 64 kB erase, erase suspend/resume, status register 2 and JEDEC
+  ID sequences (FlexSPI LUT slots 6..15). `flash_rmw` accepts the long IR store and
+  the looper's area. `flash_probe` reads the JEDEC ID once at boot; `flash_capacity`
+  is that stored size.
 
 ### Changed
 
 - A selector knob (CAB) whose stored value no knob position reaches (a long IR,
   cab 20..83) takes over at the first turn; before, it never picked up.
-- More engine control code (`engine_cab_long`, `engine_apply_settings`,
-  `engine_profile`, stats) runs from flash (`COLD`): ITCM for the looper.
+- More control code runs from flash (`COLD`): `engine_cab_long`,
+  `engine_apply_settings`, `engine_profile`, stats, the amp/tone/mod/comp/EQ/cab
+  parameter setters, `fw_info`, `fw_test`, `flash_read_id`, `flash_probe`.
+  ITCM keeps the looper's audio path and `flash_capacity`.
+- While a loop exists, the automatic settings and rhythm saves wait; a flash store
+  during a record or a dub is refused (`flash_store` -6).
+
+### Fixed
+
+- An erase the looper starts returns only once the flash is suspended or idle.
+  Returning to flash-resident code while the chip was still erasing reset the
+  pedal into the ROM serial loader.
 
 ## [0.10.0] - 2026-09-29
 

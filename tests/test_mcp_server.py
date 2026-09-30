@@ -40,7 +40,7 @@ class FakeConsole:
         self.delay = {"on": "off", "time": 500, "fb": 30, "mix": 25, "lowcut": 0, "tone": 100}
         self.eq = {"on": False, "hpf": 0.0, "lpf": 0.0,
                    "bands": [[f, 0.0, 1.0] for f in (40.0, 100.0, 250.0, 800.0, 3000.0)]}
-        self.loop = {"state": "off", "hq": 0, "level": 100}
+        self.loop = {"state": "empty", "level": 100}
         self.closed = False
 
     def loop_cmd(self, args: list[str]) -> str:
@@ -48,26 +48,28 @@ class FakeConsole:
         lp = self.loop
         err = ""
         if args and args[0] in ("rec", "play", "dub", "stop", "undo", "clear", "tap"):
-            nxt = {("off", "rec"): "rec", ("rec", "rec"): "play", ("rec", "play"): "play",
+            nxt = {("empty", "rec"): "rec", ("rec", "rec"): "play", ("rec", "play"): "play",
                    ("play", "dub"): "dub", ("dub", "play"): "play", ("play", "stop"): "stop",
-                   ("stop", "play"): "play", ("play", "clear"): "off", ("stop", "clear"): "off",
-                   ("off", "tap"): "rec", ("rec", "tap"): "play"}.get((lp["state"], args[0]))
+                   ("stop", "play"): "play", ("play", "clear"): "empty", ("stop", "clear"): "empty",
+                   ("empty", "tap"): "rec", ("rec", "tap"): "play"}.get((lp["state"], args[0]))
             if nxt is None:
                 err = f"loop {args[0]}: not allowed now\r\n"
             else:
                 lp["state"] = nxt
-        elif len(args) > 1 and args[0] == "hq":
-            if lp["state"] != "off":
-                return "loop hq: not allowed while a loop exists (loop clear first)"
-            lp["hq"] = int(args[1] == "on")
         elif len(args) > 1 and args[0] == "level":
             lp["level"] = int(args[1])
+        elif args and args[0] in ("save", "load"):
+            if len(args) < 2 or args[1] not in ("1", "2"):
+                return "usage: loop save <1-2> | loop load <1-2>"
+            if args[0] == "save" and lp["state"] in ("empty", "rec", "off"):
+                err = "loop save: not allowed now\r\n"
+            elif args[0] == "load":
+                lp["state"] = "stop"
         elif args:
-            return "usage: loop [rec|play|dub|stop|undo|clear|tap] | loop hq on|off | loop level <0-100>"
-        max_ms = 8196 if lp["hq"] else 16393
-        return (err + f"loop {lp['state']}: len_ms=0 pos_ms=0 max_ms={max_ms} "
-                f"undo_max_ms={max_ms // 2} undo=none hq={lp['hq']} level={lp['level']} "
-                f"mem={int(lp['state'] != 'off')}")
+            return ("usage: loop [rec|play|dub|stop|undo|clear|tap] | loop save|load <1-2> | "
+                    "loop level <0-100> | loop stats")
+        return (err + f"loop {lp['state']}: len_ms=0 pos_ms=0 max_ms=108299 "
+                f"undo_max_ms=54294 undo=none level={lp['level']} prep_ms=2310 flash=1")
 
     def eq_line(self) -> str:
         # console.c cmd_eq, with its clamps
@@ -332,28 +334,41 @@ def test_looper_state_and_actions(rig):
     tools, con, _ = rig
     st = tools.looper()
     assert con.sent == ["loop"]
-    assert st["state"] == "off" and st["max_ms"] == 16393 and not st["borrowed_memory"]
-    st = tools.looper(hq=True, level=80, action="rec")
-    assert con.sent[1:] == ["loop hq on", "loop level 80", "loop rec"]
-    assert st["state"] == "rec" and st["hq"] and st["level"] == 80 and st["borrowed_memory"]
+    assert st["state"] == "empty" and st["max_ms"] == 108299 and st["flash"]
+    st = tools.looper(level=80, action="rec")
+    assert con.sent[1:] == ["loop level 80", "loop rec"]
+    assert st["state"] == "rec" and st["level"] == 80 and st["prepared_ms"] == 2310
     assert tools.looper("tap")["state"] == "play"
     with pytest.raises(InvalidArgumentError, match="not allowed"):
-        tools.looper(hq=False)                     # a loop exists
-    with pytest.raises(InvalidArgumentError, match="not allowed"):
         tools.looper("rec")                        # clear first
-    assert tools.looper("clear")["state"] == "off"
+    assert tools.looper("clear")["state"] == "empty"
     with pytest.raises(InvalidArgumentError):
         tools.looper(level=101)
     with pytest.raises(InvalidArgumentError):
         tools.looper("record")                     # type: ignore[arg-type]
 
 
+def test_looper_save_load(rig):
+    tools, con, _hid = rig
+    tools.looper("rec")
+    tools.looper("rec")
+    tools.looper("stop")
+    con.sent.clear()
+    assert tools.looper("save", slot=1)["state"] == "stop"
+    assert tools.looper("load", slot=2)["state"] == "stop"
+    assert con.sent == ["loop save 1", "loop load 2"]
+    with pytest.raises(InvalidArgumentError):
+        tools.looper("save")
+    with pytest.raises(InvalidArgumentError):
+        tools.looper("load", slot=3)
+
+
 def test_parse_loop_firmware_text():
-    st = parse_loop("loop dub: len_ms=4210 pos_ms=1234 max_ms=16393 undo_max_ms=8196 undo=redo "
-                    "hq=0 level=100 mem=1")
-    assert st == {"state": "dub", "len_ms": 4210, "pos_ms": 1234, "max_ms": 16393,
-                  "undo_max_ms": 8196, "undo": "redo", "hq": False, "level": 100,
-                  "borrowed_memory": True}
+    st = parse_loop("loop dub: len_ms=4210 pos_ms=1234 max_ms=108299 undo_max_ms=54294 undo=redo "
+                    "level=100 prep_ms=5200 flash=1")
+    assert st == {"state": "dub", "len_ms": 4210, "pos_ms": 1234, "max_ms": 108299,
+                  "undo_max_ms": 54294, "undo": "redo", "level": 100, "prepared_ms": 5200,
+                  "flash": True}
     with pytest.raises(CommunicationError):
         parse_loop("loop what")
 
@@ -414,19 +429,18 @@ def test_set_blocks_frame_bytes(rig):
         FB200Device(hid).set_module("amp", {"bogus": 1})
 
 
-def test_long_ir_cab_refused_while_the_looper_has_the_memory(rig):
-    """The looper wins over a stored long IR (console `cab <20-83>` too):
-    set_cab refuses types 20..83 while a loop exists, writes nothing."""
+def test_long_ir_cab_during_a_loop(rig):
+    """The flash looper does not borrow the long-IR memory: cab 20..83 is
+    written while a loop exists."""
     tools, con, hid = rig
-    tools.set_cab(type=20)                         # no loop: the HID write goes out
-    assert con.sent == ["loop"] and [f[0] for f in hid.frames if f[0] == 0x83]
     tools.looper("rec")
     hid.frames.clear()
-    with pytest.raises(InvalidArgumentError, match="looper has the long-IR memory"):
-        tools.set_cab(type=83)
-    assert not [f for f in hid.frames if f[0] == 0x83]
-    tools.set_cab(type=12)                         # stock / user IR: fine during a loop
-    tools.looper("rec")
+    before = len(con.sent)
+    tools.set_cab(type=83)
+    assert [f[0] for f in hid.frames if f[0] == 0x83] == [0x83]
+    assert con.sent[before:] == []
+    tools.set_cab(type=12)
+    tools.looper("rec")                            # close the record
     tools.looper("clear")
     tools.set_cab(enabled=True, type=21)
 

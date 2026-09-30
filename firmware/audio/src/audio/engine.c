@@ -36,7 +36,10 @@
 #include "dsp/delay.h"
 #include "dsp/eq.h"
 #include "dsp/looper.h"
-#include "dsp/loop_mem.h"
+#include "loopstore/loopstore.h"
+#include "loopstore/lsio.h"
+#include "debug/flash_rmw.h"
+#include "debug/selfupdate.h"
 #include "dsp/outq.h"
 #include "preset/preset.h"
 #include "irstore/irstore.h"
@@ -87,10 +90,8 @@ _Static_assert(SAI_BLOCK_FRAMES == ENGINE_FRAMES, "sai_pull_block moves one engi
 /* long IRs (M5): 96 kB, in the low DTCM (linker.ld .dtcm_lo) */
 static conv2_tail_t s_cab_tail __attribute__((section(".dtcm_lo")));
 #define CAB_INIT(c) cab_init_long((c), &s_cab_tail)
-#define CAB_TAIL (&s_cab_tail)
 #else
 #define CAB_INIT(c) cab_init(c)
-#define CAB_TAIL NULL
 #endif
 static gate_t s_gate;
 static comp_t s_comp;
@@ -108,11 +109,14 @@ static bool s_dly_en;
  * (_dcd_data) up by 2 kB and DTCM overflows. The EQ touches ~70 words of it
  * per block. */
 static eq_t s_eq __attribute__((section(".ocram")));
-/* The looper (dsp/looper.h): its state (~0.3 kB) in the low DTCM's spare;
- * its loop in the delay line and the long-IR tail while s_lmem.owned
- * (dsp/loop_mem.h). */
+/* The looper (dsp/looper.h): the loop is in the flash
+ * (loopstore/loopstore.h). The audio side's state and the two frame rings
+ * (2.1 kB) in the low DTCM's spare, the flash side's state and chunk maps
+ * (2.2 kB, main loop only) in OCRAM. */
 static looper_t s_loop __attribute__((section(".dtcm_lo")));
-static loop_mem_t s_lmem __attribute__((section(".dtcm_lo")));
+static loopio_t s_lio __attribute__((section(".dtcm_lo")));
+static loopstore_t s_ls __attribute__((section(".ocram")));
+static uint16_t s_lmap[2][LS_MAX_CHUNKS] __attribute__((section(".ocram")));
 static bool s_amp_en, s_cab_en, s_gate_en, s_comp_en, s_mod_en, s_rev_en;
 static int s_amp_model = -1, s_cab_type = -1;
 static float s_master = 1.0f, s_master_target = 1.0f;
@@ -166,8 +170,12 @@ COLD void engine_init(void)
     reverb_init(&s_rev, (float)AUDIO_FS);
     delay_init(&s_dly, (float)AUDIO_FS, s_dly_line);
     eq_init(&s_eq, (float)AUDIO_FS);
-    looper_init(&s_loop);
-    s_lmem = (loop_mem_t){&s_loop, &s_dly, s_dly_line, &s_cab, CAB_TAIL, 0};
+    /* the looper's area: the JEDEC ID sizes it (8 MB: F:0x510000..0x800000);
+     * nothing in it is read before the looper writes it */
+    (void)flash_probe();
+    lsio_init(flash_suspend_ok());
+    (void)ls_init(&s_ls, &s_lio, s_lmap[0], s_lmap[1], FLASH_LOOP_BASE, flash_loop_end());
+    looper_init(&s_loop, &s_lio, &s_ls);
     static drums_data_t rhythms;
     if (g_stock) drums_data_from_stock(&rhythms, g_stock);
     drums_init(&s_drums, (const void *)DRUMS_BANK_ADDR, g_stock ? &rhythms : NULL);  /* NULL: silent */
@@ -192,15 +200,12 @@ static volatile bool s_reapply;
 void engine_dsp_reset(void)
 {
     amp_init(&s_amp, (float)AUDIO_FS);
-    /* the looper keeps its loop: the delay line and the tail stay its own
-     * (loop_mem_give clears them) */
-    if (s_lmem.owned) cab_init_long(&s_cab, NULL);
-    else CAB_INIT(&s_cab);
+    CAB_INIT(&s_cab);
     gate_init(&s_gate, (float)AUDIO_FS);
     comp_init(&s_comp, (float)AUDIO_FS);
     mod_init(&s_mod, (float)AUDIO_FS);
     reverb_init(&s_rev, (float)AUDIO_FS);
-    if (!s_lmem.owned) delay_init(&s_dly, (float)AUDIO_FS, s_dly_line);
+    delay_init(&s_dly, (float)AUDIO_FS, s_dly_line);
     eq_reset(&s_eq);            /* the settings come back with the preset */
     s_amp_model = s_cab_type = -1;
     s_reapply = true;
@@ -241,9 +246,6 @@ static int load_long_ir(unsigned slot)
 {
     irstore_entry_t e;
     int taps = irstore_load(slot, s_ir, ENGINE_IR_TAPS, &e);
-    /* the looper has the tail: the first 512 taps, as a long IR playing
-     * when the loop started; loop_mem_give reloads the whole IR */
-    if (taps > CAB_TAPS && s_lmem.owned) taps = CAB_TAPS;
     return taps > 0 && cab_set_ir_len(&s_cab, s_ir, (unsigned)taps, e.gain) == 0;
 }
 
@@ -274,7 +276,6 @@ COLD int engine_cab_long(unsigned taps)
         return 0;
     }
     if (taps > ENGINE_IR_TAPS) return -2;
-    if (taps > CAB_TAPS && s_lmem.owned) return -3;
     if (s_ir_busy) return -4;
     uint32_t seed = 1;
     float env = 1.0f;
@@ -317,7 +318,7 @@ COLD void engine_apply_preset(const preset_t *p, unsigned master)
     /* Stock presets have the delay "on" but the stock never plays it: only
      * presets with our marker play (preset.h preset_delay_on). Switching it
      * on starts from a silent line, not from old audio. */
-    bool dly = preset_delay_on(p) && !s_lmem.owned;   /* the looper has its line */
+    bool dly = preset_delay_on(p);
     if (dly && !s_dly_en) delay_clear(&s_dly);
     delay_set_params(&s_dly, pget(p, P_DLY_TIME), pget(p, P_DLY_FB), pget(p, P_DLY_MIX),
                      pget(p, P_DLY_LOWCUT), pget(p, P_DLY_TONE));
@@ -338,42 +339,22 @@ COLD void engine_apply_settings(const settings_t *s)
     s_tuner_mute = s->b[S_TUNER_MUTE] != 0;
 }
 
-COLD int engine_loop(int action)
-{
-    if (!s_lmem.owned && (action == LOOPER_REC_A || action == LOOPER_TAP ||
-                          action == LOOPER_DUB_A)) {
-        if (action == LOOPER_DUB_A) return -1;   /* nothing to dub on */
-        s_dly_en = false;                        /* before the looper writes its line */
-        loop_mem_take(&s_lmem);
-    }
-    return looper_cmd(&s_loop, action);
-}
-
-COLD void engine_loop_poll(void)
-{
-    looper_poll(&s_loop);
-    if (s_lmem.owned && s_loop.state == LOOPER_EMPTY) {
-        loop_mem_give(&s_lmem);   /* delay line and tail cleared */
-        s_reapply = true;         /* the preset's delay plays again */
-        if (irstore_slot_of((unsigned)s_cab_type) >= 0)
-            s_cab_type = -1;      /* and a stored long IR all its taps */
-    }
-}
-
-COLD void engine_loop_info(looper_info_t *out)
-{
-    looper_info(&s_loop, out);
-    if (s_loop.state == LOOPER_OFF) {   /* what the first record gets */
-        uint32_t blocks = DELAY_LEN * 2u / LOOPER_BLK_BYTES +
-                          (ENGINE_LONG_IR ? (uint32_t)sizeof(conv2_tail_t) / LOOPER_BLK_BYTES : 0u);
-        uint32_t fs = out->hq ? AUDIO_FS : AUDIO_FS / 2u;
-        out->max_ms = (unsigned)((uint64_t)blocks * LOOPER_BLK * 1000u / fs);
-        out->undo_max_ms = (unsigned)((uint64_t)(blocks / 2u) * LOOPER_BLK * 1000u / fs);
-    }
-}
-COLD bool engine_loop_has_mem(void) { return s_lmem.owned != 0; }
-COLD int engine_loop_hq(int on) { return looper_set_hq(&s_loop, on); }
+COLD int engine_loop(int action) { return looper_cmd(&s_loop, action); }
+COLD int engine_loop_save(unsigned n) { return looper_save(&s_loop, n); }
+COLD int engine_loop_load(unsigned n) { return looper_load(&s_loop, n); }
+COLD void engine_loop_poll(void) { looper_poll(&s_loop); }
+COLD void engine_loop_info(looper_info_t *out) { looper_info(&s_loop, out); }
 COLD void engine_loop_level(unsigned pct) { looper_set_level(&s_loop, pct); }
+COLD void engine_loop_arm(void) { ls_arm(&s_ls); }
+COLD void engine_loop_task(void) { ls_task(&s_ls); }
+int engine_loop_busy(void) { return ls_busy(&s_ls); }
+int engine_loop_writing(void) { return looper_writing(&s_loop); }
+COLD void engine_loop_stats(engine_loop_stats_t *out)
+{
+    ls_info(&s_ls, &out->store);
+    out->io = &s_lio;
+    out->cut = s_loop.cut;
+}
 
 float engine_input_peak(void)
 {
@@ -575,7 +556,7 @@ void engine_task(void)
     PROF(P_EQ);
     if (s_mod_en) mod_process(&s_mod, x, (unsigned)n);
     PROF(P_MOD);
-    if (s_dly_en && !s_lmem.owned) delay_process(&s_dly, x, (unsigned)n);
+    if (s_dly_en) delay_process(&s_dly, x, (unsigned)n);
     PROF(P_DELAY);
     float xl[ENGINE_FRAMES], xr[ENGINE_FRAMES];
     if (s_rev_en) reverb_process(&s_rev, x, xl, xr, (unsigned)n);   /* mono in, L/R out */

@@ -19,6 +19,7 @@ replaces it.
 | `0x60010000` | Application image (the `.mr` block 0) |
 | `0x60071000`.. | Presets, settings, IRs (see `UI_AND_STORAGE.md` §5) |
 | `0x600D0000` | Model library (block 1; verified on the pedal: count 20) |
+| `0x60510000`.. | Ours: the looper's loops, to the end of the 8 MB chip (`UI_AND_STORAGE.md` §5) |
 | `0x60086000` | Handover flag byte (see below) |
 
 Note: the bootloader configures FlexRAM with `0xFFEAAAA9`; the stock

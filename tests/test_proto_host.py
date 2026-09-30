@@ -29,16 +29,22 @@ PRESET_FLASH = 0x71000
 SETTINGS_FLASH = 0x80000
 
 
+# the looper on the simulated flash (firmware/audio/tests/loopflash_sim.c)
+LOOPER_SRC = ["dsp/looper.c", "dsp/loopcodec.c", "loopstore/loopstore.c", "loopstore/lsio.c",
+              "debug/flash_rmw.c", "crc32.c"]
+
+
 @functools.cache
 def build() -> Path:
     """Once per process, in its own dir: parallel workers (pytest -n) do not collide."""
     exe = Path(tempfile.mkdtemp(prefix="proto_host_")) / "proto_host_test"
     subprocess.run(
         ["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-Wno-missing-field-initializers",
-         "-I", str(FW / "src"), str(FW / "tests" / "proto_host_test.c"),
+         "-I", str(FW / "src"), "-I", str(FW / "tests"), str(FW / "tests" / "proto_host_test.c"),
          str(FW / "src" / "proto" / "proto.c"), str(FW / "src" / "ui" / "ui.c"),
          str(FW / "src" / "ui" / "lightbar.c"), str(FW / "src" / "preset" / "preset_check.c"),
-         str(FW / "src" / "dsp" / "looper.c"), "-o", str(exe)],
+         *[str(FW / "src" / m) for m in LOOPER_SRC], str(FW / "tests" / "loopflash_sim.c"),
+         "-o", str(exe)],
         check=True,
     )
     return exe
@@ -695,8 +701,8 @@ def loop(h) -> tuple[int, int, str]:
 
 
 def blocks(h, n: int) -> None:
-    for _ in range(n):
-        h.cmd("tick 1")                                        # one audio block per pass
+    h.cmd(f"audio {n}")                                        # n audio blocks (and flash steps)
+    h.cmd(f"tick {n}")                                         # the time, one UI pass
 
 
 def looper_chord(h) -> list[str]:
@@ -713,11 +719,11 @@ def test_looper_mode_footswitches(h):
     h.cmd("fsw a press")                                       # A acts when pressed
     assert loop(h) == (2, 0, "tap") and disp(h) == "rEC"
     h.cmd("fsw a release")
-    blocks(h, 40)
+    blocks(h, 700)                                             # over the shortest loop (0.5 s)
     assert loop(h)[0] == 2
     h.cmd("fsw a press")                                       # close: plays
     h.cmd("fsw a release")                                     # (the press acted: no dub)
-    blocks(h, 20)                                              # past the closing crossfade
+    blocks(h, 40)                                              # past the closing crossfade
     assert loop(h) == (3, 0, "tap") and disp(h) == "PLY"
     assert ring_colours(h)[0] in ((0, 0x3F, 0), (0x3F, 0x3F, 0x3F))   # green (white at the top)
     tap(h, "a")                                                # released while playing: dub
@@ -733,15 +739,15 @@ def test_looper_mode_footswitches(h):
     assert loop(h) == (5, 2, "stop")
     tap(h, "b")                                                # play from the start
     assert loop(h)[::2] == (3, "play")
-    hold(h, "b")                                               # clear: the memory goes back
+    hold(h, "b")                                               # clear
     assert disp(h) == "CLr"
     blocks(h, 20)
-    assert loop(h) == (0, 0, "clear")
+    assert loop(h) == (1, 0, "clear")
     hold(h, "a")                                               # nothing to undo
     assert disp(h) == "no " and loop(h)[2] == "tap undo!"      # (the press started a record)
     hold(h, "b")
     blocks(h, 20)
-    assert loop(h)[0] == 0
+    assert loop(h)[0] == 1
     tap(h, "c", "d")                                           # chords do nothing here
     assert h.cmd("index") == before
     looper_chord(h)                                            # leave
@@ -758,7 +764,7 @@ def test_looper_mode_and_rhythm_mode_exclude_each_other(h):
     assert disp(h).startswith("d")
     h.cmd("fsw a press")                                       # A: previous rhythm, no loop
     h.cmd("fsw a release")
-    assert loop(h) == (0, 0, "")
+    assert loop(h) == (1, 0, "")
     looper_chord(h)
     assert disp(h) == "LP-"
     looper_chord(h)

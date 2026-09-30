@@ -1,4 +1,5 @@
 #include <string.h>
+#include "cold.h"
 #include "amp.h"
 
 void amp_init(amp_t *a, float fs)
@@ -10,7 +11,7 @@ void amp_init(amp_t *a, float fs)
     tone_init(&a->tone);
 }
 
-int amp_set_model(amp_t *a, int model)
+COLD int amp_set_model(amp_t *a, int model)
 {
     if (!g_stock || model < 1 || model > STOCK_AMP_MODELS) return -1;
     a->m = &g_stock->amp_models[model - 1];
@@ -24,7 +25,7 @@ int amp_set_model(amp_t *a, int model)
     return 0;
 }
 
-void amp_set_params(amp_t *a, int gain, int bass, int mid, int midfreq, int treble, int volume)
+COLD void amp_set_params(amp_t *a, int gain, int bass, int mid, int midfreq, int treble, int volume)
 {
     float g = knob_fraction(gain);
     a->drv_target = g < 0.5f ? 0.05f + g * 1.9f : 1.0f + (g - 0.5f) * 10.0f;

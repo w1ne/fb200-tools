@@ -2,10 +2,14 @@
  *
  * The flash controller stays exactly as the boot ROM and the vendor
  * bootloader configured it, so memory-mapped (AHB) reads keep working. We only
- * add five plain SPI-NOR sequences in LUT slots 11..15 and run them as IP
+ * add plain SPI-NOR sequences in LUT slots 6..15 and run them as IP
  * commands. (The ROM FlexSPI driver's init was tried first: after it, any AHB
  * read of flash, including a speculative one, hangs the core. Seen on
  * hardware 2026-09-27.)
+ *
+ * The looper (loopstore/lsio.c) adds slots 6..10 (fast read, 64 kB erase,
+ * erase suspend/resume, status register 2) and the JEDEC ID is slot 11:
+ * lut_init checks that the AHB (XIP) read sequence uses none of 6..15.
  *
  * This file runs from ITCM and its data lives in DTCM, so flash can be
  * erased and programmed while the application runs. The app's cold code runs
@@ -17,6 +21,7 @@
  * While the flash is busy, flash_wait_idle (flash_rmw.c) keeps the audio
  * running (flash_pump below; hot_path.py flash-busy roots). */
 #include <stdint.h>
+#include "cold.h"
 #include <string.h>
 #include "fsl_device_registers.h"
 #include "fsl_flexspi.h"
@@ -26,6 +31,9 @@
 #include "recovery.h"
 #include "console.h"
 #include "flash_rmw.h"
+#ifndef FB200_RECOVERY
+#include "loopstore/lsio.h"
+#endif
 #ifndef FB200_RECOVERY
 #include "audio/engine.h"
 #include "audio/usb_audio.h"
@@ -46,7 +54,13 @@ static const struct { uint32_t base, limit; } regions[] = {
 #define PAGE         FLASH_PAGE
 #define FW_IDLE_MS   3000u
 
-#define SEQ_RDID     11u   /* JEDEC ID (FCB convention: chip erase, never used here) */
+#define SEQ_READ     6u    /* 0Bh fast read, 8 dummy cycles (IP reads: no AHB cache) */
+#define SEQ_ERASE64  7u    /* D8h / DCh: 64 kB block */
+#define SEQ_SUSPEND  8u    /* 75h erase/program suspend */
+#define SEQ_RESUME   9u    /* 7Ah */
+#define SEQ_RDSR2    10u   /* 35h status register 2 (SUS = bit 7) */
+#define SEQ_RDID     11u   /* 9Fh JEDEC ID */
+#define SEQ_FIRST    SEQ_READ
 #define SEQ_WREN     12u
 #define SEQ_RDSR     13u
 #define SEQ_ERASE    14u
@@ -82,33 +96,48 @@ static int lut_init(void)
                    (unsigned)pads, (unsigned)bits);
         return 0;
     }
-    /* We overwrite LUT sequences SEQ_RDID..15: the AHB (XIP) read must not use them. */
+    if (lut_ready) return 1;
+    /* We overwrite LUT sequences SEQ_FIRST..15: the AHB (XIP) read must not use them. */
     uint32_t cr2 = FLEXSPI->FLSHCR2[0];
     uint32_t rd = (cr2 & FLEXSPI_FLSHCR2_ARDSEQID_MASK) >> FLEXSPI_FLSHCR2_ARDSEQID_SHIFT;
     uint32_t rn = ((cr2 & FLEXSPI_FLSHCR2_ARDSEQNUM_MASK) >> FLEXSPI_FLSHCR2_ARDSEQNUM_SHIFT) + 1u;
-    if (rd + rn > SEQ_RDID) {
+    if (rd + rn > SEQ_FIRST) {
         log_printf("fw: AHB read uses LUT seq %u..%u; not touched\r\n", (unsigned)rd,
                    (unsigned)(rd + rn - 1u));
         return 0;
     }
-    /* 4-byte-address opcodes (0x21/0x12) work in either address mode. */
+    /* 4-byte-address opcodes (0x21/0x12/0xDC/0x0C) work in either address mode. */
     uint8_t se = bits == 32u ? 0x21 : 0x20;
+    uint8_t be = bits == 32u ? 0xDC : 0xD8;
     uint8_t pp = bits == 32u ? 0x12 : 0x02;
-    const uint32_t lut[20] = {
-        [0]  = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, 0x9F,
-                               kFLEXSPI_Command_READ_SDR, kFLEXSPI_1PAD, 0x03),
-        [4]  = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, 0x06,
-                               kFLEXSPI_Command_STOP, kFLEXSPI_1PAD, 0),
-        [8]  = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, 0x05,
+    uint8_t rdf = bits == 32u ? 0x0C : 0x0B;
+    const uint32_t lut[40] = {
+        [0]  = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, rdf,
+                               kFLEXSPI_Command_RADDR_SDR, kFLEXSPI_1PAD, bits),
+        [1]  = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_DUMMY_SDR, kFLEXSPI_1PAD, 8,
                                kFLEXSPI_Command_READ_SDR, kFLEXSPI_1PAD, 0x04),
-        [12] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, se,
+        [4]  = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, be,
                                kFLEXSPI_Command_RADDR_SDR, kFLEXSPI_1PAD, bits),
-        [16] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, pp,
+        [8]  = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, 0x75,
+                               kFLEXSPI_Command_STOP, kFLEXSPI_1PAD, 0),
+        [12] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, 0x7A,
+                               kFLEXSPI_Command_STOP, kFLEXSPI_1PAD, 0),
+        [16] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, 0x35,
+                               kFLEXSPI_Command_READ_SDR, kFLEXSPI_1PAD, 0x04),
+        [20] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, 0x9F,
+                               kFLEXSPI_Command_READ_SDR, kFLEXSPI_1PAD, 0x03),
+        [24] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, 0x06,
+                               kFLEXSPI_Command_STOP, kFLEXSPI_1PAD, 0),
+        [28] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, 0x05,
+                               kFLEXSPI_Command_READ_SDR, kFLEXSPI_1PAD, 0x04),
+        [32] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, se,
                                kFLEXSPI_Command_RADDR_SDR, kFLEXSPI_1PAD, bits),
-        [17] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_WRITE_SDR, kFLEXSPI_1PAD, 0x04,
+        [36] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_SDR, kFLEXSPI_1PAD, pp,
+                               kFLEXSPI_Command_RADDR_SDR, kFLEXSPI_1PAD, bits),
+        [37] = FLEXSPI_LUT_SEQ(kFLEXSPI_Command_WRITE_SDR, kFLEXSPI_1PAD, 0x04,
                                kFLEXSPI_Command_STOP, kFLEXSPI_1PAD, 0),
     };
-    FLEXSPI_UpdateLUT(FLEXSPI, SEQ_RDID * 4u, lut, 20u);
+    FLEXSPI_UpdateLUT(FLEXSPI, SEQ_FIRST * 4u, lut, 40u);
     lut_ready = 1;
     return 1;
 }
@@ -137,7 +166,16 @@ static int write_enable(void)
 }
 
 /* ---- flash_rmw.h primitives ---- */
-int flash_cmd_init(void) { return lut_init(); }
+/* Every other flash writer starts here (flash_rmw), or calls lsio_quiesce
+ * itself (fw_begin): a suspended looper erase ends first. */
+int flash_cmd_init(void)
+{
+    if (!lut_init()) return 0;
+#ifndef FB200_RECOVERY
+    lsio_quiesce();
+#endif
+    return 1;
+}
 int flash_write_enable(void) { return write_enable(); }
 int flash_cmd_erase(uint32_t sector)
 {
@@ -148,6 +186,68 @@ int flash_cmd_program(uint32_t page, const uint32_t *data)
     return ip(SEQ_PROGRAM, page, kFLEXSPI_Write, (uint32_t *)data, PAGE) == kStatus_Success;
 }
 int flash_read_status(uint32_t *sr) { return read_status(sr); }
+int flash_read_status2(uint32_t *sr2)
+{
+    *sr2 = 0;
+    return ip(SEQ_RDSR2, 0, kFLEXSPI_Read, sr2, 1) == kStatus_Success;
+}
+int flash_cmd_read(uint32_t offset, void *dst, uint32_t len)
+{
+    return ip(SEQ_READ, offset, kFLEXSPI_Read, (uint32_t *)dst, len) == kStatus_Success;
+}
+int flash_cmd_erase_block(uint32_t block)
+{
+    return ip(SEQ_ERASE64, block, kFLEXSPI_Command, NULL, 0) == kStatus_Success;
+}
+int flash_cmd_suspend(void) { return ip(SEQ_SUSPEND, 0, kFLEXSPI_Command, NULL, 0) == kStatus_Success; }
+int flash_cmd_resume(void) { return ip(SEQ_RESUME, 0, kFLEXSPI_Command, NULL, 0) == kStatus_Success; }
+
+/* JEDEC ID (9Fh): manufacturer, memory type, capacity code. 1 on success. */
+COLD int flash_read_id(uint8_t id[3])
+{
+    uint32_t w = 0;
+    if (!lut_init() || ip(SEQ_RDID, 0, kFLEXSPI_Read, &w, 3) != kStatus_Success) return 0;
+    id[0] = (uint8_t)w;
+    id[1] = (uint8_t)(w >> 8);
+    id[2] = (uint8_t)(w >> 16);
+    return 1;
+}
+
+/* The flash size port A1 is configured for (FLSHA1CR0, from the FCB): AHB
+ * reads and IP commands past it do not reach this chip. */
+COLD uint32_t flash_window(void)
+{
+    return (FLEXSPI->FLSHCR0[0] & FLEXSPI_FLSHCR0_FLSHSZ_MASK) * 1024u;
+}
+
+COLD uint32_t flash_chip_size(const uint8_t id[3])
+{
+    /* capacity code n = 2^n bytes (Winbond, GigaDevice, Macronix, ISSI, ...) */
+    if (id[0] == 0x00u || id[0] == 0xFFu || id[2] < 0x10u || id[2] > 0x1Fu) return 0;
+    return 1u << id[2];
+}
+
+/* The chip's size, bounded by the FlexSPI window (flash_probe at boot);
+ * 0: unknown. Read by the flash write path: no flash access here. */
+static uint32_t s_capacity;
+uint32_t flash_capacity(void) { return s_capacity; }
+
+COLD uint32_t flash_probe(void)
+{
+    uint8_t id[3];
+    uint32_t chip = flash_read_id(id) ? flash_chip_size(id) : 0u;
+    uint32_t win = flash_window();
+    s_capacity = chip < win ? chip : win;
+    return s_capacity;
+}
+
+/* Erase Suspend (75h/7Ah, SUS in status register 2 bit 7): Winbond and
+ * GigaDevice (lsio.h; another chip runs its erases to the end). */
+COLD int flash_suspend_ok(void)
+{
+    uint8_t id[3];
+    return flash_read_id(id) && (id[0] == 0xEFu || id[0] == 0xC8u);
+}
 const void *flash_map(uint32_t offset) { return (const void *)(FLASH_AHB + offset); }
 uint32_t flash_now_ms(void) { return tusb_time_millis_api(); }
 
@@ -184,44 +284,7 @@ void flash_refresh(uint32_t offset, uint32_t len)
     SCB_InvalidateICache();
 }
 
-/* JEDEC ID (0x9F): manufacturer, memory type, capacity code. 1 on success. */
-int flash_read_id(uint8_t id[3])
-{
-    uint32_t w = 0;
-    if (!lut_init() || ip(SEQ_RDID, 0, kFLEXSPI_Read, &w, 3) != kStatus_Success) return 0;
-    id[0] = (uint8_t)w;
-    id[1] = (uint8_t)(w >> 8);
-    id[2] = (uint8_t)(w >> 16);
-    return 1;
-}
-
-/* The flash size port A1 is configured for (FLSHA1CR0, from the FCB): AHB
- * reads and IP commands past it do not reach this chip. */
-uint32_t flash_window(void)
-{
-    return (FLEXSPI->FLSHCR0[0] & FLEXSPI_FLSHCR0_FLSHSZ_MASK) * 1024u;
-}
-
-uint32_t flash_chip_size(const uint8_t id[3])
-{
-    /* capacity code n = 2^n bytes (Winbond, GigaDevice, Macronix, ISSI, ...) */
-    if (id[0] == 0x00u || id[0] == 0xFFu || id[2] < 0x10u || id[2] > 0x1Fu) return 0;
-    return 1u << id[2];
-}
-
-uint32_t flash_capacity(void)
-{
-    static uint32_t cap;   /* 0: not read yet (or the read failed: try again) */
-    if (cap == 0u) {
-        uint8_t id[3];
-        uint32_t chip = flash_read_id(id) ? flash_chip_size(id) : 0u;
-        uint32_t win = flash_window();
-        cap = chip < win ? chip : win;
-    }
-    return cap;
-}
-
-void fw_info(void)
+COLD void fw_info(void)
 {
     uint32_t pads = 0, bits = 0, sr = 0;
     int fcb = fcb_read_seq(&pads, &bits);
@@ -234,7 +297,7 @@ void fw_info(void)
 }
 
 /* Non-destructive probe: write-enable must set WEL, then write-disable. */
-void fw_test(void)
+COLD void fw_test(void)
 {
     uint32_t sr = 0;
     int ok = lut_init() && write_enable();
@@ -257,6 +320,9 @@ void fw_begin(fw_target_t target, uint32_t len, uint32_t crc)
         log_printf("fw: flash is write-protected (sr=%02x); nothing erased\r\n", (unsigned)sr);
         return;
     }
+#ifndef FB200_RECOVERY
+    lsio_quiesce();   /* a suspended looper erase: no erase is allowed meanwhile */
+#endif
     if (!write_enable()) { log_printf("fw: write-enable FAILED\r\n"); return; }
     uint32_t end = base + ((len + SECTOR - 1u) / SECTOR) * SECTOR;
     log_printf("fw: erasing 0x%08x..0x%08x\r\n", (unsigned)(FLASH_AHB + base),
@@ -412,5 +478,8 @@ int flash_store(uint32_t offset, const void *data, uint32_t len)
 {
     if (active || xip_gone) return -1;
     if (store_blocked) return -5;   /* battery critical: no erase at brown-out risk */
+#ifndef FB200_RECOVERY
+    if (engine_loop_writing()) return -6;   /* a loop is recording: its streams would stall */
+#endif
     return flash_rmw(offset, data, len);
 }

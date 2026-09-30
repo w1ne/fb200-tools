@@ -27,6 +27,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
 #include "irstore/irstore.h"
 
 #define FLASH_SIZE 0x800000u
@@ -122,12 +126,16 @@ int main(void)
     static char line[512];
     flash = malloc(FLASH_SIZE);
     memset(flash, 0xFF, FLASH_SIZE);
+#ifdef _WIN32
+    /* irls lines already end in CR LF. Text mode would write CR CR LF. */
+    _setmode(_fileno(stdout), _O_BINARY);
+#endif
     setvbuf(stdout, NULL, _IOLBF, 0);
     while (fgets(line, sizeof line, stdin)) {
         char *argv[8] = {0};
         int argc = 0;
         for (char *t = strtok(line, " \r\n"); t && argc < 8; t = strtok(NULL, " \r\n")) argv[argc++] = t;
-        if (!argc) { puts("."); continue; }
+        if (!argc) { puts("."); fflush(stdout); continue; }
         const char *c = argv[0];
         unsigned long a1 = argc > 1 ? strtoul(argv[1], NULL, 0) : 0;
         if (!strcmp(c, "cap")) cap = (uint32_t)a1;
@@ -184,6 +192,8 @@ int main(void)
         else if (!strcmp(c, "nameok")) printf("nameok %d\n", irstore_name_ok(argc > 1 ? argv[1] : ""));
         else printf("unknown %s\n", c);
         puts(".");
+        /* Win32 treats _IOLBF as full buffering, so the pipe stalls without this. */
+        fflush(stdout);
     }
     return 0;
 }

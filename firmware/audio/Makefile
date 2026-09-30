@@ -85,7 +85,8 @@ SRC_C := \
   src/dsp/dsp.c src/dsp/math.c src/dsp/gain.c src/dsp/testgen.c \
   src/dsp/conv.c src/dsp/conv2.c src/dsp/biquad.c src/dsp/detector.c src/dsp/gate.c src/dsp/comp.c \
   src/dsp/mod.c src/dsp/reverb.c src/dsp/delay.c src/dsp/eq.c \
-  src/dsp/drums.c src/dsp/tuner.c src/dsp/looper.c src/dsp/loop_mem.c \
+  src/dsp/drums.c src/dsp/tuner.c src/dsp/looper.c src/dsp/loopcodec.c \
+  src/loopstore/loopstore.c src/loopstore/lsio.c \
   src/dsp/amp.c src/dsp/tone.c src/dsp/cab.c src/dsp/stock_data.c \
   src/debug/log_fmt.c src/debug/cdc_log.c src/debug/console.c \
   src/debug/selfupdate.c src/debug/flash_rmw.c src/debug/recovery.c src/debug/regs.c \
@@ -126,7 +127,7 @@ SRC_C := \
 # The recovery image is a resident launcher: it must stay below ITCM 0x1F000
 # (the copier), so it carries none of the audio/DSP/LED code.
 ifeq ($(VARIANT),recovery)
-SRC_C := $(filter-out src/led.c src/cpu_idle.c src/cpu_power.c src/dsp/% src/audio/engine.c \
+SRC_C := $(filter-out src/led.c src/cpu_idle.c src/cpu_power.c src/dsp/% src/loopstore/% src/audio/engine.c \
                     src/audio/usb_audio.c src/audio/codec.c src/audio/sai.c \
                     src/audio/drift.c src/audio/frontend.c src/audio/bt_audio.c src/ui/% src/preset/% src/bt/% src/proto/% \
                     src/irstore/% \
@@ -158,7 +159,8 @@ $(STOCK_OBJS) $(TARGET)/$(DSP_SRC)/FilteringFunctions/FilteringFunctions.c.o: \
 #  - flash writes: nothing that runs while the flash is busy or after an app
 #    update has erased this very code is here: the flash write path
 #    (selfupdate.c: fw_begin, fw_rx_task, flash_store, the update session;
-#    flash_rmw.c and the audio pump it runs while the flash is busy)
+#    flash_rmw.c and the audio pump it runs while the flash is busy; the
+#    looper's flash operations, loopstore/lsio.c)
 #    and what it reaches (tud_task and the USB class drivers, the CDC log,
 #    the USB descriptors, fsl_flexspi.c).
 # Every other file stays in ITCM. The main loop (main.c), boot (startup.c),
@@ -171,6 +173,7 @@ COLD_SRC := \
   src/preset/preset.c src/preset/preset_check.c src/proto/proto.c \
   src/irstore/irstore.c src/irstore/irstore_port.c \
   src/audio/i2c_probe.c src/audio/frontend.c src/dsp/stock_data.c \
+  src/loopstore/loopstore.c \
   $(BOARD_DIR)/board/clock_config.c \
   $(BOARD_DIR)/board/pin_mux.c \
   $(MCU_DIR)/drivers/fsl_clock.c \

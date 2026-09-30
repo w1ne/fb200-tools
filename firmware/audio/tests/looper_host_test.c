@@ -1,72 +1,138 @@
-/* Host tests for the looper (src/dsp/looper.c) and its borrowed memory
- * (src/dsp/loop_mem.c). Built by tests/test_looper.py; every check is an
- * assert. Prints the measured quality (SNR / THD of a recorded sine). */
+/* Host tests for the flash looper: the frame codec (src/dsp/loopcodec.c),
+ * the audio side (src/dsp/looper.c) and the flash side
+ * (src/loopstore/loopstore.c, lsio.c) on a simulated W25Q64
+ * (tests/loopflash_sim.c). Built by tests/test_looper.py; every check is an
+ * assert.
+ *
+ * The main loop is simulated in time: audio blocks come due every 32/44100
+ * s; the loop runs engine_task (one block), ls_task and looper_poll; the
+ * flash side's busy waits run the audio (flash_pump). A block that runs
+ * more than 3 blocks late (the DAC ring's target fill, sai.h) counts as a
+ * skip, as engine.c's latency_skips would. Prints the measured quality and
+ * the flash timing. */
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "dsp/looper.h"
-#include "dsp/loop_mem.h"
+#include "dsp/loopcodec.h"
+#include "loopstore/loopstore.h"
+#include "loopstore/lsio.h"
+#include "loopflash_sim.h"
 
 #define FS 44100.0
 #define TWO_PI_ (2 * 3.14159265358979)
-#define GUARD 64
 #define SEC 44096u                     /* ~1 s in whole blocks */
-/* the engine's areas: the delay line and the conv2 tail */
-#define BYTES0 (DELAY_LEN * 2u)
-#define BYTES1 (sizeof(conv2_tail_t))
+#define BLOCK_US (1e6 * DSP_BLOCK / FS)
 
 static looper_t lp;
-static uint8_t *mem0, *mem1;          /* with GUARD bytes on both sides */
+static loopstore_t *ls;
+static loopio_t *io;
 
-static void mem_new(void)
-{
-    free(mem0);
-    free(mem1);
-    mem0 = malloc(BYTES0 + 2 * GUARD);
-    mem1 = malloc(BYTES1 + 2 * GUARD);
-    memset(mem0, 0xA5, BYTES0 + 2 * GUARD);
-    memset(mem1, 0xA5, BYTES1 + 2 * GUARD);
-}
+/* ------------------------------------------------------------ the main loop */
 
-static void guards_ok(void)
+static const float *g_x;
+static float *g_y;
+static size_t g_n, g_i;
+static uint64_t g_blk, g_t0;
+static unsigned skips;
+static uint64_t max_late, max_stall;
+static int in_task;
+
+static uint64_t due(uint64_t blk) { return g_t0 + (uint64_t)((double)(blk + 1u) * BLOCK_US); }
+
+static void block(void)
 {
-    for (unsigned i = 0; i < GUARD; i++) {
-        assert(mem0[i] == 0xA5 && mem0[GUARD + BYTES0 + i] == 0xA5);
-        assert(mem1[i] == 0xA5 && mem1[GUARD + BYTES1 + i] == 0xA5);
+    float l[DSP_BLOCK], r[DSP_BLOCK];
+    for (unsigned i = 0; i < DSP_BLOCK; i++) l[i] = r[i] = g_x ? g_x[g_i + i] : 0.0f;
+    looper_process(&lp, l, r, DSP_BLOCK);
+    for (unsigned i = 0; i < DSP_BLOCK; i++) {
+        float in = g_x ? g_x[g_i + i] : 0.0f;
+        assert(l[i] == r[i]);
+        assert(isfinite(l[i]) && fabsf(l[i] - in) < 4.0f);   /* never garbage */
+        if (g_y) g_y[g_i + i] = l[i] - in;
     }
+    g_i += DSP_BLOCK;
+    g_blk++;
 }
 
-static void fresh(int hq)
+static int engine_task(void)
 {
-    mem_new();
-    looper_init(&lp);
-    assert(looper_set_hq(&lp, hq) == 0);
-    looper_attach(&lp, mem0 + GUARD, BYTES0, mem1 + GUARD, BYTES1);
+    if (g_i >= g_n || sim_us < due(g_blk)) return 0;
+    uint64_t late = sim_us - due(g_blk);
+    if (late > max_late) max_late = late;
+    if (late > 3.0 * BLOCK_US) {
+        skips++;
+        if (getenv("LHT_DEBUG")) printf("skip at %.3f ms: late %.3f ms, in_task %d, pages %u slices %u reads %u\n", sim_us / 1000.0, late / 1000.0, in_task, g_lsio.pages, g_lsio.slices, g_lsio.reads);
+    }
+    block();
+    sim_us += 15;                         /* the engine's own time */
+    return 1;
+}
+
+static void pump(void) { (void)engine_task(); }
+
+/* n samples (whole blocks) of x through the looper in real time; y = what
+ * the looper added. x may be NULL (silence), y too. */
+static void run(const float *x, float *y, size_t n)
+{
+    assert(n % DSP_BLOCK == 0);
+    g_x = x;
+    g_y = y;
+    g_n = n;
+    g_i = 0;
+    /* the audio of this run starts now: the flash side may have run on
+     * after the last run's blocks (no audio to pump there) */
+    if (sim_us > due(g_blk)) g_t0 += sim_us - due(g_blk);
+    while (g_i < n) {
+        sim_us += 40;                     /* the rest of the main loop */
+        (void)engine_task();
+        uint64_t t = sim_us;
+        in_task = 1;
+        ls_task(ls);
+        in_task = 0;
+        if (sim_us - t > max_stall) max_stall = sim_us - t;
+        looper_poll(&lp);
+        /* sleep until the next block, unless the flash side has work
+         * (main.c loop_work_pending) */
+        if (g_i < n && sim_us < due(g_blk) && !ls_busy(ls)) sim_us = due(g_blk);
+    }
+    g_x = NULL;
+    g_y = NULL;
+}
+
+static size_t B(size_t n) { return (n + DSP_BLOCK - 1) / DSP_BLOCK * DSP_BLOCK; }
+
+static void fresh(const sim_timing_t *t)
+{
+    sim_flash_init(t);
+    sim_pump = pump;
+    sim_loop_setup(&lp);
+    ls = sim_loop_store();
+    io = sim_loop_io();
+    g_t0 = sim_us;
+    g_blk = 0;
+    skips = 0;
+    max_late = max_stall = 0;
+    memset(&g_lsio, 0, sizeof g_lsio);
     assert(lp.state == LOOPER_EMPTY);
 }
 
-/* n samples (multiple of DSP_BLOCK) of x through the looper; y = what the
- * looper added (L; R must be the same). x may be NULL (silence). */
-static void run(const float *x, float *y, size_t n)
+/* the erase ahead until a record may start (or n chunks are ready) */
+static void prep_n(uint32_t n)
 {
-    float l[DSP_BLOCK], r[DSP_BLOCK];
-    assert(n % DSP_BLOCK == 0);                   /* the engine's blocks */
-    for (size_t o = 0; o < n; o += DSP_BLOCK) {
-        for (unsigned i = 0; i < DSP_BLOCK; i++) l[i] = r[i] = x ? x[o + i] : 0.0f;
-        looper_process(&lp, l, r, DSP_BLOCK);
-        for (unsigned i = 0; i < DSP_BLOCK; i++) {
-            float in = x ? x[o + i] : 0.0f;
-            assert(l[i] == r[i]);
-            if (y) y[o + i] = l[i] - in;
-        }
-        looper_poll(&lp);                 /* the main loop runs between blocks */
-    }
+    for (int i = 0; i < 200000 && io->pool < n; i++) run(NULL, NULL, 1024);
+    assert(io->pool >= n);
 }
 
-/* n rounded up to whole blocks */
-static size_t B(size_t n) { return (n + DSP_BLOCK - 1) / DSP_BLOCK * DSP_BLOCK; }
+static void prep(void) { prep_n(LOOPER_READY_CHUNKS); }
+
+static void idle_flash(void)   /* the flash side done with every write */
+{
+    for (int i = 0; i < 400 && !ls_writer_idle(ls); i++) run(NULL, NULL, 1024);
+    assert(ls_writer_idle(ls));
+}
 
 static float *sine(size_t n, double f, double a, double ph)
 {
@@ -75,16 +141,14 @@ static float *sine(size_t n, double f, double a, double ph)
     return x;
 }
 
-/* least squares: y ~ sum_h (a_h cos + b_h sin)(h f) + c over [0, n):
- * amplitude of each harmonic 1..H, residual rms */
+/* least squares: y ~ sum_h (a_h cos + b_h sin)(h f) over [0, n): the
+ * amplitude of each harmonic 1..H, the residual rms */
 #define HMAX 5
 static void fit(const float *y, size_t n, double f, int H, double amp[HMAX + 1], double *res)
 {
-    /* the harmonics are near-orthogonal over many periods: project, then
-     * subtract (two passes refine) */
     double *e = malloc(n * sizeof *e);
     for (size_t i = 0; i < n; i++) e[i] = y[i];
-    double A[HMAX + 1] = {0}, B[HMAX + 1] = {0};
+    double A[HMAX + 1] = {0}, Bc[HMAX + 1] = {0};
     for (int pass = 0; pass < 3; pass++) {
         for (int h = 1; h <= H; h++) {
             double sa = 0, sb = 0, cc = 0, ss = 0;
@@ -93,7 +157,7 @@ static void fit(const float *y, size_t n, double f, int H, double amp[HMAX + 1],
                 sa += e[i] * c; sb += e[i] * s; cc += c * c; ss += s * s;
             }
             double da = sa / cc, db = sb / ss;
-            A[h] += da; B[h] += db;
+            A[h] += da; Bc[h] += db;
             for (size_t i = 0; i < n; i++) {
                 double w = TWO_PI_ * f * h * (double)i / FS;
                 e[i] -= da * cos(w) + db * sin(w);
@@ -103,91 +167,119 @@ static void fit(const float *y, size_t n, double f, int H, double amp[HMAX + 1],
     double r = 0;
     for (size_t i = 0; i < n; i++) r += e[i] * e[i];
     *res = sqrt(r / (double)n);
-    for (int h = 1; h <= H; h++) amp[h] = hypot(A[h], B[h]);
+    for (int h = 1; h <= H; h++) amp[h] = hypot(A[h], Bc[h]);
     free(e);
+}
+
+static double amp_at(const float *y, size_t a, size_t n, double f)
+{
+    double amp[HMAX + 1], res;
+    fit(y + a, n, f, 1, amp, &res);
+    return amp[1];
 }
 
 /* ------------------------------------------------------------ codec */
 
-static void test_adpcm(void)
+static void test_codec(void)
 {
-    static const double freqs[] = {41.2, 110.0, 440.0, 1000.0, 3000.0};
+    static const double freqs[] = {100.0, 300.0, 1000.0, 2000.0, 3000.0, 5000.0};
+    double worst = 1e9;
     for (unsigned k = 0; k < sizeof freqs / sizeof freqs[0]; k++) {
-        for (double lvl = 0.5; lvl > 0.01; lvl /= 10.0) {
-            adpcm_t e = {0, 0}, d = {0, 0};
+        for (double lvl = 0.9; lvl > 1e-4; lvl /= 10.0) {
             double s2 = 0, n2 = 0;
-            for (int i = 0; i < 22050; i++) {
-                double v = lvl * 32767 * sin(TWO_PI_ * freqs[k] * i / 22050.0);
-                unsigned nib = looper_adpcm_enc(&e, (int)v);
-                int out = looper_adpcm_dec(&d, nib);
-                assert(out == e.pred && d.idx == e.idx);     /* encoder tracks the decoder */
-                if (i >= 2205) { s2 += v * v; n2 += (out - v) * (out - v); }
+            float x[LC_N], y[LC_N];
+            uint8_t f[LC_BYTES];
+            for (int b = 0; b < 22050 / LC_N; b++) {
+                for (int i = 0; i < LC_N; i++)
+                    x[i] = (float)(lvl * sin(TWO_PI_ * freqs[k] * (b * LC_N + i) / 22050.0 + 0.3));
+                lc_encode(x, f);
+                assert(f[0] != 0xFFu);
+                lc_decode(f, y);
+                for (int i = 0; i < LC_N; i++) {
+                    s2 += (double)x[i] * x[i];
+                    n2 += ((double)y[i] - x[i]) * ((double)y[i] - x[i]);
+                }
             }
             double snr = 10 * log10(s2 / n2);
-            printf("adpcm %6.1f Hz %5.1f dBFS @22.05k: SNR %.1f dB\n", freqs[k],
-                   20 * log10(lvl), snr);
-            assert(snr > 20.0);
+            if (snr < worst) worst = snr;
+            if (lvl > 0.5 || lvl < 2e-3)
+                printf("codec %6.1f Hz %5.1f dBFS: SNR %.1f dB\n", freqs[k], 20 * log10(lvl), snr);
+            assert(snr > 58.0);
         }
     }
-    /* extremes: full scale square and silence stay in range */
-    adpcm_t e = {0, 0}, d = {0, 0};
-    for (int i = 0; i < 1000; i++) {
-        int v = (i / 50) & 1 ? 32767 : -32768;
-        int out = looper_adpcm_dec(&d, looper_adpcm_enc(&e, v));
-        assert(out >= -32768 && out <= 32767);
-    }
-    printf("adpcm: round trip OK\n");
+    printf("codec: SNR >= %.1f dB (100 Hz..5 kHz, 0..-80 dBFS)\n", worst);
+    /* silence, erased flash, NaN, huge values */
+    float x[LC_N] = {0}, y[LC_N];
+    uint8_t f[LC_BYTES];
+    lc_encode(x, f);
+    for (int i = 0; i < LC_BYTES; i++) assert(f[i] == 0);
+    memset(f, 0xFF, sizeof f);
+    lc_decode(f, y);
+    for (int i = 0; i < LC_N; i++) assert(y[i] == 0.0f);
+    x[3] = NAN;
+    lc_encode(x, f);
+    lc_decode(f, y);
+    for (int i = 0; i < LC_N; i++) assert(y[i] == 0.0f);
+    for (int i = 0; i < LC_N; i++) x[i] = (i & 1) ? 1e6f : -3e5f;
+    lc_encode(x, f);
+    lc_decode(f, y);
+    for (int i = 0; i < LC_N; i++) assert(fabsf(y[i] - x[i]) <= 1e6f / 511.0f);
+    x[0] = 1.0f;
+    for (int i = 1; i < LC_N; i++) x[i] = 1e-9f;   /* tiny next to full scale */
+    lc_encode(x, f);
+    lc_decode(f, y);
+    assert(fabsf(y[0] - 1.0f) < 2e-3f);
+    printf("codec: round trip OK\n");
 }
+
+static void report_flash(const char *what);
 
 /* ------------------------------------------------------------ quality */
 
 /* Record a sine (1.5 s), close, play the next pass with no input; fit the
  * loop output away from the wrap: SNR (all but the fundamental) and THD. */
-static void quality(int hq, double f, double a, double *snr, double *thd)
+static void quality(double f, double a, double *snr, double *thd)
 {
-    fresh(hq);
-    const size_t R = 66144, P = R + SEC;       /* record, then play past a wrap */
+    fresh(&SIM_TYPICAL);
+    prep();
+    const size_t R = 66144, P = R + SEC;
     float *x = sine(R, f, a, 0.3), *y = malloc(P * sizeof *y);
     assert(looper_cmd(&lp, LOOPER_TAP) == 0);
     run(x, NULL, R);
     assert(looper_cmd(&lp, LOOPER_TAP) == 0 && lp.state == LOOPER_REC);   /* closes at once */
     run(NULL, y, P);
     assert(lp.state == LOOPER_PLAY && lp.passes >= 1);
-    /* the loop plays pass 2 at y[len_full..): take 0.5 s from 0.3 s in */
-    size_t len = (size_t)lp.len * (hq ? 1u : 2u), off = len + 13230, n = 22050;
+    size_t len = (size_t)lp.len * 2u, off = len + 13230, n = 22050;
     assert(off + n <= P);
     double amp[HMAX + 1], res;
-    /* time base: the loop sample i plays at y[len * k + i + latency]; the
-     * fit has a free phase, so only the frequency matters */
     fit(y + off, n, f, HMAX, amp, &res);
     double h = 0;
     for (int k = 2; k <= HMAX; k++) h += amp[k] * amp[k];
-    /* residual (noise + all harmonics) vs the fundamental */
     double nd = sqrt(res * res + h / 2);
     *snr = 20 * log10(amp[1] / sqrt(2) / nd);
     *thd = 10 * log10(h / (amp[1] * amp[1]) + 1e-30);
-    assert(fabs(amp[1] / a - 1.0) < 0.02);       /* unity gain at level 100 */
-    guards_ok();
+    assert(fabs(amp[1] / a - 1.0) < 0.01);       /* unity gain at level 100 */
+    if (sim_errors || skips || io->rd_under || io->wr_over) report_flash("quality");
+    assert(sim_errors == 0 && skips == 0 && io->rd_under == 0 && io->wr_over == 0);
     free(x);
     free(y);
 }
 
 static void test_quality(void)
 {
-    static const double freqs[] = {55.0, 110.0, 440.0, 2000.0};
-    for (int hq = 0; hq <= 1; hq++) {
-        for (unsigned k = 0; k < 4; k++) {
-            for (double a = 0.5; a > 0.004; a /= 10.0) {
-                double snr, thd;
-                quality(hq, freqs[k], a, &snr, &thd);
-                printf("looper %s %6.1f Hz %5.1f dBFS: SNR %.1f dB, THD %.1f dB\n",
-                       hq ? "hq   " : "22.05k", freqs[k], 20 * log10(a), snr, thd);
-                /* ADPCM's noise follows the slope: -6 dB per octave */
-                assert(snr > (freqs[k] < 500.0 ? 30.0 : 20.0));
-                assert(thd < -30.0);
-            }
+    static const double freqs[] = {100.0, 440.0, 1000.0, 2000.0, 5000.0};
+    double worst = 1e9;
+    for (unsigned k = 0; k < sizeof freqs / sizeof freqs[0]; k++) {
+        for (double a = 0.5; a > 0.004; a /= 10.0) {
+            double snr, thd;
+            quality(freqs[k], a, &snr, &thd);
+            printf("looper %6.1f Hz %5.1f dBFS: SNR %.1f dB, THD %.1f dB\n", freqs[k],
+                   20 * log10(a), snr, thd);
+            if (snr < worst) worst = snr;
+            assert(snr > 55.0 && thd < -60.0);
         }
     }
+    printf("looper: SNR >= %.1f dB (record, flash, play)\n", worst);
 }
 
 /* ------------------------------------------------------------ timing */
@@ -196,37 +288,34 @@ static void test_quality(void)
  * many passes: sample-accurate loop points, no drift. */
 static void test_loop_points(void)
 {
-    for (int hq = 0; hq <= 1; hq++) {
-        fresh(hq);
-        const size_t R = 30016, P = 10 * 32000;
-        float *x = calloc(R, sizeof *x), *y = malloc(P * sizeof *y);
-        for (int i = -20; i <= 20; i++)             /* band-limited burst at 1000 */
-            x[1000 + i] = (float)(0.5 * (1 + cos(3.14159265358979 * i / 21.0)) * 0.5);
-        assert(looper_cmd(&lp, LOOPER_REC_A) == 0);
-        run(x, NULL, R);
-        assert(looper_cmd(&lp, LOOPER_REC_A) == 0);   /* close */
-        run(NULL, y, P);
-        size_t len = (size_t)lp.len * (hq ? 1u : 2u);
-        assert(len == R + (hq ? 1u : 2u));             /* the tap's block + one sample */
-        size_t prev = 0;
-        int peaks = 0;
-        for (size_t k = 0; (k + 1) * len < P; k++) {
-            size_t best = k * len;
-            for (size_t i = k * len; i < (k + 1) * len; i++)
-                if (fabsf(y[i]) > fabsf(y[best])) best = i;
-            if (k) assert(best - prev == len);
-            prev = best;
-            peaks++;
-        }
-        assert(peaks >= 9);
-        printf("loop points %s: len %zu samples, %d passes, period exact\n",
-               hq ? "hq" : "22.05k", len, peaks);
-        free(x);
-        free(y);
+    fresh(&SIM_TYPICAL);
+    prep();
+    const size_t R = 30016, P = 10 * 32000;
+    float *x = calloc(R, sizeof *x), *y = malloc(P * sizeof *y);
+    for (int i = -20; i <= 20; i++)
+        x[1000 + i] = (float)(0.5 * (1 + cos(3.14159265358979 * i / 21.0)) * 0.5);
+    assert(looper_cmd(&lp, LOOPER_REC_A) == 0);
+    run(x, NULL, R);
+    assert(looper_cmd(&lp, LOOPER_REC_A) == 0);   /* close */
+    run(NULL, y, P);
+    size_t len = (size_t)lp.len * 2u;
+    assert(len == R + 2u);                         /* the tap's block + one sample */
+    size_t prev = 0;
+    int peaks = 0;
+    for (size_t k = 0; (k + 1) * len < P; k++) {
+        size_t best = k * len;
+        for (size_t i = k * len; i < (k + 1) * len; i++)
+            if (fabsf(y[i]) > fabsf(y[best])) best = i;
+        if (k) assert(best - prev == len);
+        prev = best;
+        peaks++;
     }
+    assert(peaks >= 9);
+    printf("loop points: len %zu samples, %d passes, period exact\n", len, peaks);
+    free(x);
+    free(y);
 }
 
-/* max |second difference| over [a, b) */
 static double d2max(const float *y, size_t a, size_t b)
 {
     double m = 0;
@@ -237,85 +326,70 @@ static double d2max(const float *y, size_t a, size_t b)
     return m;
 }
 
-/* The first record closes on a sine at a random phase: the wrap (and the
- * fades of stop/play and of a punch in/out) must not click. The codec's own
- * noise sets the floor of the second difference; a hard edge of this sine
- * (a splice at the wrap, or a 0.2 step) is > 0.1. */
 #define CLICK 0.02
 static void test_no_click(void)
 {
     const double f = 110.0, a = 0.3;
-    for (int hq = 0; hq <= 1; hq++) {
-        fresh(hq);
-        const size_t R = 40000, T = 576, P = 4 * R;
-        float *x = sine(R + P, f, a, 0.0), *y = malloc(P * sizeof *y);
-        assert(looper_cmd(&lp, LOOPER_REC_A) == 0);
-        run(x, NULL, R);
-        assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
-        run(x + R, NULL, T);                        /* the tail: the sine goes on live */
-        run(NULL, y, P);                            /* then the loop alone, 3+ wraps */
-        size_t len = (size_t)lp.len * (hq ? 1u : 2u);
-        double step = fabs(a * sin(TWO_PI_ * f * (double)len / FS) - a * sin(0.0));
-        double mid = d2max(y, len - T + len / 4, len - T + 3 * len / 4), wrap = 0;
-        for (size_t k = 1; k <= 3; k++) {
-            double w = d2max(y, k * len - T - 400, k * len - T + 400);
-            if (w > wrap) wrap = w;
-        }
-        printf("wrap %s: max |d2| at the wraps %.2e, mid-loop %.2e (a hard splice steps %.3f)\n",
-               hq ? "hq" : "22.05k", wrap, mid, step);
-        assert(step > 0.1);                        /* the test has a splice to hide */
-        assert(wrap < 2.0 * mid && wrap < CLICK);
-        /* stop and play: faded */
-        assert(looper_cmd(&lp, LOOPER_STOP_A) == 0);
-        run(NULL, y, 4096);
-        assert(lp.state == LOOPER_STOP);
-        assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
-        run(NULL, y + 4096, 4096);
-        double m = d2max(y, 0, 8192);
-        printf("stop/play %s: max |d2| %.2e\n", hq ? "hq" : "22.05k", m);
-        assert(m < CLICK);
-        /* punch in and out on a DC step of the input: the dub ramps */
-        float *dc = malloc(8192 * sizeof *dc);
-        for (int i = 0; i < 8192; i++) dc[i] = 0.2f;
-        assert(looper_cmd(&lp, LOOPER_DUB_A) == 0);
-        run(dc, NULL, 2048);
-        assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
-        run(dc, NULL, 2048);
-        run(NULL, y, P);                            /* the dubbed section plays back */
-        m = d2max(y, 0, P);
-        printf("punch in/out %s: max |d2| %.2e\n", hq ? "hq" : "22.05k", m);
-        assert(m < CLICK);
-        guards_ok();
-        free(dc);
-        free(x);
-        free(y);
+    fresh(&SIM_TYPICAL);
+    prep();
+    const size_t R = 40000, T = 576, P = 4 * R;
+    float *x = sine(R + P, f, a, 0.0), *y = malloc(P * sizeof *y);
+    assert(looper_cmd(&lp, LOOPER_REC_A) == 0);
+    run(x, NULL, R);
+    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
+    run(x + R, NULL, T);
+    run(NULL, y, P);
+    size_t len = (size_t)lp.len * 2u;
+    double step = fabs(a * sin(TWO_PI_ * f * (double)len / FS) - a * sin(0.0));
+    double mid = d2max(y, len - T + len / 4, len - T + 3 * len / 4), wrap = 0;
+    for (size_t k = 1; k <= 3; k++) {
+        double w = d2max(y, k * len - T - 400, k * len - T + 400);
+        if (w > wrap) wrap = w;
     }
+    printf("wrap: max |d2| at the wraps %.2e, mid-loop %.2e (a hard splice steps %.3f)\n", wrap,
+           mid, step);
+    assert(step > 0.1);
+    assert(wrap < 2.0 * mid && wrap < CLICK);
+    assert(looper_cmd(&lp, LOOPER_STOP_A) == 0);
+    run(NULL, y, 4096);
+    assert(lp.state == LOOPER_STOP);
+    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
+    run(NULL, y + 4096, 4096);
+    double m = d2max(y, 0, 8192);
+    printf("stop/play: max |d2| %.2e\n", m);
+    assert(m < CLICK);
+    float *dc = malloc(8192 * sizeof *dc);
+    for (int i = 0; i < 8192; i++) dc[i] = 0.2f;
+    assert(looper_cmd(&lp, LOOPER_DUB_A) == 0);
+    run(dc, NULL, 2048);
+    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
+    run(dc, NULL, 2048);
+    run(NULL, y, P);
+    m = d2max(y, 0, P);
+    printf("punch in/out: max |d2| %.2e\n", m);
+    assert(m < CLICK);
+    assert(sim_errors == 0 && skips == 0 && io->rd_under == 0);
+    free(dc);
+    free(x);
+    free(y);
 }
 
 /* ------------------------------------------------------------ states */
 
-/* the amplitude of f in y[a, a + n) */
-static double amp_at(const float *y, size_t a, size_t n, double f)
-{
-    double amp[HMAX + 1], res;
-    fit(y + a, n, f, 1, amp, &res);
-    return amp[1];
-}
-
 static void test_states(void)
 {
     const double fa = 220.0, fb = 330.0, a = 0.2;
-    fresh(0);
+    fresh(&SIM_TYPICAL);
     assert(looper_cmd(&lp, LOOPER_PLAY_A) == -1);    /* nothing to play */
     assert(looper_cmd(&lp, LOOPER_UNDO_A) == -1);
+    prep();
     const size_t R = SEC, N = 3 * R;
     float *xa = sine(N, fa, a, 0), *xb = sine(N, fb, a, 1), *y = malloc(N * sizeof *y);
     assert(looper_cmd(&lp, LOOPER_TAP) == 0 && lp.state == LOOPER_REC);
-    assert(looper_set_hq(&lp, 1) == -1);              /* not with a loop */
     run(xa, NULL, R);
     assert(looper_cmd(&lp, LOOPER_TAP) == 0);
     run(NULL, y, 2 * R);
-    assert(lp.state == LOOPER_PLAY && lp.banks == 2);
+    assert(lp.state == LOOPER_PLAY);
     assert(looper_cmd(&lp, LOOPER_REC_A) == -1);      /* clear first */
     size_t len = lp.len * 2u;
     assert(fabs(amp_at(y, len + 4000, 22050, fa) - a) < 0.01);
@@ -327,11 +401,10 @@ static void test_states(void)
     run(NULL, y, B(2 * len));
     double ga = amp_at(y, len, 22050, fa), gb = amp_at(y, len, 22050, fb);
     printf("dub: old layer %.3f (x %.3f), new %.3f\n", ga, ga / a, gb);
-    /* the part dubbed twice (the first 8192 samples) was faded twice */
     assert(fabs(ga / a - LOOPER_FB) < 0.02 && fabs(gb - a) < 0.015);
     looper_info(&lp, &in);
     assert(in.undo == 1);
-    /* undo: A alone, redo: both */
+    /* undo: A alone (the whole dub, both passes), redo: both */
     assert(looper_cmd(&lp, LOOPER_UNDO_A) == 0);
     run(NULL, y, B(2 * len));
     looper_info(&lp, &in);
@@ -373,8 +446,8 @@ static void test_states(void)
     run(NULL, y, 4096);
     assert(lp.state == LOOPER_EMPTY);
     for (int i = 2048; i < 4096; i++) assert(y[i] == 0.0f);
-    assert(looper_set_hq(&lp, 1) == 0 && looper_set_hq(&lp, 0) == 0);
     /* rec -> dub at once (console `loop dub` while recording) */
+    prep();
     assert(looper_cmd(&lp, LOOPER_REC_A) == 0);
     run(xa, NULL, R);
     assert(looper_cmd(&lp, LOOPER_DUB_A) == 0);
@@ -383,178 +456,363 @@ static void test_states(void)
     /* clear while recording: at once */
     assert(looper_cmd(&lp, LOOPER_CLEAR_A) == 0);
     run(NULL, NULL, 4096);
+    prep();
     assert(looper_cmd(&lp, LOOPER_REC_A) == 0);
     assert(looper_cmd(&lp, LOOPER_CLEAR_A) == 0 && lp.state == LOOPER_EMPTY);
     /* a stop while recording closes the loop, stopped */
+    prep();
     assert(looper_cmd(&lp, LOOPER_REC_A) == 0);
     run(xa, NULL, R);
     assert(looper_cmd(&lp, LOOPER_STOP_A) == 0);
     run(NULL, y, 8192);
     assert(lp.state == LOOPER_STOP && lp.len > 0);
-    guards_ok();
+    assert(sim_errors == 0 && skips == 0);
     printf("states: rec play dub undo redo stop clear OK\n");
     free(xa);
     free(xb);
     free(y);
 }
 
-/* A loop longer than half the memory: no undo, the dub goes in place; the
- * record closes by itself when the memory is full. */
-static void test_long_loop(void)
+/* ------------------------------------------------------------ flash */
+
+/* a test signal with no period near the loop length */
+static float *music(size_t n, unsigned seed)
 {
-    fresh(0);
+    float *x = malloc(n * sizeof *x);
+    double f[3] = {97.0 + seed, 441.0 + 3 * seed, 1733.0};
+    for (size_t i = 0; i < n; i++) {
+        double t = (double)i / FS;
+        x[i] = (float)(0.2 * sin(TWO_PI_ * f[0] * t) + 0.1 * sin(TWO_PI_ * f[1] * t) *
+                       (0.5 + 0.5 * sin(TWO_PI_ * 0.7 * t)) + 0.05 * sin(TWO_PI_ * f[2] * t));
+    }
+    return x;
+}
+
+/* the looper's output over one pass, by loop position (22.05 kHz frames
+ * interpolated: take the even samples) */
+static void capture_pass(float *out)
+{
+    size_t len = lp.len, n = B(2 * len + 4096);
+    float *y = malloc(n * sizeof *y);
+    uint32_t p0 = lp.pos;
+    run(NULL, y, n);
+    for (size_t i = 0; i < len; i++) out[(p0 + i) % len] = y[2 * i + 2048];   /* past the fades */
+    (void)p0;
+    free(y);
+}
+
+static void report_flash(const char *what)
+{
+    ls_info_t li;
+    ls_info(ls, &li);
+    printf("%s: pages %u (verify errors %u, slow %u, max %u ms), erases %u (%u ms busy, max %u ms), "
+           "slices %u, suspends %u, stall max %.1f ms, late max %.2f ms, skips %u, underruns %u, "
+           "overruns %u, drops %u, cut %u, sim errors %u\n",
+           what, g_lsio.pages, g_lsio.verify_errs, g_lsio.prog_slow, g_lsio.prog_max_ms,
+           g_lsio.erases, g_lsio.erase_ms, g_lsio.erase_max_ms, g_lsio.slices, g_lsio.suspends,
+           (double)max_stall / 1000.0, (double)max_late / 1000.0, skips, io->rd_under,
+           io->wr_over, li.drops, lp.cut, sim_errors);
+}
+
+/* Record, dub, undo: the loop after undo is the loop before the dub, bit
+ * for bit (the same frames); redo brings the dub back. Under a timing. */
+static void streaming(const char *name, const sim_timing_t *t, double rec_s, int strict)
+{
+    fresh(t);
+    uint64_t t0 = sim_us;
+    prep_n(ls_chunks(ls));                       /* looper mode on: the whole area */
+    printf("%s: the area erased in %.1f s\n", name, (double)(sim_us - t0) / 1e6);
+    size_t R = B((size_t)(rec_s * FS)), D = B(R / 2);
+    float *x = music(R, 1), *xd = music(D, 7);
+    assert(looper_cmd(&lp, LOOPER_REC_A) == 0);
+    run(x, NULL, R);
+    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
+    run(NULL, NULL, 8192);
+    assert(lp.state == LOOPER_PLAY && lp.cut == 0);
+    idle_flash();
+    float *p0 = malloc(lp.len * sizeof *p0), *p1 = malloc(lp.len * sizeof *p1);
+    capture_pass(p0);
+    assert(looper_cmd(&lp, LOOPER_DUB_A) == 0);
+    run(xd, NULL, D);
+    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
+    run(NULL, NULL, 8192);
+    capture_pass(p1);
+    double diff = 0;
+    for (size_t i = 0; i < lp.len; i++) diff = fmax(diff, fabs((double)p1[i] - p0[i]));
+    assert(diff > 0.05);                         /* the dub is there */
+    assert(looper_cmd(&lp, LOOPER_UNDO_A) == 0);
+    run(NULL, NULL, 8192);
+    capture_pass(p1);
+    diff = 0;
+    for (size_t i = 0; i < lp.len; i++) diff = fmax(diff, fabs((double)p1[i] - p0[i]));
+    report_flash(name);
+    printf("%s: %.1f s loop, undo exact (max diff %.1e)\n", name, lp.len / 22050.0, diff);
+    assert(diff < 1e-6);
+    assert(sim_errors == 0 && skips == 0);
+    if (strict) assert(io->rd_under == 0 && io->wr_over == 0 && lp.cut == 0);
+    free(p0);
+    free(p1);
+    free(x);
+    free(xd);
+}
+
+static void test_streaming(void)
+{
+    streaming("typical flash", &SIM_TYPICAL, 20.0, 1);
+    assert(max_stall < 5000);                    /* the UI waits at most a few ms */
+    streaming("worst-case flash", &SIM_WORST, 20.0, 1);
+    assert(max_stall < 12000);
+    sim_timing_t ns = SIM_TYPICAL;
+    ns.suspend = 0;
+    streaming("no erase suspend", &ns, 10.0, 0);   /* works, the UI waits for erases */
+}
+
+/* The erase falls behind (a chip slower than the 24 kB/s record): the
+ * record closes by itself at a chunk end, with the crossfade, and plays. */
+static void test_margin(void)
+{
+    sim_timing_t slow = SIM_WORST;
+    slow.block_us = 3500000;                     /* 18 kB/s */
+    slow.sector_us = 400000;
+    fresh(&slow);
+    prep();
+    size_t R = B(60 * 44100);
+    float *x = music(R, 3), *y = malloc(B(8 * SEC) * sizeof *y);
+    assert(looper_cmd(&lp, LOOPER_REC_A) == 0);
+    run(x, NULL, R);
+    assert(lp.state == LOOPER_PLAY && lp.cut >= 1);
     looper_info_t in;
     looper_info(&lp, &in);
-    printf("memory: %u blocks, max %u ms (22.05k), undo up to %u ms\n", (unsigned)lp.total,
-           in.max_ms, in.undo_max_ms);
-    assert(in.max_ms > 16000 && in.undo_max_ms > 8000);
-    size_t cap = (size_t)lp.total * LOOPER_BLK * 2u, N = cap + SEC;
-    float *x = sine(N, 110.0, 0.2, 0), *y = malloc(N * sizeof *y);
-    assert(looper_cmd(&lp, LOOPER_REC_A) == 0);
-    run(x, NULL, N);                                 /* past the end: closes itself */
-    assert(lp.state == LOOPER_PLAY && lp.len == lp.total * LOOPER_BLK && lp.banks == 1);
-    assert(looper_cmd(&lp, LOOPER_UNDO_A) == -1);
-    assert(looper_cmd(&lp, LOOPER_DUB_A) == 0 && !lp.alt);
-    run(x, NULL, SEC);
-    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
-    run(NULL, y, SEC);
-    assert(looper_cmd(&lp, LOOPER_UNDO_A) == -1);
-    guards_ok();
-    looper_set_hq(&lp, 1);                            /* refused: a loop exists */
-    assert(!lp.hq);
-    fresh(1);
-    looper_info(&lp, &in);
-    printf("memory hq: max %u ms, undo up to %u ms\n", in.max_ms, in.undo_max_ms);
-    assert(in.max_ms > 8000 && in.undo_max_ms > 4000);
+    run(NULL, y, B(8 * SEC));
+    double rms = 0;
+    for (size_t i = 0; i < B(8 * SEC); i++) rms += (double)y[i] * y[i];
+    rms = sqrt(rms / (double)B(8 * SEC));
+    report_flash("slow erase");
+    printf("slow erase: the record closed by itself at %u ms (of %u), plays at rms %.3f\n",
+           in.len_ms, in.max_ms, rms);
+    assert(in.len_ms > 1000 && in.len_ms < in.max_ms && rms > 0.05);
+    assert(sim_errors == 0 && skips == 0 && io->rd_under == 0);
     free(x);
     free(y);
 }
 
-/* ------------------------------------------------------------ memory */
-
-static delay_t dly;
-static cab_t cab;
-
-static void fill_ir(float *ir, unsigned taps)
+/* The whole area: a record fills it and closes by itself; a dub over all
+ * of it runs out of room and fades out at a chunk end; undo is exact. A
+ * loop of undo_max dubs whole. */
+static void test_full_area(void)
 {
-    uint32_t seed = 7;
-    for (unsigned i = 0; i < taps; i++) {
-        seed = seed * 1664525u + 1013904223u;
-        ir[i] = (float)(int32_t)seed * (1.0f / 2147483648.0f) * expf(-(float)i / 900.0f);
-    }
-}
-
-/* the cab's impulse response over n samples (after silence) */
-static void cab_ir(float *out, unsigned n)
-{
-    float z[DSP_BLOCK] = {0};
-    for (int i = 0; i < 200; i++) { memset(z, 0, sizeof z); cab_process(&cab, z, DSP_BLOCK); }
-    for (unsigned o = 0; o < n; o += DSP_BLOCK) {
-        memset(z, 0, sizeof z);
-        if (o == 0) z[0] = 1.0f;
-        cab_process(&cab, z, DSP_BLOCK);
-        memcpy(out + o, z, sizeof z);
-    }
-}
-
-static int all_zero(const void *p, size_t n)
-{
-    const uint8_t *b = p;
-    for (size_t i = 0; i < n; i++) if (b[i]) return 0;
-    return 1;
-}
-
-static void test_handover(void)
-{
-    int16_t *line = calloc(DELAY_LEN, sizeof *line);
-    conv2_tail_t *tail = calloc(1, sizeof *tail);
-    static float ir[CAB_MAX_TAPS], resp[8192];
-    loop_mem_t m = {&lp, &dly, line, &cab, tail, 0};
-    looper_init(&lp);
-    delay_init(&dly, 44100.0f, line);
-    delay_set_params(&dly, 500, 60, 50, 0, 100);
-    cab_init_long(&cab, tail);
-    fill_ir(ir, CAB_MAX_TAPS);
-    assert(cab_set_ir_len(&cab, ir, CAB_MAX_TAPS, 1.0f) == 0);
-    conv2_finish(&cab.conv);
-    /* audio through both: the line and the tail hold signal */
-    float *x = sine(44100, 110.0, 0.5, 0);
-    for (size_t o = 0; o < 44100 - DSP_BLOCK; o += DSP_BLOCK) {
-        float b[DSP_BLOCK];
-        memcpy(b, x + o, sizeof b);
-        cab_process(&cab, b, DSP_BLOCK);
-        delay_process(&dly, b, DSP_BLOCK);
-    }
-    assert(!all_zero(line, DELAY_LEN * 2u) && !all_zero(tail->x, sizeof tail->x));
-    cab_ir(resp, 8192);
-    for (unsigned i = 600; i < 4096; i += 97)
-        assert(fabsf(resp[i] - ir[i] * 1.15f) < 1e-4f);      /* the tail plays */
-
-    /* take: the cab keeps its first 512 taps, long IRs fail, the looper
-     * owns both areas */
-    loop_mem_take(&m);
-    assert(m.owned && lp.state == LOOPER_EMPTY && cab.conv.t == NULL && cab.conv.parts == 0);
-    assert(lp.seg[0] == (uint8_t *)line && lp.seg[1] == (uint8_t *)tail);
-    assert(lp.total == (DELAY_LEN * 2u) / LOOPER_BLK_BYTES + sizeof *tail / LOOPER_BLK_BYTES);
-    assert(cab_set_ir_len(&cab, ir, CAB_MAX_TAPS, 1.0f) == -1);
-    cab_ir(resp, 8192);
-    for (unsigned i = 0; i < 512; i++) assert(fabsf(resp[i] - ir[i] * 1.15f) < 1e-4f);
-    for (unsigned i = 512; i < 8192; i++) assert(fabsf(resp[i]) < 1e-6f);   /* FFT rounding */
-    /* a loop over the whole memory: every byte of both areas is the loop's */
+    fresh(&SIM_TYPICAL);
+    looper_info_t in;
+    looper_info(&lp, &in);
+    printf("area: %u chunks of %u frames, max %u ms, dub whole up to %u ms\n",
+           (unsigned)ls_chunks(ls), (unsigned)LS_FPC, in.max_ms, in.undo_max_ms);
+    assert(ls_chunks(ls) == LS_MAX_CHUNKS && in.max_ms > 108000 && in.undo_max_ms > 54000);
+    prep();
+    size_t R = B(112 * 44100);
+    float *x = music(R, 5);
     assert(looper_cmd(&lp, LOOPER_REC_A) == 0);
-    for (size_t k = 0; lp.state == LOOPER_REC; k++) {
-        float l[DSP_BLOCK], r[DSP_BLOCK];
-        for (int i = 0; i < DSP_BLOCK; i++) l[i] = r[i] = x[(k * DSP_BLOCK + (size_t)i) % 44000];
-        looper_process(&lp, l, r, DSP_BLOCK);
-        cab_process(&cab, l, DSP_BLOCK);        /* the cab runs on, head only */
-    }
+    run(x, NULL, R);
+    assert(lp.state == LOOPER_PLAY);
+    looper_info(&lp, &in);
+    printf("area: the record closed by itself at %u ms\n", in.len_ms);
+    assert(in.len_ms + 400 >= in.max_ms && in.len_ms <= in.max_ms);
+    idle_flash();
+    float *p0 = malloc(lp.len * sizeof *p0), *p1 = malloc(lp.len * sizeof *p1);
+    capture_pass(p0);
+    assert(looper_cmd(&lp, LOOPER_DUB_A) == 0);
+    run(x, NULL, B(20 * 44100));                  /* the free flash lasts ~1 chunk */
+    assert(lp.state == LOOPER_PLAY && lp.cut >= 1);
+    assert(looper_cmd(&lp, LOOPER_UNDO_A) == 0);
+    run(NULL, NULL, 8192);
+    capture_pass(p1);
+    double diff = 0;
+    for (size_t i = 0; i < lp.len; i++) diff = fmax(diff, fabs((double)p1[i] - p0[i]));
+    printf("area: a dub over the full loop ends when the flash is full; undo exact (%.1e)\n", diff);
+    assert(diff < 1e-6);
+    free(p0);
+    free(p1);
+    /* a loop of undo_max: the dub runs whole, two passes */
     assert(looper_cmd(&lp, LOOPER_CLEAR_A) == 0);
-    for (int k = 0; k < 64 && lp.state != LOOPER_EMPTY; k++) {
-        float l[DSP_BLOCK] = {0}, r[DSP_BLOCK] = {0};
-        looper_process(&lp, l, r, DSP_BLOCK);
-        looper_poll(&lp);
-    }
+    run(NULL, NULL, 8192);
     assert(lp.state == LOOPER_EMPTY);
-    /* give: clean delay and tail, long IRs again */
-    loop_mem_give(&m);
-    assert(!m.owned && lp.state == LOOPER_OFF && cab.conv.t == tail);
-    assert(all_zero(line, DELAY_LEN * 2u));
-    assert(all_zero(tail->x, sizeof tail->x) && all_zero(tail->in, sizeof tail->in) &&
-           all_zero(tail->acc, sizeof tail->acc) && all_zero(tail->y, sizeof tail->y));
-    delay_set_params(&dly, 500, 60, 50, 0, 100);
-    for (int k = 0; k < 2000; k++) {                 /* the delay on silence: exact zeros */
-        float b[DSP_BLOCK] = {0};
-        delay_process(&dly, b, DSP_BLOCK);
-        for (int i = 0; i < DSP_BLOCK; i++) assert(b[i] == 0.0f);
-    }
-    assert(cab_set_ir_len(&cab, ir, CAB_MAX_TAPS, 1.0f) == 0);
-    conv2_finish(&cab.conv);
-    cab_ir(resp, 8192);
-    for (unsigned i = 0; i < 4096; i += 7) assert(fabsf(resp[i] - ir[i] * 1.15f) < 1e-4f);
-    for (unsigned i = 4096; i < 8192; i++) assert(fabsf(resp[i]) < 1e-6f);
-    assert(looper_cmd(&lp, LOOPER_REC_A) == -2);       /* no memory */
-    /* a long IR still loading when the looper takes the tail: dropped */
-    assert(cab_set_ir_len(&cab, ir, 1024, 1.0f) == 0 && conv2_pending(&cab.conv));
-    loop_mem_take(&m);
-    assert(!conv2_pending(&cab.conv) && !cab.scale_due);
-    loop_mem_give(&m);
-    printf("handover: delay/long IR -> looper -> back, clean\n");
+    prep();
+    size_t L = B((size_t)((in.undo_max_ms - 300) * 44.1));
+    uint32_t cut0 = lp.cut;
+    assert(looper_cmd(&lp, LOOPER_REC_A) == 0);
+    run(x, NULL, L);
+    assert(looper_cmd(&lp, LOOPER_DUB_A) == 0);   /* closes, then dubs */
+    run(x, NULL, B(L + L / 4));
+    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
+    run(NULL, NULL, 8192);
+    looper_info(&lp, &in);
+    report_flash("area");
+    printf("area: a %u ms loop dubs whole (cut %u)\n", in.len_ms, lp.cut - cut0);
+    assert(lp.cut == cut0 && in.undo == 1);
+    assert(sim_errors == 0 && skips == 0 && io->rd_under == 0 && io->wr_over == 0);
     free(x);
-    free(line);
-    free(tail);
+}
+
+/* Two stored loops survive clear, erase-ahead and a reboot. The header
+ * is the sector at FLASH_LOOP_META; the audio stays in its slots. */
+static void test_save(void)
+{
+    const double fa = 220.0, fb = 330.0, a = 0.2;
+    fresh(&SIM_TYPICAL);
+    prep();
+    assert(looper_save(&lp, 0) == -1);             /* empty */
+    float *xa = sine(SEC, fa, a, 0), *xb = sine(SEC, fb, a, 0);
+    float *y = malloc(B(2 * SEC) * sizeof *y);
+    assert(looper_cmd(&lp, LOOPER_REC_A) == 0);
+    assert(looper_save(&lp, 0) == -1);             /* recording */
+    run(xa, NULL, SEC);
+    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
+    run(NULL, NULL, 8192);
+    idle_flash();
+    assert(looper_cmd(&lp, LOOPER_STOP_A) == 0);
+    run(NULL, NULL, 8192);
+    idle_flash();
+    assert(lp.state == LOOPER_STOP);
+    assert(looper_save(&lp, 0) == 0 && looper_save(&lp, 2) == -1);
+
+    assert(looper_cmd(&lp, LOOPER_CLEAR_A) == 0);
+    prep();
+    assert(looper_cmd(&lp, LOOPER_REC_A) == 0);
+    run(xb, NULL, SEC);
+    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
+    run(NULL, NULL, 8192);
+    idle_flash();
+    assert(looper_cmd(&lp, LOOPER_STOP_A) == 0);
+    run(NULL, NULL, 8192);
+    idle_flash();
+    assert(looper_save(&lp, 1) == 0);
+
+    assert(looper_cmd(&lp, LOOPER_CLEAR_A) == 0);
+    prep_n(16);                                    /* must not erase a saved slot */
+    assert(looper_load(&lp, 0) == 0 && lp.state == LOOPER_STOP);
+    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
+    run(NULL, y, B(2 * SEC));
+    assert(fabs(amp_at(y, 8000, 22050, fa) - a) < 0.02);
+    assert(amp_at(y, 8000, 22050, fb) < 0.01);
+
+    assert(looper_cmd(&lp, LOOPER_STOP_A) == 0);
+    run(NULL, NULL, 8192);
+    idle_flash();
+    assert(looper_load(&lp, 1) == 0);
+    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
+    run(NULL, y, B(2 * SEC));
+    assert(fabs(amp_at(y, 8000, 22050, fb) - a) < 0.02);
+    assert(amp_at(y, 8000, 22050, fa) < 0.01);
+
+    /* a dub, saved: undo brings the first loop back after a clear */
+    assert(looper_cmd(&lp, LOOPER_STOP_A) == 0);
+    run(NULL, NULL, 8192);
+    idle_flash();
+    assert(looper_load(&lp, 0) == 0);
+    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
+    run(NULL, NULL, 8192);
+    assert(looper_cmd(&lp, LOOPER_DUB_A) == 0);
+    run(xb, NULL, 8192);
+    assert(looper_cmd(&lp, LOOPER_STOP_A) == 0);
+    run(NULL, NULL, 8192);
+    idle_flash();
+    assert(lp.alt && looper_save(&lp, 0) == 0);
+    assert(looper_cmd(&lp, LOOPER_CLEAR_A) == 0);
+    prep_n(16);
+    assert(looper_load(&lp, 0) == 0);
+    looper_info_t in;
+    looper_info(&lp, &in);
+    assert(in.undo == 1 && lp.state == LOOPER_STOP);
+    assert(looper_cmd(&lp, LOOPER_UNDO_A) == 0);
+    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
+    run(NULL, y, B(2 * SEC));
+    assert(fabs(amp_at(y, 8000, 22050, fa) - a) < 0.02);
+    assert(amp_at(y, 8000, 22050, fb) < 0.01);
+
+    uint8_t *rec = (uint8_t *)flash_map(FLASH_LOOP_META);
+    rec[2048 + 16] ^= 0xFFu;                       /* record 2: bad crc */
+    assert(looper_cmd(&lp, LOOPER_STOP_A) == 0);
+    run(NULL, NULL, 8192);
+    idle_flash();
+    assert(looper_load(&lp, 1) == -1);
+
+    sim_loop_setup(&lp);                           /* reboot: the flash stays */
+    ls = sim_loop_store();
+    io = sim_loop_io();
+    g_t0 = sim_us;
+    g_blk = 0;
+    prep_n(8);
+    assert(looper_load(&lp, 0) == 0);
+    looper_info(&lp, &in);
+    assert(in.undo == 1);
+    assert(looper_cmd(&lp, LOOPER_UNDO_A) == 0);
+    assert(looper_cmd(&lp, LOOPER_PLAY_A) == 0);
+    run(NULL, y, B(2 * SEC));
+    assert(fabs(amp_at(y, 8000, 22050, fa) - a) < 0.02);
+    assert(sim_errors == 0);
+    printf("save: two loops, undo, bad crc, reboot OK\n");
+    free(xa);
+    free(xb);
+    free(y);
+}
+
+/* Nothing reads the loop area at boot (the save header is not that area),
+ * and a record right after boot waits for the first erases (not ready),
+ * then works. A chip too small: no looper. */
+static void test_boot(void)
+{
+    fresh(&SIM_TYPICAL);
+    ls->armed = 0;
+    run(NULL, NULL, 8192);
+    assert(g_lsio.reads == 0 && g_lsio.erases == 0);   /* not armed: the flash is untouched */
+    assert(looper_cmd(&lp, LOOPER_REC_A) == -3);       /* arms; not ready yet */
+    prep();
+    assert(looper_cmd(&lp, LOOPER_REC_A) == 0);
+    assert(sim_errors == 0);
+    sim_capacity = 0x400000u;                          /* 4 MB: no area */
+    sim_loop_setup(&lp);
+    assert(lp.state == LOOPER_OFF && looper_cmd(&lp, LOOPER_REC_A) == -2);
+    looper_info_t in;
+    looper_info(&lp, &in);
+    assert(!in.flash && in.max_ms == 0);
+    sim_capacity = 0x800000u;
+    printf("boot: nothing read before written, not ready until erased, no area on 4 MB\n");
+}
+
+/* The caller of lsio_erase_begin runs from flash. The chip must be idle
+ * (WIP clear) when begin returns: suspended, or the erase already finished. */
+static void test_erase_begin_returns_safe(void)
+{
+    sim_flash_init(&SIM_TYPICAL);
+    uint32_t sr = 1, sr2 = 0;
+    assert(lsio_erase_begin(FLASH_LOOP_BASE, 1) == 1);
+    assert(flash_read_status(&sr) == 1 && (sr & 1u) == 0u);
+    if (lsio_erase_active()) assert(flash_read_status2(&sr2) == 1 && (sr2 & 0x80u) != 0u);
+    lsio_quiesce();
+    assert(!lsio_erase_active());
+    assert(flash_read_status(&sr) == 1 && (sr & 1u) == 0u);
+    sim_timing_t ns = SIM_TYPICAL;
+    ns.suspend = 0;
+    sim_flash_init(&ns);
+    assert(lsio_erase_begin(FLASH_LOOP_BASE, 0) == 1);
+    assert(!lsio_erase_active());
+    assert(flash_read_status(&sr) == 1 && (sr & 1u) == 0u);
+    printf("erase begin: returns idle or suspended\n");
 }
 
 int main(void)
 {
-    test_adpcm();
+    test_erase_begin_returns_safe();
+    test_codec();
     test_quality();
     test_loop_points();
     test_no_click();
     test_states();
-    test_long_loop();
-    test_handover();
-    free(mem0);
-    free(mem1);
+    test_save();
+    test_streaming();
+    test_margin();
+    test_full_area();
+    test_boot();
+    sim_flash_free();
     printf("looper host tests OK\n");
     return 0;
 }

@@ -46,12 +46,13 @@ __attribute__((noreturn)) void console_reboot(void)
 
 #ifndef FB200_RECOVERY
 /* Work the main loop must do before it may sleep: work that no interrupt
- * would announce again. Everything else arrives by interrupt (SAI/eDMA
+ * would announce again (and the looper's flash work: its erase runs in
+ * slices, main loop pass by pass). Everything else arrives by interrupt (SAI/eDMA
  * blocks, USB, the Bluetooth UART) or is paced by the 1 ms SysTick, which
  * also wakes the core. engine_task takes at most one block per pass. */
 static bool loop_work_pending(void)
 {
-    return sai_rx_fill() != 0u || tud_task_event_ready() || fw_active();
+    return sai_rx_fill() != 0u || tud_task_event_ready() || fw_active() || engine_loop_busy();
 }
 #endif
 
@@ -140,6 +141,7 @@ void app_main(void)
 #ifndef FB200_RECOVERY
         usb_audio_task();
         engine_task();
+        engine_loop_task();   /* the looper's flash side: streams, erase ahead */
         {
             uint32_t pf, cf, ovf, unf;
             uint8_t spk_alt, mic_alt;

@@ -9,7 +9,7 @@ objects and FilteringFunctions, as the Makefile), loads the stock data blob
 
     engine_cycles.py [--model N] [--cab N]          profile (instructions, cycle estimate)
     engine_cycles.py --compare REV [--blocks N]     old (git REV) vs this tree, bit for bit
-    engine_cycles.py --looper rec|play|dub [--hq]   the looper (dsp/looper.c) per block
+    engine_cycles.py --looper rec|play|dub   the looper (dsp/looper.c) per block
 
 The cycle estimate is a small in-order model of the M7 (see M7Model): result
 latencies, dual issue, branch prediction. It is not the pedal: its job is to
@@ -38,7 +38,9 @@ RET = BASE + 0x1F0000         # return address: stop here
 SP = BASE + 0x1E0000
 GROUPS = ["BasicMathFunctions", "ComplexMathFunctions", "FastMathFunctions",
           "FilteringFunctions", "TransformFunctions", "SupportFunctions", "CommonTables"]
-DSP_SRC = ["amp.c", "tone.c", "cab.c", "conv.c", "conv2.c", "looper.c"]
+DSP_SRC = ["dsp/amp.c", "dsp/tone.c", "dsp/cab.c", "dsp/conv.c", "dsp/conv2.c", "dsp/looper.c",
+           "dsp/loopcodec.c", "loopstore/loopstore.c", "loopstore/lsio.c", "debug/flash_rmw.c",
+           "crc32.c"]
 NO_CONTRACT = {"amp.c", "tone.c", "cab.c", "FilteringFunctions.c"}   # Makefile STOCK_OBJS
 FLAGS = ["-mcpu=cortex-m7", "-mthumb", "-mfloat-abi=hard", "-mfpu=fpv5-d16", "-O2",
          "-ffreestanding", "-fno-builtin", "-ffunction-sections", "-fdata-sections",
@@ -85,14 +87,15 @@ def build(cross: str, src: Path, out: Path) -> tuple[Path, dict[str, int], list]
     for g in GROUPS:
         objs.append(cm / f"{g}.o")
         _obj(cross, DSP / "Source" / g / f"{g}.c", objs[-1], inc, cache=True)
-    for f in [*(src / "dsp" / n for n in DSP_SRC), src / "memfuncs.c",
+    for f in [*(src / n for n in DSP_SRC if (src / n).exists()), src / "memfuncs.c",
               FW / "tests" / "engine_bench.c"]:
         objs.append(out / f"{f.stem}.o")
         _obj(cross, f, objs[-1], inc)
     elf = out / "bench.elf"
     subprocess.run([f"{cross}gcc", *FLAGS, "-nostdlib", "-Wl,--gc-sections", "-Wl,-e,bench_setup",
                     "-Wl,-u,bench_amp", "-Wl,-u,bench_cab", "-Wl,-u,bench_cab_n",
-                    "-Wl,-u,bench_loop", "-Wl,-u,bench_loop_setup", "-Wl,-u,bench_loop_cmd", "-Wl,--no-warn-rwx-segments",
+                    "-Wl,-u,bench_loop", "-Wl,-u,bench_loop_setup", "-Wl,-u,bench_loop_cmd",
+                    "-Wl,-u,bench_loop_flash", "-Wl,--no-warn-rwx-segments",
                     "-T", str(out / "bench.ld"), *map(str, objs), "-lgcc", "-o", str(elf)],
                    check=True)
     subprocess.run([f"{cross}objcopy", "-O", "binary", "-j", ".text", "-j", ".rodata", str(elf),
@@ -372,7 +375,7 @@ def do_looper(args, b: Bench) -> int:
     """the looper's cost per engine block: recording, playing, dubbing"""
     import numpy as np
     rec, dub = 1, 3                           # dsp/looper.h LOOPER_REC_A (closes), LOOPER_DUB_A
-    b.call("bench_loop_setup", 1 if args.hq else 0)
+    b.call("bench_loop_setup", 0)
     x = signal(np.random.default_rng(1), 300 + args.blocks)
     k = 0
 
@@ -396,17 +399,18 @@ def do_looper(args, b: Bench) -> int:
                 n_all += sum(b.counts.values())
                 c_all += c
                 worst = max(worst, c)
+            b.call("bench_loop_flash")        # the main loop's flash side: not in the cost
         return n_all / max(n, 1), c_all / max(n, 1), worst
 
     if args.looper != "rec":
-        blocks(200, False)                    # a 200-block loop
+        blocks(800, False)                    # an 800-block loop (0.58 s: over the shortest)
         b.call("bench_loop_cmd", rec)         # close
         if args.looper == "dub":
             blocks(20, False)                 # past the closing crossfade
             b.call("bench_loop_cmd", dub)
         blocks(20, False)
     n_all, c_all, worst = blocks(args.blocks, True)
-    print(f"looper {args.looper}{' hq' if args.hq else ' (22.05 kHz)'}: {n_all:.0f} instr/block, "
+    print(f"looper {args.looper} (22.05 kHz, flash frames): {n_all:.0f} instr/block, "
           f"model {c_all:.0f} cycles/block (worst block {worst})")
     for f in sorted(per, key=lambda f: -per[f]):
         print(f"  {f:40s} {per[f] / args.blocks:8.0f} cycles")
@@ -537,7 +541,6 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--looper", choices=("rec", "play", "dub"),
                     help="the looper's cost instead of amp/cab")
-    ap.add_argument("--hq", action="store_true", help="--looper at 44.1 kHz")
     args = ap.parse_args()
     cross = os.environ.get("CROSS", "arm-none-eabi-")
     if args.compare:
