@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Host tests for the long IR store (firmware/audio/src/irstore/irstore.c).
 
 The C harness (firmware/audio/tests/irstore_host_test.c) runs irstore.c on

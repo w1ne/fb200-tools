@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Host fuzzer for the firmware's untrusted-input parsers, run under
  * ASan/UBSan (tests/test_fuzz_host.py builds it with clang and with gcc):
  *

@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #ifndef FB200_LOOPSTORE_LOOPIO_H
 #define FB200_LOOPSTORE_LOOPIO_H
 /* The two frame streams between the looper's audio side (dsp/looper.c,

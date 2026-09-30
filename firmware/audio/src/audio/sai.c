@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* SAI1 + eDMA audio path. The SAI is the I2S master (MCLK 12.288 MHz =
  * 256*fs at 44.1 kHz, BCLK 1.4112 MHz, 16-bit stereo); the NAU88L21 codec is
  * the clock slave. TX drives BCLK/FS and RX is synchronous with TX, so both

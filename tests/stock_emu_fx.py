@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Run the STOCK FB200 DSP in Unicorn: a bit-exact reference for parity tests.
 
 Everything is rebuilt at run time from the vendor image (fb200-stock.mr, never

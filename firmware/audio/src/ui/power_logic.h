@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #ifndef FB200_POWER_LOGIC_H
 #define FB200_POWER_LOGIC_H
 /* Battery gauge and idle state machine: pure logic, no SDK, host-tested

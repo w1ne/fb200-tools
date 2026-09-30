@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """The open pedal gate names the panel checks and 16 raw knob counts.
 
 The counts are the divider formula in labwired/open-boot.yaml. The test

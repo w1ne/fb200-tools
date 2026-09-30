@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 # fb200-labwired-smoke: a bare-register image for the LabWired FB200 twin
 # (labwired/smoke.yaml). No SDK, no dependencies beyond arm-none-eabi-gcc.
 TARGET  := build/labwired-smoke

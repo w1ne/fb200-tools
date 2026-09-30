@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Minimal freestanding <string.h> for the MCUXpresso SDK/TinyUSB subset.
  * The functions the linked object set references are implemented in
  * src/memfuncs.c; nothing else is declared so unimplemented calls fail

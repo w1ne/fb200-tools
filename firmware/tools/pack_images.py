@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Pack the two-stage FB200 images (docs/BOOTLOADER.md §4, src/fb200/images.py).
 
   pack_images.py build/fb200-recovery build/fb200-app -o OUT [--stock FB200.mr]

@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* fb200-audio console. Commands (see `help`):
  *   help | stats | hb on|off | scan | dump [bus addr] | peek <addr> [len]
  *   poke <addr> <val> | crc <addr> <len> | fwinfo | fwtest | crumbs

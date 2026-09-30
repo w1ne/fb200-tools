@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* memfuncs.c (the firmware's memcpy/memset/memmove) against byte-wise
  * references: every alignment of dst and src, lengths 0..80, overlaps both
  * ways. Renamed so the host libc is not replaced. */

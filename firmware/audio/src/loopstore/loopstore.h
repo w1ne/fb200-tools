@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #ifndef FB200_LOOPSTORE_LOOPSTORE_H
 #define FB200_LOOPSTORE_LOOPSTORE_H
 /* The looper's flash side: the loop lives in the external NOR flash

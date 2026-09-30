@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* FB200 app protocol: frame parser/encoder and command dispatcher, byte
  * compatible with the stock V1.0.1 firmware (dispatcher ITCM 0x46c4, reply
  * builder 0xfad0; docs/PROTOCOL.md has the command reference). */

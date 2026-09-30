@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Host tests for the battery gauge and the idle state machine
  * (src/ui/power_logic.c). Built by tests/test_power_host.py. */
 #include <stdio.h>

@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Host client of the long IR store (fb200.longir, `fb200 ir put/ls/delete`,
 the MCP long_ir_* tools) against a fake pedal on a pseudo-terminal whose
 irput / irls / irdel run the firmware's store (irstore.c in the C harness of

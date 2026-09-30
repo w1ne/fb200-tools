@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Minimal freestanding <assert.h>. CFLAGS always define NDEBUG, so this
  * expands to nothing; the SDK's assert() calls compile out. */
 #pragma once

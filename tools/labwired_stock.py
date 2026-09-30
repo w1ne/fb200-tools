@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Build the stock-firmware ELF for the LabWired twin (labwired/stock-boot.yaml).
 
 Reads your own copy of the vendor image, takes block 0 (application) and

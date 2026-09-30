@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Host harness for the long IR store (src/irstore/irstore.c) on a fake
  * 8 MB flash, driven line by line from stdin by tests/test_irstore_host.py:
  *

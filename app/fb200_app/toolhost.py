@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """The fb200 MCP server in process: its tools/list is the only tool schema.
 
 The UI editors and the agent both go through `ToolHost.call`, so they share

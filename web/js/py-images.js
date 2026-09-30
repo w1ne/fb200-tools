@@ -1,3 +1,8 @@
+// Copyright (C) 2026 Andrii Shylenko
+//
+// This software is released under the MIT License.
+// See the LICENSE file in the project root for full license information.
+
 // Runs src/fb200/images.py and stockdata.py in Pyodide: the same code as the
 // command-line tool builds the first-install .mr and the stock sound-data
 // blob from the user's own stock .mr. Loaded only when needed.

@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Presets and settings read from flash (or written whole by the app, 0x97)
  * are untrusted: a power loss during a sector write leaves the sector erased
  * (8 presets, or the settings), a bad write leaves any bytes. The stock

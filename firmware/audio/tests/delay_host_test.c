@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Host tests for the bass delay (src/dsp/delay.c) and the rule that decides
  * when a preset plays it (src/preset/preset.h preset_delay_on).
  * Built by tests/test_delay.py; every check is an assert. */

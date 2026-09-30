@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Stock data blob (src/fb200/stockdata.py) against the firmware's stock_data_t.
 
 Runs without vendor data: a synthetic StockData goes through pack(), and the

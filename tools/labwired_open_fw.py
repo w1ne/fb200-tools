@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Build an ELF of the open FB200 firmware for the LabWired twin.
 
 The twin starts at the flash vector table (FlexSPI 0x60010000). Recovery's

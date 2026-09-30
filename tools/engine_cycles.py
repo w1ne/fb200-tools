@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Amp (+ tone stack), cab and looper cost per 32-sample block on the
 Cortex-M7 build, per function, plus a bit-exact old/new comparison.
 

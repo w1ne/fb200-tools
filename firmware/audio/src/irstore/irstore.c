@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Long IR store: see irstore.h. Cold code (XIP): it runs only from the main
  * loop and calls flash_store (RAM code) for every write, as proto.c does. */
 #include <string.h>

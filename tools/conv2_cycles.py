@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Instruction counts per audio block for the two-stage convolver (dsp/conv2.c).
 
 Builds firmware/audio/tests/conv2_bench.c + conv2.c + conv.c + CMSIS-DSP for

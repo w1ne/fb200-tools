@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Minimal freestanding string primitives. The image is linked -nostdlib
  * (-lgcc only), but the MCUXpresso SDK and TinyUSB expect memcpy/memset/
  * memmove to exist. Byte loops; GCC is invoked with -fno-builtin so none of

@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Runs the agent in a background thread for a polling client.
 
 Events get a sequence number; a client reads them with `events_after(n)`

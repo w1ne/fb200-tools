@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Phase 0 RE tool: scan the LPI2C buses and dump a codec's register file. */
 #include "fsl_clock.h"
 #include "fsl_iomuxc.h"

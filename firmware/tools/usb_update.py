@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Flash the FB200 over the open firmware's USB console (no DFU, no A+D).
 
 Thin wrapper over `fb200 update` (src/fb200/console.py); kept for scripts.

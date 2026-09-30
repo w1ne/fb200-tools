@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* The looper's flash side: see loopstore.h. Main loop code, cold (the
  * Makefile's COLD_SRC: XIP): it runs only while the flash is idle or its
  * erase is suspended (lsio.h). */

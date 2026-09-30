@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #ifndef FB200_DSP_STOCK_DATA_H
 #define FB200_DSP_STOCK_DATA_H
 /* Stock FB200 sound data: amp models, cab IRs, tone-stack tables (44.1 kHz

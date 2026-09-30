@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Flash writes keep the audio running (firmware/audio/src/debug/flash_rmw.c).
 
 The C harness (firmware/audio/tests/flash_rmw_host_test.c) runs the sector

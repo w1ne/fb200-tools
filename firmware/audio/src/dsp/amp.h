@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #ifndef FB200_DSP_AMP_H
 #define FB200_DSP_AMP_H
 /* Stock FB200 amp (ITCM 0x2d78) + tone stack, mono, in place.

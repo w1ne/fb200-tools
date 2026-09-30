@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Host test: the SAI rings (audio/sai_ring.h, the code sai.c runs) give the
  * engine whole DSP_BLOCK blocks only, whatever the input chunks, overruns
  * and main-loop stalls, and the DAC stays in step with the ADC: every DAC

@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #include "audio/drift.h"
 
 void drift_play_to_input(float *l, float *r, const int16_t *play, size_t n,

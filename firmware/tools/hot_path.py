@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Hot-path check for the FB200 app: nothing the audio path can reach, and
 nothing that runs during a flash write, runs from flash (XIP)
 (docs/FIRMWARE_BRINGUP.md, "Hot and cold code").

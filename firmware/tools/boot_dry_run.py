@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Dry-run a packed .mr through the vendor boot loader with Unicorn.
 
 The stock block 0 is a self-loading image (see docs/FIRMWARE_BRINGUP.md): the

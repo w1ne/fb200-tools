@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Drum machine + tuner ports (firmware/audio/src/dsp/{drums,tuner}.c).
 
 The parity tests run the STOCK code in Unicorn (tests/stock_emu.py) from the

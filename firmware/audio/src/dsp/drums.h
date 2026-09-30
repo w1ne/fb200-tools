@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #ifndef FB200_DSP_DRUMS_H
 #define FB200_DSP_DRUMS_H
 /* Drum machine: a port of the stock FB200 sequencer + 11-voice sample player

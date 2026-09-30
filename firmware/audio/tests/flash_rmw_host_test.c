@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Host test for src/debug/flash_rmw.c on a fake NOR flash.
  *
  * The fake models what matters for the audio: after an erase or a page

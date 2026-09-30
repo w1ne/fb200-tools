@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Parse the built firmware's USB configuration descriptor and check the
 composite layout (CDC + UAC2 audio). Catches descriptor-length/entity bugs
 that are painful to debug on hardware."""

@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Long IR store of the open firmware (firmware/audio/src/irstore/irstore.h).
 
 64 slots of up to 4096 taps (float32, 44.1 kHz), selected as cab types

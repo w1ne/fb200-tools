@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* MOD block: port of the stock FB200 modulation types (see mod.h).
  *
  * Each type is decompiled from the stock image (addresses below) and keeps its

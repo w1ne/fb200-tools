@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Flash operations for the looper: see lsio.h. RAM code (ITCM, like
  * flash_rmw.c): hot_path.py flash-write roots. */
 #include <string.h>

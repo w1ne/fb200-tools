@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """HTTP API + static UI (Starlette). Binds to 127.0.0.1 by default.
 
 Every POST needs the header `X-FB200-App: 1`: a custom header forces a CORS

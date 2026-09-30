@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Stock sound data blob: built from the user's own stock `.mr`.
 
 The open firmware images contain no vendor data. The stock amp models, cab

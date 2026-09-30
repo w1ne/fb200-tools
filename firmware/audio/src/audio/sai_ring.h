@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #ifndef FB200_SAI_RING_H
 #define FB200_SAI_RING_H
 /* The SAI frame rings (stereo interleaved int16) between the eDMA callbacks

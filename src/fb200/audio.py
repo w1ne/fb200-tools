@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Audio tests over the pedal's USB audio (UAC2, 2 in / 2 out, 44.1 kHz).
 
 Pure analysis on numpy arrays (tools/measure.py uses it too) and device I/O

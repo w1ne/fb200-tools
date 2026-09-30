@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Looper, the audio side: see looper.h. looper_process and what it calls
  * are on the audio path (ITCM); the control functions are COLD (flash). */
 #include <string.h>

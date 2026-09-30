@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Render reference audio through the STOCK FB200 DSP, emulated in Unicorn.
 
 The stock per-sample callback (ITCM 0x17d8c) and the cab FIR block job

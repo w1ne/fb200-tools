@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Freestanding libc stubs for symbols the MCUXpresso SDK object files
  * reference. There is no heap: allocation always fails, and abort() traps. */
 #include <stddef.h>

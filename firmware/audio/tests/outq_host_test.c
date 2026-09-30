@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Host test of the 16-bit output stage (src/dsp/outq.h): truncation (v0.9.1)
  * vs rounding vs TPDF dither on a low-level sine. Run by tests/test_dsp_host.py
  * (test_outq_suite); every check is an assert. */

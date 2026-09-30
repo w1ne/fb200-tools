@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Safe 32-bit register access for the console. A read or write of a
  * clock-gated i.MX RT peripheral stalls the bus forever (it hung the pedal
  * once), so every access is checked against the peripheral's CCM clock gate

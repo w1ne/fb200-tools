@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* USB transport of the app protocol: the vendor HID interface (both images
  * declare it; recovery has no protocol engine and ignores its reports).
  * OUT reports: [len][len payload bytes][padding] -> proto_feed(PROTO_USB).

@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #ifndef FB200_DSP_EQ_H
 #define FB200_DSP_EQ_H
 /* Bass EQ (our addition, the stock has none; docs/PARITY.md M4). Mono, in

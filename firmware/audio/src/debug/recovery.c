@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Two-stage boot, crumbs and the watchdog. See recovery.h. */
 #include <stdint.h>
 #include <stddef.h>

@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* NAU88L21 codec driver: the stock init sequence, register access and
  * volume/mute. The signal path is codec ADC -> SAI1 RX and SAI1 TX -> codec
  * DAC; the codec is the I2S clock slave (SAI1 drives MCLK/BCLK/FS). */

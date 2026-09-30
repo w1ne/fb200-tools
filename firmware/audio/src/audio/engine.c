@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Audio engine: codec ADC -> DSP chain -> codec DAC, with the USB path as
  * capture (processed signal) and monitor (host playback mixed into the DAC).
  *

@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 name: Release
 # A tag v* builds the vendor-free firmware, attaches it to a GitHub release
 # and deploys the web page + web updater (web/) to GitHub Pages with that

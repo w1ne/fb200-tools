@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Target glue for the long IR store (irstore.h): flash through the XIP
  * window and flash_store() (sector read-modify-write, RAM code), the chip
  * size from flash_capacity(), console bytes from the CDC, the stock gain

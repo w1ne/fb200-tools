@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* UAC2 audio plumbing: SPSC rings between the TinyUSB audio FIFOs and the
  * engine. Single producer/consumer per ring, main-loop context only. */
 #include <string.h>

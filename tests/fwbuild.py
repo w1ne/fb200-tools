@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Build each firmware once per process: deps, then a parallel build into its
 own tmp dir (make BUILD=...), so parallel pytest workers (pytest -n) never
 share one build/ tree."""

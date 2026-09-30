@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Fuzzing of the firmware's untrusted-input parsers on the host, under ASan and
 UBSan (firmware/audio/tests/fuzz_host_test.c): the app protocol (HID/BLE),
 the USB console, presets/settings from flash, the stock data blob.

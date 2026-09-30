@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #ifndef FB200_DSP_COMP_H
 #define FB200_DSP_COMP_H
 /* Stock compressor "CS Comp" (FB200 ITCM 0x2300). Preset fields: 0x14 enable,

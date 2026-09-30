@@ -1,4 +1,9 @@
 #!/bin/sh
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 # Nightly: the slow stock-DSP emulation tests (pytest -m stock), from this checkout.
 # They need the vendor fb200-stock.mr, which is not in the repo, so GitHub CI
 # cannot run them. Run from launchd/cron on a machine that has the file.
