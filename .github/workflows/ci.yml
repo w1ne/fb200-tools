@@ -93,7 +93,8 @@ jobs:
           path: out/
 
   # Boots firmware/audio on the FB200 twin and checks one knob turn,
-  # the display, one footswitch, the codec, and Bluetooth startup.
+  # the display, one footswitch, the codec, a SAI tone through the
+  # effect chain, and a phone get-version exchange.
   # The core pin drops a stale decode after a store, aligns VLDR/VSTR
   # literals, and applies limits.peripheral_tick_interval. A released
   # labwired binary does not boot this image. Apt, the firmware build,
@@ -112,7 +113,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: w1ne/labwired-core
-          ref: c70cef732f18bf83df88e61f5f9374fb26d48fa6
+          ref: acc4940de4b999e703c39292be5f96bde0bc9f56
           path: labwired-core
       - uses: dtolnay/rust-toolchain@1.95.0
       - uses: Swatinem/rust-cache@v2
@@ -121,7 +122,7 @@ jobs:
       - name: Build labwired
         working-directory: labwired-core
         env:
-          # The pedal proof stops at 640 M cycles. This binary has to
+          # The pedal proof stops at 660 M cycles. This binary has to
           # finish that run inside the 90 s cap.
           CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
           RUSTFLAGS: "-C target-cpu=native"
@@ -186,6 +187,16 @@ jobs:
               ("usb1", "host", '"FB200 Audio"'),
               ("display", "text", '"0Ut"'),
               ("display", "text", '"P0b"'),
+              ("sai1", "rx", "amp 8000 hz 1000"),
+              ("sai1", "tx", "peak 256 tail 94"),
+              ("lpuart5", "link", "TS+01 edr connected"),
+              ("lpuart5", "link", "TL+03 ble connected"),
+              ("lpuart5", "air", "phone->mcu aa 55 01 00 00 c8 cf"),
+              (
+                  "lpuart5",
+                  "air",
+                  "mcu->phone aa 55 38 00 01 46 42 32 30 30 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 56 31 2e 30 2e 30 00 56 32 2e 30 2e 30 00 56 31 2e 30 2e 30 00 41 00 b4 58",
+              ),
               ("codec", "writes", "write 0x001c = 0x0002"),
               ("codec", "state", "dai slave i2s 16-bit"),
               ("codec", "state", "adcout driven"),
