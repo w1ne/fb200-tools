@@ -559,6 +559,8 @@ static void light_rings(uint32_t now)
         engine_loop_info(&li);
         in.loop = (uint8_t)li.state;
         in.loop_top = li.pos_ms < 100u;          /* the loop start: a flash */
+        in.loop_pos_ms = li.pos_ms;
+        in.loop_len_ms = li.len_ms;
     }
     lightbar_task(now, &in);
 }

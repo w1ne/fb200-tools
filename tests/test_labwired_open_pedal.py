@@ -87,8 +87,8 @@ def test_open_gate_expects_the_sixteen_start_counts_and_the_turn():
     assert "max_cycles: 3400000000" not in text
     assert "wall_time_ms: 900000" not in text
     assert "peripheral_tick_interval: 16" in text
-    assert "max_cycles: 660000000" in text
-    assert "max_steps: 1000000000" in text
+    assert "max_cycles: 2100000000" in text
+    assert "max_steps: 3200000000" in text
     assert "max_cycles: 115000000" not in text
     assert 'component: "footswitch_b"' in text
     assert '\\"0Ut\\"' in text
@@ -102,7 +102,9 @@ def test_open_gate_expects_the_sixteen_start_counts_and_the_turn():
     assert "AT+B501" in text
     assert "AT+B401" in text
     assert "amp 8000 hz 1000" in text
-    assert "peak 256 tail 94" in text
+    assert 'log: tx, contains: "peak 256 tail"' in text
+    assert "symbol: s_loop, offset: 8, size: 1, expected_value: 3" in text
+    assert "symbol: s_loop, offset: 56, size: 4, expected_value: 0x178" in text
     assert "TS+01 edr connected" in text
     assert "TL+03 ble connected" in text
     assert "phone->mcu aa 55 01 00 00 c8 cf" in text
@@ -114,23 +116,26 @@ def test_open_gate_expects_the_sixteen_start_counts_and_the_turn():
 def test_render_gate_writes_the_symbol_address_and_keeps_the_counts():
     text = GATE.read_text()
     base = 0x20001000
-    rendered = render_gate(text, base)
+    loop = 0x20000588
+    rendered = render_gate(text, base, loop)
     assert "symbol:" not in rendered
     for index, count in enumerate(STARTS):
         if index == TURNED_KNOB:
             count = raw_count(TURN_PERCENT)
         address = base + 2 * index
         assert f"address: {address:#x}, size: 2, expected_value: {count:#x}" in rendered
-    placed = place_gate(text, base)
+    assert f"address: {loop + 8:#x}, size: 1, expected_value: 3" in rendered
+    assert f"address: {loop + 56:#x}, size: 4, expected_value: 0x178" in rendered
+    placed = place_gate(text, base, loop)
     assert 'firmware: "open.elf"' in placed
     assert 'system: "../../labwired/system.yaml"' in placed
     assert "peripheral_tick_interval: 16" in rendered
     assert "peripheral_tick_interval: 16" in placed
     assert '\\"P0b\\"' in rendered
     assert "AT+B401" in rendered
-    assert "peak 256 tail 94" in rendered
+    assert 'log: tx, contains: "peak 256 tail"' in rendered
     assert "56 32 2e 30 2e 30" in rendered
-    assert "max_cycles: 660000000" in rendered
+    assert "max_cycles: 2100000000" in rendered
 
 
 def test_render_gate_rejects_a_missing_slot():

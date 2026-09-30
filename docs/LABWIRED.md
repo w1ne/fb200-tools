@@ -23,8 +23,8 @@ has no FB200 special cases.
 | `firmware/audio/` | the open pedal firmware (recovery and the app) |
 | `tools/labwired_elf.py` | puts raw blobs into one ARM ELF, one PT_LOAD per blob |
 | `tools/labwired_stock.py` | builds `build/labwired/stock.elf` from your `.mr` |
-| `tools/labwired_open_fw.py` | builds `build/labwired/open.elf` and writes `build/labwired/open-boot.yaml` with the knob-table address |
-| `labwired/open-boot.yaml` | gate template for the open firmware: USB product string, display text, one footswitch, a SAI tone through the effect chain, a phone version reply, codec setup, Bluetooth startup, 16 raw knob counts, and one turned knob |
+| `tools/labwired_open_fw.py` | builds `build/labwired/open.elf` (a short config block, recovery, and the app slot) and writes `build/labwired/open-boot.yaml` with the knob-table and looper addresses |
+| `labwired/open-boot.yaml` | gate template for the open firmware: USB product string, display text, one footswitch, a SAI tone through the effect chain, a phone version reply, codec setup, Bluetooth startup, 16 raw knob counts, one turned knob, and a looper record that ends in play |
 
 ## 2. Get the LabWired CLI
 
@@ -105,7 +105,7 @@ Expected result:
 
 ```
 PASS  5/5 checks · smoke · 40000000 steps · 36.87s
-PASS  35/35 checks · open-boot · 660000000 steps · 31.66s
+PASS  37/37 checks · open-boot · 2100000000 steps · 111.76s
 PASS  37/37 checks · stock-boot · 90000000 steps · 15.26s
 PASS  20/20 checks · stock-knobs · 3400000000 steps · 4754.33s
 PASS  24/24 checks · stock-first-boot · 6800000000 steps · 6031.15s
@@ -129,6 +129,11 @@ and launches the app. The simulated USB host reads the string descriptors.
 The product string is `FB200 Audio`. The stock image sends `FB200`.
 `fidelity_clean: true` rejects an unmapped access or an undecoded instruction.
 
+The image carries a short config block at `0x60000000`. The block is a
+tag and one 24-bit read sequence. It is not the pedal's vendor config
+block. Without it the app does not read the flash size and the looper
+stays off.
+
 The display shows the name of the MASTER knob. The display model reads
 the letter O as the digit 0. The text log contains `0Ut`.
 
@@ -137,9 +142,12 @@ releases footswitch B. The app loads slot B. The display then shows `P0b`.
 
 At 20 M cycles the gate drives a 1000 Hz tone into SAI1. The peak sample
 is 8000. The app runs that tone through the effect chain. The transmit
-log records peak 256 for the whole run. The transmit log records peak 94
-for the last 256 words. MASTER is at 20 % for that tail. The effect chain
-produces these peaks.
+log records peak 256 for the whole run. The last 256 words are a smaller
+peak. A local build printed tail 99. The Ubuntu build printed tail 96.
+The gate checks the run peak. It does not pin the tail count. MASTER is
+at 20 % for that tail. The effect chain produces this peak. The local
+tail matched a run with the looper off, so it does not prove the loop
+is audible.
 
 The app writes codec register `0x001C` with the value `0x0002`. This
 value selects 16-bit I2S. The state log contains `dai slave i2s 16-bit`.
@@ -150,12 +158,18 @@ The Bluetooth module answers `AT+TM` with `TM+BT201-BLE`. The module
 answers `AT+CN00`. The module answers `AT+B501`. The module answers
 `AT+B401`. After that reply the gate connects a phone on EDR and on BLE.
 The gate sends the get-version frame. The app replies on the air log.
-The reply contains firmware version `V2.0.0`. The run stops at 660 M
-cycles. The stop is after the version reply.
+The reply contains firmware version `V2.0.0`. The phone connects while
+footswitch D and footswitch C are held.
 
 Looper mode needs footswitch D held and footswitch C held for about one
-second. That hold is longer than this budget. The gate does not check a
-loop record.
+second. The gate holds that chord from 160 M cycles to 830 M cycles. The
+twin flash has no erase suspend, so each 64 KB erase runs to its end
+inside one main-loop pass (150 ms). Each A tap stays down for 500 ms, so
+two of those passes see it. The first A tap starts the record. The second
+A tap closes it. A short record still plays once it reaches 500 ms. At
+2100 M cycles the looper state byte is PLAY (3) and the chunk count is
+376. The display mux cannot assemble `LP-`, `rEC`, or `PLY` while an
+erase blocks the main loop. The gate does not check those strings.
 
 The app stores one raw ADC count per knob. The count is a `uint16_t` in
 the array `knobs`. A count of 0 is fully counter-clockwise. The firmware
@@ -164,20 +178,21 @@ does not subtract the count from 4095. The board starts each knob at
 mid-scale count 2048.
 
 At 80 M cycles the gate turns the MASTER knob from 83 % to 20 %. The app
-scans that knob again. At 660 M cycles the stored count is 819 (`0x333`).
+scans that knob again. At 2100 M cycles the stored count is 819 (`0x333`).
 The start count 3399 (`0xd47`) is no longer in that slot. The run stops
-at `max_cycles` 660000000.
+at `max_cycles` 2100000000.
 
 The gate sets `peripheral_tick_interval` to 16. The machine ticks
-peripherals every 16 CPU cycles. Two consecutive runs reported the same
-35 checks and the same stop reason, `max_cycles`. The first run printed
-this line. The second run took 31.33 s.
+peripherals every 16 CPU cycles. The run stops at `max_cycles`. The local
+run printed this line.
 
 ```
-PASS  35/35 checks · open-boot · 660000000 steps · 31.66s
+PASS  37/37 checks · open-boot · 2100000000 steps · 111.76s
 ```
 
-The runs used a local core build. That core is not released yet.
+The run used a local core build. That core is not released yet. The
+battery pin in `system.yaml` is 3.2 V. 2.5 V is a low battery for this
+firmware and the panel then shows `LOb`.
 
 ### Smoke gate
 

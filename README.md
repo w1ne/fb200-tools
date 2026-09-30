@@ -25,7 +25,7 @@ Its firmware is closed and frozen. This project aims to:
   See [`docs/PARITY.md`](docs/PARITY.md) and
   [`docs/ROADMAP_RESEARCH.md`](docs/ROADMAP_RESEARCH.md).
 
-## Status (v0.11)
+## Status (v0.12)
 
 Verified on a real pedal:
 
@@ -38,7 +38,7 @@ Verified on a real pedal:
 | **USB** | Class-compliant audio interface (record and play back, 44.1 kHz). The stock USB identity and control protocol, so `fb200 info` and IR import work. |
 | **Bluetooth** | Module link. The Bluetooth audio input runs; playback from a phone is not yet checked by ear. The app protocol is implemented and tested on the host, but not yet with the Flamma Manager phone app. |
 | **Our additions** | Bass delay up to 1 s, bass EQ (HPF, 5 bands, LPF; saved in the preset), cab IRs up to 4096 taps in 64 long-IR slots (cab types 20-83, `fb200 ir put`), reamping over USB (`usb in`). Measured on the pedal: echo times, EQ response, CPU (engine 14% average with a 4096-tap IR). |
-| **Looper** | Up to 108 s in the pedal's flash, with undo and `loop save`/`load` of two loops across power-off. On a pedal: a 103 s record, a dub past 54 s, save/load across reset, delay and a stored long IR while the loop played. The sound has not been listened to. |
+| **Looper** | Up to 108 s in the pedal's flash, with undo and `loop save`/`load` of two loops across power-off. On a pedal: a 103 s record, a dub past 54 s, save/load across reset, delay and a stored long IR while the loop played. Rings C and D show recording and the play position; checked on a pedal. The sound has not been listened to. |
 | **Power** | Battery level, charger sense, status LED |
 | **Updates & recovery** | USB updates with no button combo. A resident recovery keeps the USB console after a crash or hang. Crash dumps survive a reset. |
 
@@ -157,7 +157,7 @@ Entering looper mode starts erasing the looper's flash in the background (about 
 for all of it; a record can start after the first 0.3 s). An A press before that shows
 `PrP`: press again.
 
-Ring A flashes white at each loop start; ring B is blue while a loop exists. The loop
+Ring A flashes white at each loop start; ring B is blue while a loop exists. Ring C fills red while recording and orange while dubbing. Ring D shows one LED at the play position: green while playing, orange while dubbing, blue while stopped. The loop
 length is set by the first record (A press to A press). Leaving looper mode keeps the
 loop playing: presets and knobs work as usual, come back to stop or clear it.
 

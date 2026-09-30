@@ -33,7 +33,10 @@
 #     a power failure (saves settings and flips the B1_10/B1_15 latch) and
 #     > 3050/4095 as healthy; 2.8 V here.
 #   - ADC1 IN9 (AD_B1_04): battery. The stock app waits at boot until it reads
-#     >= 2870/4095 (or GPIO1_IO19, charger sense, is high); 2.5 V here.
+#     >= 2870/4095 (or GPIO1_IO19, charger sense, is high). The open firmware
+#     calls a raw count below 0xC80 (about 2.58 V at this pin) level 0 and
+#     shows "LOb" for 2 s. 2.5 V is in that band (raw 3102) and covers the
+#     panel. 3.2 V reads raw 3971, level 4, so the panel stays on the UI.
 
 name: "fb200"
 chip: "chip/mimxrt1052.yaml"
@@ -147,7 +150,7 @@ peripherals:
     base_address: 0
     config:
       # IN3/IN4 (knobs) are driven by the muxes in external_devices.
-      input_mv: { 7: 2800, 9: 2500 }
+      input_mv: { 7: 2800, 9: 3200 }
   # FlexIO2 functional clock as the stock image programs the CCM
   # (CSCMR2.FLEXIO2_CLK_SEL = PLL3 480 MHz, CS1CDR PRED /5, PODF /2).
   - id: "flexio2"

@@ -31,22 +31,38 @@
 # B, and the display then shows P0b.
 # At 20 M cycles the gate drives a 1000 Hz tone into SAI1, peak sample
 # 8000. The app runs that tone through the effect chain. SAI1 transmit
-# then records peak 256 over the run and peak 94 over the last 256 words.
-# Those levels are the engine output. They are not the raw word 8000 and
-# they are not silence. MASTER is already at 20 % for that tail.
+# records peak 256 over the run. The last 256 words are a smaller peak.
+# A local build printed tail 99. The Ubuntu build printed tail 96. The
+# gate checks the run peak and that a tail was recorded. It does not pin
+# the tail count. Those levels are the engine output. They are not the
+# raw word 8000 and they are not silence. MASTER is already at 20 % for
+# that tail. The local tail matched a run with the looper off, so it does
+# not prove the loop is audible.
 # After AT+B401 the gate connects a phone (EDR and BLE) and sends the
 # get-version frame. The air log shows the phone bytes and the app reply.
-# The reply carries firmware version V2.0.0. The run stops at 660 M
-# cycles, after that reply. The looper chord holds a footswitch for one
-# second, and that second is past this budget.
+# The reply carries firmware version V2.0.0. The phone connects while D
+# and C are held. The core clock is 600 MHz, so one millisecond is
+# 600 000 cycles. Slot B is loaded first. D and C are then held for one
+# second. That chord enters looper mode. The image carries a short config
+# block at 0x60000000. Without it the app leaves the looper off. The
+# looper then erases one 64 KB block (150 ms) before a record is allowed.
+# The twin flash has no erase suspend, so each erase runs to its end
+# inside one main-loop pass. A tap has to stay down across two of those
+# passes. Two taps of A, 500 ms each, start the record and close it. A
+# short record still plays once it reaches 500 ms. The run stops at
+# 2100 M cycles. The looper state byte is then PLAY (3) and the chunk
+# count is 376. The display mux cannot assemble LP-, rEC, or PLY while an
+# erase blocks the main loop, so those strings are not checked. The
+# battery pin is 3.2 V (system.yaml). 2.5 V is a low battery and the
+# panel then shows LOb.
 schema_version: "1.2"
 inputs:
   firmware: "../build/labwired/open.elf"
   system: "system.yaml"
 limits:
-  max_steps: 1000000000
-  max_cycles: 660000000
-  wall_time_ms: 110000
+  max_steps: 3200000000
+  max_cycles: 2100000000
+  wall_time_ms: 420000
   # The per-cycle peripheral walk dominates this run. Sixteen CPU cycles
   # between peripheral ticks still reach the checks below.
   peripheral_tick_interval: 16
@@ -59,6 +75,34 @@ stimuli:
     value: 1
   - target: { component: "footswitch_b", channel: "pressed" }
     trigger: !after_cycles { cycles: 140000000 }
+    value: 0
+  # D and C down together. C's long press, with D held, enters looper mode.
+  # 650 M cycles is 1.08 s, which covers the 20 ms debounce and the 1 s hold.
+  - target: { component: "footswitch_d", channel: "pressed" }
+    trigger: !after_cycles { cycles: 160000000 }
+    value: 1
+  - target: { component: "footswitch_c", channel: "pressed" }
+    trigger: !after_cycles { cycles: 170000000 }
+    value: 1
+  - target: { component: "footswitch_c", channel: "pressed" }
+    trigger: !after_cycles { cycles: 820000000 }
+    value: 0
+  - target: { component: "footswitch_d", channel: "pressed" }
+    trigger: !after_cycles { cycles: 830000000 }
+    value: 0
+  # A records. Each tap is 500 ms: two main-loop passes while erase-ahead
+  # is blocking. The second A closes the take. Playback follows.
+  - target: { component: "footswitch_a", channel: "pressed" }
+    trigger: !after_cycles { cycles: 1000000000 }
+    value: 1
+  - target: { component: "footswitch_a", channel: "pressed" }
+    trigger: !after_cycles { cycles: 1300000000 }
+    value: 0
+  - target: { component: "footswitch_a", channel: "pressed" }
+    trigger: !after_cycles { cycles: 1560000000 }
+    value: 1
+  - target: { component: "footswitch_a", channel: "pressed" }
+    trigger: !after_cycles { cycles: 1860000000 }
     value: 0
   - target: { component: "sai1", channel: "rx_amp" }
     trigger: !after_cycles { cycles: 20000000 }
@@ -82,7 +126,7 @@ assertions:
   - peripheral_log: {peripheral: display, log: text, contains: "\"0Ut\""}
   - peripheral_log: {peripheral: display, log: text, contains: "\"P0b\""}
   - peripheral_log: {peripheral: sai1, log: rx, contains: "amp 8000 hz 1000"}
-  - peripheral_log: {peripheral: sai1, log: tx, contains: "peak 256 tail 94"}
+  - peripheral_log: {peripheral: sai1, log: tx, contains: "peak 256 tail"}
   - peripheral_log: {peripheral: lpuart5, log: link, contains: "TS+01 edr connected"}
   - peripheral_log: {peripheral: lpuart5, log: link, contains: "TL+03 ble connected"}
   - peripheral_log: {peripheral: lpuart5, log: air, contains: "phone->mcu aa 55 01 00 00 c8 cf"}
@@ -127,5 +171,9 @@ assertions:
   - memory_value: { symbol: knobs, offset: 28, size: 2, expected_value: 0xc7a }
   # k15 MASTER, turned from 83 % to 20 % (the start count would be 0xd47)
   - memory_value: { symbol: knobs, offset: 30, size: 2, expected_value: 0x333 }
+  # looper_t.state. 3 is PLAY. This run reaches PLAY only by closing the record.
+  - memory_value: { symbol: s_loop, offset: 8, size: 1, expected_value: 3 }
+  # looper_t.chunks. 0x178 is the 376-chunk loop area.
+  - memory_value: { symbol: s_loop, offset: 56, size: 4, expected_value: 0x178 }
   - fidelity_clean: true
   - expected_stop_reason: max_cycles

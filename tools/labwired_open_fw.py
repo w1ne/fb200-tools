@@ -19,12 +19,14 @@ Build both images first (docs/LABWIRED.md):
     make -C firmware/audio build VARIANT=app
     python3 tools/labwired_open_fw.py
 
-The ELF is build/labwired/open.elf. It contains no vendor bytes.
+The ELF is build/labwired/open.elf. It contains no vendor bytes. A short
+config block at 0x60000000 lets the app read the flash size. The looper
+stays off without it.
 
-The same step reads the `knobs` symbol from fb200-app.elf and writes
-build/labwired/open-boot.yaml. labwired/open-boot.yaml names that symbol.
-The generated file carries the address for this build. `labwired test`
-runs the generated file.
+The same step reads `knobs` and `s_loop` from fb200-app.elf and writes
+build/labwired/open-boot.yaml. labwired/open-boot.yaml names those
+symbols. The generated file carries the addresses for this build.
+`labwired test` runs the generated file.
 """
 
 from __future__ import annotations
@@ -52,8 +54,27 @@ STUB = bytes.fromhex(
     "d7040000"
 )
 STUB_OFF = 0x4D8
+FLASH_FCB = 0x60000000
 FLASH_RECOVERY = 0x60010000
 FLASH_SLOT = 0x60020000
+# Tag "FCFB" and one LUT word: CMD_SDR / 1 pad / 0x0B, then RADDR_SDR with a
+# 24-bit address. fcb_read_seq accepts that and nothing less. The pedal's
+# own config block is vendor data and is not copied here.
+FCB_TAG = 0x42464346
+FCB_LUT_WORD = 0x0818040B
+FCB_SIZE = 0x84
+
+
+def minimal_fcb() -> bytes:
+    """Config block the app reads before it will size the flash.
+
+    Without the tag at 0x60000000 the app leaves the looper off. The bytes
+    around the tag stay erased.
+    """
+    fcb = bytearray(b"\xff" * FCB_SIZE)
+    struct.pack_into("<I", fcb, 0, FCB_TAG)
+    struct.pack_into("<I", fcb, 0x80, FCB_LUT_WORD)
+    return bytes(fcb)
 
 
 def install_stub(recovery: bytes) -> bytes:
@@ -73,13 +94,13 @@ def install_stub(recovery: bytes) -> bytes:
 
 def open_elf(recovery_vectors: bytes, recovery_blob: bytes, copier: bytes,
              app_vectors: bytes, app_blob: bytes, data: bytes) -> bytes:
-    """Recovery at 0x60010000, app slot at 0x60020000, loader stub installed."""
+    """FCB at 0x60000000, recovery at 0x60010000, app slot at 0x60020000."""
     images.require_update_commands("recovery", recovery_blob)
     images.require_update_commands("app", app_blob + data)
     rec = install_stub(images.build_recovery(recovery_vectors, recovery_blob, copier))
     slot = images.build_slot(app_vectors, app_blob, data)
     images.check_slot(slot)
-    return build_elf([(FLASH_RECOVERY, rec), (FLASH_SLOT, slot)])
+    return build_elf([(FLASH_RECOVERY, rec), (FLASH_SLOT, slot), (FLASH_FCB, minimal_fcb())])
 
 
 # `symbol: knobs, offset: N,` in labwired/open-boot.yaml. One slot of the
@@ -88,6 +109,11 @@ _KNOB_SYMBOL = re.compile(
     r"symbol:\s*knobs,\s*offset:\s*(?P<offset>0x[0-9a-fA-F]+|\d+),"
 )
 _KNOB_SLOTS = 16
+# `symbol: s_loop, offset: N,` is one field of the file-local looper_t.
+_LOOP_SYMBOL = re.compile(
+    r"symbol:\s*s_loop,\s*offset:\s*(?P<offset>0x[0-9a-fA-F]+|\d+),"
+)
+_LOOP_SLOTS = 2
 
 
 def elf_symbol_bytes(data: bytes, name: str) -> int | None:
@@ -155,33 +181,43 @@ def elf_symbol(path: Path, name: str) -> int | None:
     return elf_symbol_bytes(path.read_bytes(), name)
 
 
-def render_gate(text: str, knobs_addr: int) -> str:
-    """Replace each `symbol: knobs, offset: N` with the address for this build.
+def render_gate(text: str, knobs_addr: int, loop_addr: int | None = None) -> str:
+    """Replace knob and looper symbols with the addresses for this build.
 
-    The open gate names the symbol because the linker moves the array.
-    `labwired test` reads a numeric address. Exactly 16 slots are required:
-    one raw count per knob.
+    The open gate names the symbols because the linker moves them.
+    `labwired test` reads a numeric address. Exactly 16 knob slots are
+    required, one raw count per knob. Exactly two looper slots are
+    required when `loop_addr` is given: the state byte and the chunk count.
     """
 
-    def replace(match: re.Match[str]) -> str:
-        offset = int(match.group("offset"), 0)
-        return f"address: {knobs_addr + offset:#x},"
+    def replace(address: int):
+        def apply(match: re.Match[str]) -> str:
+            offset = int(match.group("offset"), 0)
+            return f"address: {address + offset:#x},"
 
-    rendered, count = _KNOB_SYMBOL.subn(replace, text)
+        return apply
+
+    rendered, count = _KNOB_SYMBOL.subn(replace(knobs_addr), text)
     if count != _KNOB_SLOTS:
         raise FirmwareError(f"open gate must name knobs {_KNOB_SLOTS} times, found {count}")
+    if loop_addr is not None:
+        rendered, loop_count = _LOOP_SYMBOL.subn(replace(loop_addr), rendered)
+        if loop_count != _LOOP_SLOTS:
+            raise FirmwareError(
+                f"open gate must name s_loop {_LOOP_SLOTS} times, found {loop_count}"
+            )
     if "symbol:" in rendered:
         raise FirmwareError("unresolved symbol in the open gate")
     return rendered
 
 
-def place_gate(text: str, knobs_addr: int) -> str:
+def place_gate(text: str, knobs_addr: int, loop_addr: int | None = None) -> str:
     """Render the gate and point it at the ELF next to the generated file.
 
     The generated file is build/labwired/open-boot.yaml. The system manifest
     stays in labwired/.
     """
-    rendered = render_gate(text, knobs_addr)
+    rendered = render_gate(text, knobs_addr, loop_addr)
     rendered, fw_count = re.subn(
         r'^(\s*firmware:\s*).*$',
         r'\1"open.elf"',
@@ -228,12 +264,15 @@ def main() -> int:
     knobs = elf_symbol(app_elf, "knobs")
     if knobs is None:
         raise SystemExit(f"labwired_open_fw: no knobs symbol in {app_elf}")
+    loop = elf_symbol(app_elf, "s_loop")
+    if loop is None:
+        raise SystemExit(f"labwired_open_fw: no s_loop symbol in {app_elf}")
     template = REPO_ROOT / "labwired" / "open-boot.yaml"
-    gate = place_gate(template.read_text(), knobs)
+    gate = place_gate(template.read_text(), knobs, loop)
     gate_path = out.parent / "open-boot.yaml"
     gate_path.write_text(gate)
     print(f"wrote {out} ({len(elf)} bytes)")
-    print(f"wrote {gate_path} (knobs={knobs:#x})")
+    print(f"wrote {gate_path} (knobs={knobs:#x} s_loop={loop:#x})")
     return 0
 
 
