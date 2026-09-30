@@ -81,6 +81,7 @@ def test_open_gate_expects_the_sixteen_start_counts_and_the_turn():
     assert "max_cycles: 250000000" not in text
     assert "max_cycles: 3400000000" not in text
     assert "wall_time_ms: 900000" not in text
+    assert "peripheral_tick_interval: 16" in text
 
 
 def test_render_gate_writes_the_symbol_address_and_keeps_the_counts():
@@ -96,6 +97,8 @@ def test_render_gate_writes_the_symbol_address_and_keeps_the_counts():
     placed = place_gate(text, base)
     assert 'firmware: "open.elf"' in placed
     assert 'system: "../../labwired/system.yaml"' in placed
+    assert "peripheral_tick_interval: 16" in rendered
+    assert "peripheral_tick_interval: 16" in placed
 
 
 def test_render_gate_rejects_a_missing_slot():
