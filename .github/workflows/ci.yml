@@ -94,12 +94,14 @@ jobs:
 
   # Boots firmware/audio on the FB200 twin and checks one knob turn,
   # the display, one footswitch, the codec, a SAI tone through the
-  # effect chain, and a phone get-version exchange.
-  # The core pin drops a stale decode after a store, aligns VLDR/VSTR
-  # literals, and applies limits.peripheral_tick_interval. A released
-  # labwired binary does not boot this image. Apt, the firmware build,
-  # and the core build are outside the 90 s cap. The cap is the labwired
-  # test process only.
+  # effect chain, a phone get-version exchange, and a looper record that
+  # ends in PLAY. The core pin drops a stale decode after a store, aligns
+  # VLDR/VSTR literals, and applies limits.peripheral_tick_interval. A
+  # released labwired binary does not boot this image. Apt, the firmware
+  # build, and the core build are outside the time cap. The cap is the
+  # labwired test process only. The gate stops at 2100 M cycles. The
+  # local run printed 111.76 s. The Ubuntu runner is about three times
+  # slower, so the cap is 360 s. wall_time_ms on the gate is 420000.
   open-firmware:
     runs-on: ubuntu-latest
     steps:
@@ -122,8 +124,8 @@ jobs:
       - name: Build labwired
         working-directory: labwired-core
         env:
-          # The pedal proof stops at 660 M cycles. This binary has to
-          # finish that run inside the 90 s cap.
+          # The pedal proof stops at 2100 M cycles. This binary has to
+          # finish that run inside the 360 s cap.
           CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
           RUSTFLAGS: "-C target-cpu=native"
         run: cargo build --release -p labwired-cli
@@ -160,8 +162,8 @@ jobs:
           print(f"PASS  {done}/{total} checks · open-boot · {steps} steps · {seconds}s")
           if done != total:
               sys.exit("not every check passed")
-          if seconds > 90:
-              sys.exit(f"labwired test took {seconds}s; the cap is 90s")
+          if seconds > 360:
+              sys.exit(f"labwired test took {seconds}s; the cap is 360s")
 
           result = json.loads(Path("open-pedal/result.json").read_text())
           print("status", result["status"])
@@ -195,7 +197,7 @@ jobs:
               ("display", "text", '"0Ut"'),
               ("display", "text", '"P0b"'),
               ("sai1", "rx", "amp 8000 hz 1000"),
-              ("sai1", "tx", "peak 256 tail 94"),
+              ("sai1", "tx", "peak 256 tail 99"),
               ("lpuart5", "link", "TS+01 edr connected"),
               ("lpuart5", "link", "TL+03 ble connected"),
               ("lpuart5", "air", "phone->mcu aa 55 01 00 00 c8 cf"),
@@ -215,6 +217,8 @@ jobs:
           }
           seen_logs = set()
           memory = []
+          looper_state = None
+          looper_chunks = None
           for item in result["assertions"]:
               if not item["passed"]:
                   sys.exit(f"failed check: {item}")
@@ -228,11 +232,22 @@ jobs:
                   if body["fidelity_clean"] is not True:
                       sys.exit("fidelity_clean did not pass")
               elif "memory_value" in body:
-                  value = body["memory_value"]["expected_value"]
-                  memory.append(value)
-                  print(
-                      f"knob {len(memory) - 1} address {body['memory_value']['address']:#x} value {value:#x}"
-                  )
+                  spec = body["memory_value"]
+                  value = spec["expected_value"]
+                  size = spec.get("size", 4)
+                  if size == 2:
+                      memory.append(value)
+                      print(
+                          f"knob {len(memory) - 1} address {spec['address']:#x} value {value:#x}"
+                      )
+                  elif size == 1 and value == 3:
+                      looper_state = spec
+                      print(f"looper state address {spec['address']:#x} value {value}")
+                  elif size == 4 and value == 0x178:
+                      looper_chunks = spec
+                      print(f"looper chunks address {spec['address']:#x} value {value:#x}")
+                  else:
+                      sys.exit(f"unexpected memory check: {spec}")
           missing = sorted(required_logs - seen_logs)
           if missing:
               sys.exit(f"missing checks: {missing}")
@@ -240,6 +255,8 @@ jobs:
               sys.exit(f"expected 16 knob values, found {len(memory)}")
           if len(set(memory)) != 16 or 2048 in memory or memory[-1] in (2048, 3399):
               sys.exit(f"knob values are not the distinct raw counts plus the turn: {memory}")
+          if looper_state is None or looper_chunks is None:
+              sys.exit("the looper state and chunk count were not checked")
           foot = [item for item in result["stimuli"] if item["component"] == "footswitch_b"]
           got = [(item["value"], item["outcome"]) for item in foot]
           print("footswitch_b", got)

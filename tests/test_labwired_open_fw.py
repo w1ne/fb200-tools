@@ -10,7 +10,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from labwired_elf import build_elf
-from labwired_open_fw import FLASH_RECOVERY, FLASH_SLOT, STUB, STUB_OFF, install_stub, open_elf
+from labwired_open_fw import (
+    FCB_LUT_WORD,
+    FCB_TAG,
+    FLASH_FCB,
+    FLASH_RECOVERY,
+    FLASH_SLOT,
+    STUB,
+    STUB_OFF,
+    install_stub,
+    minimal_fcb,
+    open_elf,
+)
 
 from fb200.images import BLOB_OFF, REC_SIZE, build_recovery, build_slot
 
@@ -43,6 +54,16 @@ def test_install_stub_refuses_a_range_that_already_has_bytes():
         install_stub(bytes(rec))
 
 
+def test_minimal_fcb_is_the_tag_and_a_24_bit_address():
+    fcb = minimal_fcb()
+    assert struct.unpack_from("<I", fcb, 0)[0] == FCB_TAG
+    word = struct.unpack_from("<I", fcb, 0x80)[0]
+    assert word == FCB_LUT_WORD
+    assert (word >> 8) & 3 == 0
+    assert (word >> 16) & 0xFF == 24
+    assert fcb[4] == 0xFF
+
+
 def test_open_elf_places_recovery_and_the_slot():
     blob = b"fwbegin\0fwrec\0fwstock\0" + b"\x00" * 8
     data = b"\x33" * 4
@@ -50,6 +71,7 @@ def test_open_elf_places_recovery_and_the_slot():
     placed = build_elf([
         (FLASH_RECOVERY, install_stub(build_recovery(_vectors(), blob, b"\x22" * 4))),
         (FLASH_SLOT, build_slot(_vectors(), blob, data)),
+        (FLASH_FCB, minimal_fcb()),
     ])
     assert elf == placed
     assert len(elf) > REC_SIZE

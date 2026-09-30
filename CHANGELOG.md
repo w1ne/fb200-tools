@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   play position: green while playing, orange while dubbing, blue while stopped.
   Ring A and ring B are unchanged. Checked on a pedal. The white bars on the
   panel are not these LEDs. The sound has not been listened to.
+- The open-firmware gate holds C and D, records with A, and checks that the
+  looper state is playing with 376 chunks. The panel strings LP-, rEC, and
+  PLY are not part of that check. Erase-ahead keeps the display mux on one
+  digit.
 
 ## [0.11.0] - 2026-09-30
 
