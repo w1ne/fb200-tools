@@ -27,6 +27,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
 #include "irstore/irstore.h"
 
 #define FLASH_SIZE 0x800000u
@@ -122,6 +126,10 @@ int main(void)
     static char line[512];
     flash = malloc(FLASH_SIZE);
     memset(flash, 0xFF, FLASH_SIZE);
+#ifdef _WIN32
+    /* irls lines already end in CR LF. Text mode would write CR CR LF. */
+    _setmode(_fileno(stdout), _O_BINARY);
+#endif
     setvbuf(stdout, NULL, _IOLBF, 0);
     while (fgets(line, sizeof line, stdin)) {
         char *argv[8] = {0};

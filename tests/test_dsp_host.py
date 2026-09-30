@@ -45,7 +45,10 @@ def cmsis_dsp_args() -> list[str]:
 
 def test_dsp_host_suite():
     out = _build_dir() / "dsp_host_test"
-    sources = [str(p) for p in sorted((FW / "src" / "dsp").glob("*.c"))] + [str(FW / "src" / "crc32.c")]
+    # looper.c calls the flash store. MinGW keeps every function in a listed
+    # file, so this link would need loopstore. The looper host test covers it.
+    sources = [str(p) for p in sorted((FW / "src" / "dsp").glob("*.c")) if p.name != "looper.c"]
+    sources.append(str(FW / "src" / "crc32.c"))
     subprocess.run(
         ["cc", "-O2", "-Wall", "-Wextra", "-I", str(FW / "src"),
          str(FW / "tests" / "dsp_host_test.c"), *sources, *cmsis_dsp_args(), "-lm",
