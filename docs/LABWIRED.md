@@ -105,7 +105,7 @@ Expected result:
 
 ```
 PASS  5/5 checks · smoke · 40000000 steps · 36.87s
-PASS  19/19 checks · open-boot · 140000000 steps · 38.61s
+PASS  19/19 checks · open-boot · 115000000 steps · 31.21s
 PASS  37/37 checks · stock-boot · 90000000 steps · 15.26s
 PASS  20/20 checks · stock-knobs · 3400000000 steps · 4754.33s
 PASS  24/24 checks · stock-first-boot · 6800000000 steps · 6031.15s
@@ -136,16 +136,16 @@ does not subtract the count from 4095. The board starts each knob at
 mid-scale count 2048.
 
 At 80 M cycles the gate turns the MASTER knob from 83 % to 20 %. The app
-scans that knob again. At 140 M cycles the stored count is 819 (`0x333`).
+scans that knob again. At 115 M cycles the stored count is 819 (`0x333`).
 The start count 3399 (`0xd47`) is no longer in that slot. The run stops
-at `max_cycles` 140000000.
+at `max_cycles` 115000000.
 
 Two consecutive runs reported the same 19 checks and the same stop
 reason, `max_cycles`. The first run printed this line. The second run
-took 38.98 s.
+took 31.71 s.
 
 ```
-PASS  19/19 checks · open-boot · 140000000 steps · 38.61s
+PASS  19/19 checks · open-boot · 115000000 steps · 31.21s
 ```
 
 The runs used a local core build. That core is not released yet.

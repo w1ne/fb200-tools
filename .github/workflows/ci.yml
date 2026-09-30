@@ -118,6 +118,11 @@ jobs:
           workspaces: labwired-core
       - name: Build labwired
         working-directory: labwired-core
+        env:
+          # ubuntu-latest does about 1.1 M steps/s. The pedal proof is ready
+          # at 115 M cycles, which needs a faster binary to finish in 90 s.
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
+          RUSTFLAGS: "-C target-cpu=native"
         run: cargo build --release -p labwired-cli
       - name: Build the open firmware
         working-directory: firmware/audio
