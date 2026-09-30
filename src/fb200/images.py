@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Two-stage firmware images (docs/BOOTLOADER.md §4).
 
 Block 0 (flash 0x60010000, 0x31000 bytes) of the open firmware:

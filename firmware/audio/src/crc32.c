@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #include "crc32.h"
 
 uint32_t crc32_ieee_update(uint32_t c, const uint8_t *p, uint32_t len)

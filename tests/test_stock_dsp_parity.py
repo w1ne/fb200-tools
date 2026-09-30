@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Parity of our amp + tone stack + cab (firmware/audio/src/dsp) with the stock
 FB200 DSP, emulated in Unicorn (firmware/tools/stock_render.py).
 

@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Host tests for the flash looper: the frame codec (src/dsp/loopcodec.c),
  * the audio side (src/dsp/looper.c) and the flash side
  * (src/loopstore/loopstore.c, lsio.c) on a simulated W25Q64

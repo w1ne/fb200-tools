@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Host tests for the USB console transport and update protocol, against a
 fake pedal on a pseudo-terminal."""
 

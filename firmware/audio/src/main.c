@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* fb200-audio: milestone 1. The USB console (see `help`) is the debug
  * backbone; audio bring-up lands in later tasks (codec, SAI/eDMA, USB audio). */
 #include <stdint.h>

@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* conv2 cost per 32-sample block. Built for the Cortex-M7 and run in Unicorn
  * by tools/conv2_cycles.py (instruction counts per call); built for the
  * host with -DBENCH_HOST_MAIN it prints wall-clock times (rough check only). */

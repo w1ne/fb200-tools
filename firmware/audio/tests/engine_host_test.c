@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Host test: the adaptive resampler for the host playback (drift_rs: no
  * frame repeated or dropped while the host clock is off by up to +-500 ppm,
  * no step in a sine, the fill near the target), the fallbacks, and the USB

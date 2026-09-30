@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """The app-protocol bytes in the LabWired gates come from fb200.protocol.
 
 The gates are YAML, so they carry the bytes as literals. These tests make

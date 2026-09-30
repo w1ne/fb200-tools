@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 # Build the open FB200 firmware images.
 #
 #   firmware/tools/build_images.sh [path/to/FB200_stock.mr] [outdir]

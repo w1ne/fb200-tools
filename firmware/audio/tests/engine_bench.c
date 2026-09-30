@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Amp (+ tone stack), cab and looper cost per 32-sample block, built for the
  * Cortex-M7 with the firmware's flags and run in Unicorn by
  * tools/engine_cycles.py (instruction counts and a cycle estimate per

@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Core power, the ITCM part: the main-loop sleep (WFI) and the core clock
  * mux switch. The rest (cpu_power.c) is cold code. See cpu_power.h. */
 #include "cpu_power.h"

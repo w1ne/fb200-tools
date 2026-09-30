@@ -1,3 +1,8 @@
+// Copyright (C) 2026 Andrii Shylenko
+//
+// This software is released under the MIT License.
+// See the LICENSE file in the project root for full license information.
+
 // The open firmware's USB CDC console over Web Serial: a port of
 // src/fb200/console.py (Console.write/drain/run/expect/command and update()).
 // Names follow the Python code so the two can be read side by side.

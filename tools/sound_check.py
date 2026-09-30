@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Sound-quality check of the pedal over USB (no cable needed).
 
 What USB reaches: the ADC (idle noise, with the instrument jack as it is),

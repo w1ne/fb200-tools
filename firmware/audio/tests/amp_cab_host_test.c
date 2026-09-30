@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Host test for amp/tone/cab WITHOUT the stock data (the CI build): amp and
  * tone pass audio through, the cab starts flat, cab_set_ir() is a 512-tap FIR
  * scaled by gain * 1.15 and cab_user_ir_gain() follows the stock formula.

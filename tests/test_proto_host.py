@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Host tests for the firmware app protocol (firmware/audio/src/proto).
 
 The C harness (firmware/audio/tests/proto_host_test.c) runs proto.c on top of

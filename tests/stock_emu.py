@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Run pieces of the STOCK FB200 firmware (V1.0.1) in Unicorn, as a parity oracle.
 
 No vendor code or data lives here: everything is read at run time from the

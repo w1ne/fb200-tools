@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #ifndef FB200_DSP_MOD_H
 #define FB200_DSP_MOD_H
 /* MOD block: port of the 12 stock FB200 modulation types (function table

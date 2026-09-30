@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* NAU88L21 (Linux name: nau8821) register map - the subset the driver uses.
  * 16-bit register addresses, 16-bit data words, big-endian on the wire.
  * Facts from the Nuvoton NAU88L21 datasheet (Rev 3.3, section 10) and the

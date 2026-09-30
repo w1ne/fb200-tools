@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Wrap raw binary blobs into one ARM ELF so `labwired test` can load them.
 
 `labwired test --script` loads `inputs.firmware` as an ELF (its PT_LOAD

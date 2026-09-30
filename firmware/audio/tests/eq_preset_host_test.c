@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Host tests for the bass EQ in the preset (src/preset/preset.h P_EQ_MARK,
  * src/dsp/eq.c eq_load/eq_save). Built by tests/test_eq_preset.py; every
  * check is an assert.

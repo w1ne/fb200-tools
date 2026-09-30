@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """MCP server: an AI agent (Claude Code, Claude Desktop) drives the pedal.
 
 `fb200 mcp` serves the tools on stdio. The pedal must run the open firmware:

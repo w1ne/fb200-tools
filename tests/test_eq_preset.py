@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Our bass EQ in the preset (firmware/audio/src/preset/preset.h P_EQ_MARK,
 dsp/eq.c eq_load/eq_save, docs/PARITY.md M4).
 

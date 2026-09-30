@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Soak test for the open FB200 firmware on a real pedal.
 
 Runs for --minutes (or --cycles) and, every cycle:

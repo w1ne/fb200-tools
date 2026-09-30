@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* fb200-labwired-smoke: the smallest image that proves the FB200 LabWired
  * twin boots and does I/O. Bare registers, no SDK.
  *

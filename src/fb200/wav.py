@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Convert WAV files into the FB200's 1024-sample float32 IR format.
 
 With no processing options this matches the official editor: decode to

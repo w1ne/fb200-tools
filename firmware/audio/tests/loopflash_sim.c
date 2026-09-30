@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* A simulated W25Q64 for the looper's host tests: see loopflash_sim.h. */
 #include <stdio.h>
 #include <stdlib.h>

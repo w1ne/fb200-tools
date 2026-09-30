@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Worst-case stack depth of the FB200 firmware against its stack reserve
 (linker.ld: 8 kB below _estack, painted at boot and measured by `stack`).
 

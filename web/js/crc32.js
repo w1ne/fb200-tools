@@ -1,3 +1,8 @@
+// Copyright (C) 2026 Andrii Shylenko
+//
+// This software is released under the MIT License.
+// See the LICENSE file in the project root for full license information.
+
 // CRC-32 (IEEE 802.3, reflected, poly 0xEDB88320): the same value as
 // Python's zlib.crc32(data) & 0xFFFFFFFF and the firmware's crc32_ieee().
 

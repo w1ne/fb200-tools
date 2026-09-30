@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #ifndef FB200_FLASH_RMW_H
 #define FB200_FLASH_RMW_H
 /* NOR flash writes that keep the audio running.

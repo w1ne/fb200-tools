@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* 256-entry vector table, stored at block 0 offset 0 and copied to ITCM 0x0
  * by stage2, which then selects it via VTOR = 0.
  * Entry [1] keeps the vendor flash stub address (as stock does); the vendor

@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #ifndef FB200_PROTO_H
 #define FB200_PROTO_H
 /* FB200 app protocol (docs/PROTOCOL.md): the AA 55 frame format that the

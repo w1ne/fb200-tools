@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Published firmware images: the latest GitHub release of fb200-tools.
 
 The release carries only vendor-free files (fb200-app.slot,

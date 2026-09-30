@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* LED / status output. The pin is not yet known: the stock firmware
  * configures ~45 pads as GPIO outputs (display, relays, ...), so the board
  * tells us which is the LED via `ledscan`, which drives each candidate in

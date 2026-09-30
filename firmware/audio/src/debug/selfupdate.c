@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* USB self-update: see selfupdate.h.
  *
  * The flash controller stays exactly as the boot ROM and the vendor

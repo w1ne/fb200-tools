@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Stock parity harness for amp/tone/cab, built with the extracted stock data
  * (the stock data blob in $FB200_STOCK_BLOB, stock_host.h) by
  * tests/test_stock_dsp_parity.py, which compares the output against the

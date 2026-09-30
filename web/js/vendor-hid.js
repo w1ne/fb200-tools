@@ -1,3 +1,8 @@
+// Copyright (C) 2026 Andrii Shylenko
+//
+// This software is released under the MIT License.
+// See the LICENSE file in the project root for full license information.
+
 // The vendor (Mooer) updater over WebHID: a port of
 //   src/fb200/protocol.py  (framing, CRC16, report chunking, FrameReader)
 //   src/fb200/firmware.py  (MrFile.from_bytes, parse only)

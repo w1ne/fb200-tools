@@ -1,3 +1,8 @@
+// Copyright (C) 2026 Andrii Shylenko
+//
+// This software is released under the MIT License.
+// See the LICENSE file in the project root for full license information.
+
 // The updater page (flash.html): a step-by-step wizard over
 //   vendor-hid.js     the pedal's own update mode (A+D, WebHID)
 //   serial-console.js the open firmware's USB console (Web Serial)

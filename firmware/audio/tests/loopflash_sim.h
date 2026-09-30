@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #ifndef FB200_TESTS_LOOPFLASH_SIM_H
 #define FB200_TESTS_LOOPFLASH_SIM_H
 /* A simulated W25Q64 behind the flash_rmw.h primitives, for the looper's

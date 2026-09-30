@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """The "ask and it does it" agent: a Claude tool-use loop over the MCP tools.
 
 Transport-agnostic: `run` takes an `emit(event)` callback for its steps and a

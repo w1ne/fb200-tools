@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #include "gain.h"
 
 /* 10^(dB/20) as float; the stock table (DTCM 0x20007770, read in the

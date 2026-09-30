@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Host test: the codec init sequence is the stock firmware's (76 writes),
  * adapted to 16-bit I2S at 48 kHz. Pins the registers that made the input
  * read zero when they were wrong. */

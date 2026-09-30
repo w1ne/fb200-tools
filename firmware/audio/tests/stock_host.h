@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Host tests: load the stock data blob named by $FB200_STOCK_BLOB (built by
  * src/fb200/stockdata.py from the user's .mr) and check it with the
  * firmware's own stock_check(). Without the variable g_stock stays NULL. */

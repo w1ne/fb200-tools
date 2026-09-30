@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Host harness for the app protocol (src/proto/proto.c) on top of the real
  * UI edit buffer (src/ui/ui.c) and an in-memory flash. Driven line by line
  * from stdin by tests/test_proto_host.py:

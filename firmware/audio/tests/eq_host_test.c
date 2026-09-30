@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Host tests for the bass EQ (src/dsp/eq.c). Built by tests/test_dsp_host.py
  * (test_eq_suite); every check is an assert.
  *

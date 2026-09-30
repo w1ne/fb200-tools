@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #ifndef FB200_DSP_CONV2_H
 #define FB200_DSP_CONV2_H
 /* Two-stage convolver for IRs up to CONV2_MAX_TAPS (M5).

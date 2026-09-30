@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #ifndef FB200_DSP_GATE_H
 #define FB200_DSP_GATE_H
 /* Stock noise gate (FB200 ITCM 0xb5a0), threshold knob = preset field 0x60.

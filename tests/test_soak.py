@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """tools/soak.py dry run against the fake console and HID pedal of
 test_mcp_server.py (no hardware): a clean run passes, a counter jump, a crumbs
 change or a low stack fails, and the original preset comes back."""

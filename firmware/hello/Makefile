@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 # fb200-hello firmware build. Booting, linking and vectors are ours
 # (linker.ld, src/startup.c, src/vectors.c); TinyUSB, its imxrt BSP and the
 # MCUXpresso SDK driver subset are compiled directly from the pinned

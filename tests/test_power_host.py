@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Battery gauge and idle standby logic (firmware/audio/src/ui/power_logic.c):
 stock level thresholds, filter and hysteresis, the Li-ion % estimate,
 low/critical battery events and the idle timer (docs/POWER.md)."""

@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """Transport layer: hidapi for real hardware, mock for tests.
 
 `hidapi` is imported lazily so the package and test suite work without it

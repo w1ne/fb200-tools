@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Host sanity tests for the stock-effect ports (gate, comp, mod, reverb).
  * Parity with the stock DSP is tests/test_fx_parity.py; this checks behaviour
  * that must hold at our own 48 kHz rate too. Built by tests/test_dsp_host.py. */

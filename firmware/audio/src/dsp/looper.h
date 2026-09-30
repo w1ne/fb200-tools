@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #ifndef FB200_DSP_LOOPER_H
 #define FB200_DSP_LOOPER_H
 /* Looper (our addition, the stock has none; docs/PARITY.md M8). Mono, after

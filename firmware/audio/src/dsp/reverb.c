@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Stock FB200 reverb port. Stock addresses in comments refer to the vendor
  * image's ITCM code and its state block at RAM 0x20010cb4 ("S+off").
  * The operation order (float vs double, multiply-add grouping) follows the

@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #ifndef FB200_DSP_OUTQ_H
 #define FB200_DSP_OUTQ_H
 /* Float -> int16 for the codec DAC and the USB capture (our output stage;

@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #include "ui/power_logic.h"
 
 static const uint16_t kLevel[4] = {0xE74u, 0xE10u, 0xD98u, 0xC80u};   /* >= -> 4,3,2,1 */

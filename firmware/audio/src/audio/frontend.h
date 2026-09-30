@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 #ifndef FB200_FRONTEND_H
 #define FB200_FRONTEND_H
 /* Board audio GPIOs, replayed from the stock firmware (main at ITCM 0x1774c):

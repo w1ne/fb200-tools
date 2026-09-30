@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* C body of the vendor-loader entry (see src/stage2.S for the 0x4d6 stub).
  * The loader has already copied the blob to ITCM 0x400 and (in the stock
  * flow) configured FlexRAM; we mirror the stock stub defensively, install

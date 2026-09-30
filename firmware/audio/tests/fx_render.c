@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Host render tool for the stock-effect ports: tests/test_fx_parity.py builds
  * it once per module (-DFX_GATE / -DFX_COMP / -DFX_MOD / -DFX_REVERB) and
  * compares its output with the stock DSP run in emulation.

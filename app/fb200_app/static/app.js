@@ -1,3 +1,8 @@
+// Copyright (C) 2026 Andrii Shylenko
+//
+// This software is released under the MIT License.
+// See the LICENSE file in the project root for full license information.
+
 // FB200 Studio UI: editors built from parameter_docs, chat over /api/chat.
 const $ = (sel) => document.querySelector(sel);
 const HDR = { "Content-Type": "application/json", "X-FB200-App": "1" };

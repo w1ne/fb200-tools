@@ -1,3 +1,8 @@
+# Copyright (C) 2026 Andrii Shylenko
+#
+# This software is released under the MIT License.
+# See the LICENSE file in the project root for full license information.
+
 """IR processing: resampler, trim, fade, cuts, blend, minimum phase, CLI."""
 
 import itertools

@@ -1,3 +1,9 @@
+/* Copyright (C) 2026 Andrii Shylenko
+ *
+ * This software is released under the MIT License.
+ * See the LICENSE file in the project root for full license information.
+ */
+
 /* Core power, the cold part (XIP): busy statistics, clock and voltage
  * setup. The sleep and the clock mux switch are ITCM code (cpu_idle.c).
  * See cpu_power.h. */
