@@ -530,7 +530,9 @@ pressed (record, close, punch out, restart), a tap of A while playing dubs
 (on release: a held A is the undo), hold A = undo/redo, tap B = stop/play,
 hold B = clear. Display `rEC`, `PLY`, `odb`, `StP`, `Und`/`rdo`, `CLr`,
 `PrP` (the flash is not ready yet); ring A red/green/orange with a white
-flash at each loop start, ring B blue while a loop exists. Console `loop`
+flash at each loop start, ring B blue while a loop exists. Ring C fills
+while recording (red) or dubbing (orange). Ring D is one LED at the play
+position (green, orange while dubbing, blue while stopped). Console `loop`
 (`prep_ms` = erased flash ready), `loop save|load <1-2>` (two loops kept
 across power-off), `loop stats` (JEDEC, slots, programs,
 erases, suspends, underruns), MCP `looper`. `loop hq` is gone (the flash

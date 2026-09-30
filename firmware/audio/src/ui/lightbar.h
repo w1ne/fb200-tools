@@ -9,7 +9,10 @@
  *   tuner mode   all off
  *   rhythm mode  A, B lit while held; C flashes the tempo; D lit while playing
  *   looper mode  (ours) A: red recording, green playing, orange dubbing,
- *                white flash at each loop start; B blue while a loop exists
+ *                white flash at each loop start; B blue while a loop exists.
+ *                C fills while recording (red) or dubbing (orange).
+ *                D is one LED at the play position (green, orange, or blue
+ *                when stopped)
  *   save         1 s blink of the saved slot's ring */
 typedef enum { LB_PRESET, LB_LIVE, LB_TUNER, LB_RHYTHM, LB_LOOPER } lb_mode_t;
 
@@ -22,6 +25,8 @@ typedef struct {
     uint16_t bpm;          /* rhythm: tempo */
     uint8_t loop;          /* looper: state (dsp/looper.h LOOPER_*) */
     bool loop_top;         /* looper: near the loop start */
+    uint32_t loop_pos_ms;  /* looper: position in the loop */
+    uint32_t loop_len_ms;  /* looper: loop length (0 while the first record is open) */
 } lightbar_in_t;
 
 /* Stock colour (0x17908): palette index 0..9 (> 9 -> 8), level 0..100

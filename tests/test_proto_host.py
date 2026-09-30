@@ -505,16 +505,22 @@ OFF = (0, 0, 0)
 RED = (0x3F, 0, 0)          # the stock sends every byte >> 2 (0x17d54)
 
 
-def rings(h) -> tuple[dict[str, tuple[int, int, int]], int]:
-    """The colour (r, g, b) on the wire of each ring (all 10 LEDs equal), and the frame count."""
+def pixels(h) -> tuple[list[tuple[int, int, int]], int]:
+    """Every LED on the wire as (r, g, b), and the frame count."""
     _, px, n = h.cmd("rgb")[0].split()
     leds = [tuple(bytes.fromhex(px[i * 6:i * 6 + 6])) for i in range(40)]
+    return leds, int(n)
+
+
+def rings(h) -> tuple[dict[str, tuple[int, int, int]], int]:
+    """The colour (r, g, b) on the wire of each ring (all 10 LEDs equal), and the frame count."""
+    leds, n = pixels(h)
     out = {}
     for sw, first in RING_FIRST.items():
         ring = leds[first:first + 10]
         assert len(set(ring)) == 1, f"ring {sw} is not one colour: {ring}"
         out[sw] = ring[0]
-    return out, int(n)
+    return out, n
 
 
 def ring_colours(h) -> list[tuple[int, int, int]]:
@@ -721,11 +727,17 @@ def test_looper_mode_footswitches(h):
     h.cmd("fsw a release")
     blocks(h, 700)                                             # over the shortest loop (0.5 s)
     assert loop(h)[0] == 2
+    rec = pixels(h)[0][RING_FIRST["c"]:RING_FIRST["c"] + 10]
+    assert rec[0] == RED and OFF in rec and rec == [RED] * rec.count(RED) + [OFF] * rec.count(OFF)
     h.cmd("fsw a press")                                       # close: plays
     h.cmd("fsw a release")                                     # (the press acted: no dub)
     blocks(h, 40)                                              # past the closing crossfade
     assert loop(h) == (3, 0, "tap") and disp(h) == "PLY"
-    assert ring_colours(h)[0] in ((0, 0x3F, 0), (0x3F, 0x3F, 0x3F))   # green (white at the top)
+    leds = pixels(h)[0]
+    ring_a = leds[RING_FIRST["a"]:RING_FIRST["a"] + 10]
+    assert len(set(ring_a)) == 1 and ring_a[0] in ((0, 0x3F, 0), (0x3F, 0x3F, 0x3F))
+    play = leds[RING_FIRST["d"]:RING_FIRST["d"] + 10]
+    assert play.count((0, 0x3F, 0)) == 1 and set(play) <= {(0, 0x3F, 0), OFF}
     tap(h, "a")                                                # released while playing: dub
     assert loop(h) == (4, 1, "dub") and disp(h) == "odb"
     blocks(h, 60)

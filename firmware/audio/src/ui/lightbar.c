@@ -90,26 +90,50 @@ void lightbar_rings(uint32_t now_ms, const lightbar_in_t *in, uint32_t ring[4])
     }
 }
 
+/* Stock 0x17d54 stores each byte >> 2: 25 % of full scale at most. */
+static void store_led(uint8_t frame[][3], int i, uint32_t colour)
+{
+    uint8_t r = (uint8_t)(colour >> 18), g = (uint8_t)((colour >> 10) & 0x3Fu),
+            b = (uint8_t)((colour >> 2) & 0x3Fu);
+    if (global_pct < 100u) {
+        r = (uint8_t)(r * global_pct / 100u);
+        g = (uint8_t)(g * global_pct / 100u);
+        b = (uint8_t)(b * global_pct / 100u);
+    }
+    frame[i][0] = r;
+    frame[i][1] = g;
+    frame[i][2] = b;
+}
+
+/* Ring C is the record meter: it fills one LED every 200 ms and starts
+ * again, so a short recording is still visibly moving. Ring D is the play
+ * meter: one LED at the position in the loop. */
+static void looper_meters(const lightbar_in_t *in, uint8_t frame[][3])
+{
+    if (in->mode != LB_LOOPER) return;
+    if (in->loop == LOOPER_REC || in->loop == LOOPER_DUB) {
+        unsigned n = 1u + (in->loop_pos_ms / 200u) % 10u;
+        uint32_t colour = in->loop == LOOPER_DUB ? 0xFF6400u : RED;
+        for (unsigned i = 0; i < n; i++) store_led(frame, kRingFirst[2] + (int)i, colour);
+    }
+    if (in->loop == LOOPER_PLAY || in->loop == LOOPER_DUB || in->loop == LOOPER_STOP) {
+        unsigned len = in->loop_len_ms ? in->loop_len_ms : 1u;
+        unsigned head = (in->loop_pos_ms * 10u / len) % 10u;
+        uint32_t colour = in->loop == LOOPER_DUB ? 0xFF6400u
+                        : in->loop == LOOPER_STOP ? 0x0000FFu : 0x00FF00u;
+        store_led(frame, kRingFirst[3] + (int)head, colour);
+    }
+}
+
 void lightbar_task(uint32_t now_ms, const lightbar_in_t *in)
 {
     uint32_t ring[4];
     uint8_t frame[RGB_COUNT][3];
     lightbar_rings(now_ms, in, ring);
     for (int s = 0; s < 4; s++) {
-        /* stock 0x17d54 stores each byte >> 2: 25 % of full scale at most */
-        uint8_t r = (uint8_t)(ring[s] >> 18), g = (uint8_t)((ring[s] >> 10) & 0x3Fu),
-                b = (uint8_t)((ring[s] >> 2) & 0x3Fu);
-        if (global_pct < 100u) {
-            r = (uint8_t)(r * global_pct / 100u);
-            g = (uint8_t)(g * global_pct / 100u);
-            b = (uint8_t)(b * global_pct / 100u);
-        }
-        for (int i = kRingFirst[s]; i < kRingFirst[s] + 10; i++) {
-            frame[i][0] = r;
-            frame[i][1] = g;
-            frame[i][2] = b;
-        }
+        for (int i = kRingFirst[s]; i < kRingFirst[s] + 10; i++) store_led(frame, i, ring[s]);
     }
+    looper_meters(in, frame);
     if (!memcmp(frame, shown, sizeof frame) || now_ms - shown_ms < SHOW_MS) return;
     for (int i = 0; i < RGB_COUNT; i++) rgb_set(i, frame[i][0], frame[i][1], frame[i][2]);
     if (rgb_show()) {

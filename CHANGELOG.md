@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-09-30
+
+### Added
+
+- **Looper lights:** ring C fills red while recording and orange while dubbing
+  (one more LED every 200 ms, then it starts over). Ring D is one LED at the
+  play position: green while playing, orange while dubbing, blue while stopped.
+  Ring A and ring B are unchanged. Checked on a pedal. The white bars on the
+  panel are not these LEDs. The sound has not been listened to.
+
 ## [0.11.0] - 2026-09-30
 
 ### Added
