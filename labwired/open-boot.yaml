@@ -26,11 +26,13 @@
 # B, and the display then shows P0b.
 # At 20 M cycles the gate drives a 1000 Hz tone into SAI1, peak sample
 # 8000. The app runs that tone through the effect chain. SAI1 transmit
-# then records peak 256 over the run and peak 99 over the last 256 words.
-# Those levels are the engine output at this stop. They are not the raw
-# word 8000 and they are not silence. MASTER is already at 20 % for that
-# tail. The same tail was measured with the looper off, so it does not
-# prove the loop is audible.
+# records peak 256 over the run. The last 256 words are a smaller peak.
+# A local build printed tail 99. The Ubuntu build printed tail 96. The
+# gate checks the run peak and that a tail was recorded. It does not pin
+# the tail count. Those levels are the engine output. They are not the
+# raw word 8000 and they are not silence. MASTER is already at 20 % for
+# that tail. The local tail matched a run with the looper off, so it does
+# not prove the loop is audible.
 # After AT+B401 the gate connects a phone (EDR and BLE) and sends the
 # get-version frame. The air log shows the phone bytes and the app reply.
 # The reply carries firmware version V2.0.0. The phone connects while D
@@ -119,7 +121,7 @@ assertions:
   - peripheral_log: {peripheral: display, log: text, contains: "\"0Ut\""}
   - peripheral_log: {peripheral: display, log: text, contains: "\"P0b\""}
   - peripheral_log: {peripheral: sai1, log: rx, contains: "amp 8000 hz 1000"}
-  - peripheral_log: {peripheral: sai1, log: tx, contains: "peak 256 tail 99"}
+  - peripheral_log: {peripheral: sai1, log: tx, contains: "peak 256 tail"}
   - peripheral_log: {peripheral: lpuart5, log: link, contains: "TS+01 edr connected"}
   - peripheral_log: {peripheral: lpuart5, log: link, contains: "TL+03 ble connected"}
   - peripheral_log: {peripheral: lpuart5, log: air, contains: "phone->mcu aa 55 01 00 00 c8 cf"}

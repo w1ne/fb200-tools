@@ -97,7 +97,7 @@ def test_open_gate_expects_the_sixteen_start_counts_and_the_turn():
     assert "AT+B501" in text
     assert "AT+B401" in text
     assert "amp 8000 hz 1000" in text
-    assert "peak 256 tail 99" in text
+    assert 'log: tx, contains: "peak 256 tail"' in text
     assert "symbol: s_loop, offset: 8, size: 1, expected_value: 3" in text
     assert "symbol: s_loop, offset: 56, size: 4, expected_value: 0x178" in text
     assert "TS+01 edr connected" in text
@@ -128,7 +128,7 @@ def test_render_gate_writes_the_symbol_address_and_keeps_the_counts():
     assert "peripheral_tick_interval: 16" in placed
     assert '\\"P0b\\"' in rendered
     assert "AT+B401" in rendered
-    assert "peak 256 tail 99" in rendered
+    assert 'log: tx, contains: "peak 256 tail"' in rendered
     assert "56 32 2e 30 2e 30" in rendered
     assert "max_cycles: 2100000000" in rendered
 

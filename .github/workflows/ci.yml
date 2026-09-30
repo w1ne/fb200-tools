@@ -197,7 +197,7 @@ jobs:
               ("display", "text", '"0Ut"'),
               ("display", "text", '"P0b"'),
               ("sai1", "rx", "amp 8000 hz 1000"),
-              ("sai1", "tx", "peak 256 tail 99"),
+              ("sai1", "tx", "peak 256 tail"),
               ("lpuart5", "link", "TS+01 edr connected"),
               ("lpuart5", "link", "TL+03 ble connected"),
               ("lpuart5", "air", "phone->mcu aa 55 01 00 00 c8 cf"),

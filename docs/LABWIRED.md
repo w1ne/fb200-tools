@@ -142,10 +142,12 @@ releases footswitch B. The app loads slot B. The display then shows `P0b`.
 
 At 20 M cycles the gate drives a 1000 Hz tone into SAI1. The peak sample
 is 8000. The app runs that tone through the effect chain. The transmit
-log records peak 256 for the whole run. The transmit log records peak 99
-for the last 256 words. MASTER is at 20 % for that tail. The effect chain
-produces these peaks. The same tail was measured with the looper off, so
-it does not prove the loop is audible.
+log records peak 256 for the whole run. The last 256 words are a smaller
+peak. A local build printed tail 99. The Ubuntu build printed tail 96.
+The gate checks the run peak. It does not pin the tail count. MASTER is
+at 20 % for that tail. The effect chain produces this peak. The local
+tail matched a run with the looper off, so it does not prove the loop
+is audible.
 
 The app writes codec register `0x001C` with the value `0x0002`. This
 value selects 16-bit I2S. The state log contains `dai slave i2s 16-bit`.
