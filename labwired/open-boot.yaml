@@ -46,14 +46,14 @@
 # second. That chord enters looper mode. The image carries a short config
 # block at 0x60000000. Without it the app leaves the looper off. The
 # looper then erases one 64 KB block (150 ms) before a record is allowed.
-# The twin flash has no erase suspend, so each erase runs to its end
-# inside one main-loop pass. A tap has to stay down across two of those
-# passes. Two taps of A, 500 ms each, start the record and close it. A
-# short record still plays once it reaches 500 ms. The run stops at
-# 2100 M cycles. The looper state byte is then PLAY (3) and the chunk
-# count is 376. The display mux cannot assemble LP-, rEC, or PLY while an
-# erase blocks the main loop, so those strings are not checked. The
-# battery pin is 3.2 V (system.yaml). 2.5 V is a low battery and the
+# The twin suspends that erase after a 3 ms slice and resumes it on the
+# next pass. The main loop keeps scanning the panel during the erase.
+# The panel shows LP- for an empty looper, rEC while recording, and PLY
+# while playing. Two taps of A, 500 ms each, start the record and close
+# it. A short record still plays once it reaches 500 ms. The run stops
+# at 2100 M cycles. The looper state byte is then PLAY (3) and the chunk
+# count is 376.
+# The battery pin is 3.2 V (system.yaml). 2.5 V is a low battery and the
 # panel then shows LOb.
 schema_version: "1.2"
 inputs:
@@ -90,8 +90,8 @@ stimuli:
   - target: { component: "footswitch_d", channel: "pressed" }
     trigger: !after_cycles { cycles: 830000000 }
     value: 0
-  # A records. Each tap is 500 ms: two main-loop passes while erase-ahead
-  # is blocking. The second A closes the take. Playback follows.
+  # A records. Each tap is 500 ms. The second A closes the take.
+  # Playback follows.
   - target: { component: "footswitch_a", channel: "pressed" }
     trigger: !after_cycles { cycles: 1000000000 }
     value: 1
@@ -125,6 +125,9 @@ assertions:
   - peripheral_log: {peripheral: usb1, log: host, contains: "\"FB200 Audio\""}
   - peripheral_log: {peripheral: display, log: text, contains: "\"0Ut\""}
   - peripheral_log: {peripheral: display, log: text, contains: "\"P0b\""}
+  - peripheral_log: {peripheral: display, log: text, contains: "\"LP-\""}
+  - peripheral_log: {peripheral: display, log: text, contains: "\"rEC\""}
+  - peripheral_log: {peripheral: display, log: text, contains: "\"PLY\""}
   - peripheral_log: {peripheral: sai1, log: rx, contains: "amp 8000 hz 1000"}
   - peripheral_log: {peripheral: sai1, log: tx, contains: "peak 256 tail"}
   - peripheral_log: {peripheral: lpuart5, log: link, contains: "TS+01 edr connected"}
