@@ -5,6 +5,14 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- The open-firmware gate checks the looper panel strings `LP-`, `rEC`, and
+  `PLY`. The twin suspends a NOR erase, so the display mux keeps scanning
+  while erase-ahead runs. The looper still ends in PLAY with 376 chunks.
+
 ## [0.12.0] - 2026-09-30
 
 ### Added

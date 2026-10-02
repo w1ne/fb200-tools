@@ -105,7 +105,7 @@ Expected result:
 
 ```
 PASS  5/5 checks · smoke · 40000000 steps · 36.87s
-PASS  37/37 checks · open-boot · 2100000000 steps · 111.76s
+PASS  40/40 checks · open-boot · 2100000000 steps · 106.24s
 PASS  37/37 checks · stock-boot · 90000000 steps · 15.26s
 PASS  20/20 checks · stock-knobs · 3400000000 steps · 4754.33s
 PASS  24/24 checks · stock-first-boot · 6800000000 steps · 6031.15s
@@ -163,13 +163,14 @@ footswitch D and footswitch C are held.
 
 Looper mode needs footswitch D held and footswitch C held for about one
 second. The gate holds that chord from 160 M cycles to 830 M cycles. The
-twin flash has no erase suspend, so each 64 KB erase runs to its end
-inside one main-loop pass (150 ms). Each A tap stays down for 500 ms, so
-two of those passes see it. The first A tap starts the record. The second
-A tap closes it. A short record still plays once it reaches 500 ms. At
-2100 M cycles the looper state byte is PLAY (3) and the chunk count is
-376. The display mux cannot assemble `LP-`, `rEC`, or `PLY` while an
-erase blocks the main loop. The gate does not check those strings.
+looper then erases one 64 KB block before a record is allowed. That erase
+takes 150 ms. The twin suspends the erase after a 3 ms slice and resumes
+it on the next pass. The main loop keeps scanning the panel during the
+erase. The panel shows `LP-` for an empty looper. The panel shows `rEC`
+while recording. The panel shows `PLY` while playing. The gate checks
+those three strings. Two taps of A, 500 ms each, start the record and
+close it. A short record still plays once it reaches 500 ms. At 2100 M
+cycles the looper state byte is PLAY (3) and the chunk count is 376.
 
 The app stores one raw ADC count per knob. The count is a `uint16_t` in
 the array `knobs`. A count of 0 is fully counter-clockwise. The firmware
@@ -187,7 +188,7 @@ peripherals every 16 CPU cycles. The run stops at `max_cycles`. The local
 run printed this line.
 
 ```
-PASS  37/37 checks · open-boot · 2100000000 steps · 111.76s
+PASS  40/40 checks · open-boot · 2100000000 steps · 106.24s
 ```
 
 The run used a local core build. That core is not released yet. The

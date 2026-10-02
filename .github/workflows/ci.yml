@@ -105,7 +105,7 @@ jobs:
   # released labwired binary does not boot this image. Apt, the firmware
   # build, and the core build are outside the time cap. The cap is the
   # labwired test process only. The gate stops at 2100 M cycles. The
-  # local run printed 111.76 s. The Ubuntu runner is about three times
+  # local run printed 106.24 s. The Ubuntu runner is about three times
   # slower, so the cap is 360 s. wall_time_ms on the gate is 420000.
   open-firmware:
     runs-on: ubuntu-latest
@@ -120,7 +120,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: w1ne/labwired-core
-          ref: acc4940de4b999e703c39292be5f96bde0bc9f56
+          ref: 27c95b638791a1a9033ddb3ba8b400c960f0041f
           path: labwired-core
       - uses: dtolnay/rust-toolchain@1.95.0
       - uses: Swatinem/rust-cache@v2
@@ -201,6 +201,9 @@ jobs:
               ("usb1", "host", '"FB200 Audio"'),
               ("display", "text", '"0Ut"'),
               ("display", "text", '"P0b"'),
+              ("display", "text", '"LP-"'),
+              ("display", "text", '"rEC"'),
+              ("display", "text", '"PLY"'),
               ("sai1", "rx", "amp 8000 hz 1000"),
               ("sai1", "tx", "peak 256 tail"),
               ("lpuart5", "link", "TS+01 edr connected"),

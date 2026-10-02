@@ -93,6 +93,9 @@ def test_open_gate_expects_the_sixteen_start_counts_and_the_turn():
     assert 'component: "footswitch_b"' in text
     assert '\\"0Ut\\"' in text
     assert '\\"P0b\\"' in text
+    assert '\\"LP-\\"' in text
+    assert '\\"rEC\\"' in text
+    assert '\\"PLY\\"' in text
     assert "write 0x001c = 0x0002" in text
     assert "dai slave i2s 16-bit" in text
     assert "adcout driven" in text
